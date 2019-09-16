@@ -17,22 +17,36 @@ SHARED_OBJ	:= $(OBJ_DIR)/$(SHARED_SRC:.cpp=.o)
 CLIENT			:= client
 SERVER			:= server
 
-SCRIPTS_CLIENT := ../.scripts/dgrep-client
-SCRIPTS_SERVER := ../.scripts/dgrep-server
+SCRIPTS_DIR					:= ../.scripts
+SCRIPTS_CLIENT 			:= dgrep-client
+SCRIPTS_SERVER 			:= dgrep-server
+SCRIPTS_DGREP				:= dgrep.sh
+SCRIPTS_DGREP_SETUP	:= dgrep_setup.sh
 
-all: $(CLIENT) $(SERVER)
+COPY_SCRIPTS				:= $(SCRIPTS_DIR)/$(SCRIPTS_CLIENT) $(SCRIPTS_DIR)/$(SCRIPTS_SERVER) $(SCRIPTS_DIR)/$(SCRIPTS_DGREP) $(SCRIPTS_DIR)/$(SCRIPTS_DGREP_SETUP)
+
+
+all: $(CLIENT) $(SERVER) $(COPY_SCRIPTS)
 
 $(CLIENT): $(CLIENT_OBJ) $(SHARED_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@
-	@cp $(CLIENT) $(SCRIPTS_CLIENT)
 
 $(SERVER): $(SERVER_OBJ) $(SHARED_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@
-	@cp $(SERVER) $(SCRIPTS_SERVER)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(SCRIPTS_DIR)/$(SCRIPTS_CLIENT): $(SCRIPTS_CLIENT)
+$(SCRIPTS_DIR)/$(SCRIPTS_SERVER): $(SCRIPTS_SERVER)
+
+$(SCRIPTS_DIR)/$(SCRIPTS_DGREP): $(SCRIPTS_DGREP)
+$(SCRIPTS_DIR)/$(SCRIPTS_DGREP_SETUP): $(SCRIPTS_DGREP_SETUP)
+
+$(SCRIPTS_DIR)/%:
+	cp -f $< $@
+	chmod +x $@
 
 .PHONY: all clean client server
 

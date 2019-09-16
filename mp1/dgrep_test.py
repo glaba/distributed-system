@@ -45,7 +45,7 @@ for k in range(10):
 		has_word = False
 		for j in range(num_words_per_line):
 			word = random.choice(dictionary)
-			if word == word_to_grep:
+			if word_to_grep in word:
 				has_word = True
 
 			cur_line = cur_line + word + " "
@@ -80,3 +80,10 @@ for k in range(10):
 	if k != 9:
 		actual_str += ", "
 print("DGrep word counts: " + actual_str)
+
+for k in range(10):
+	if reference[k] != actual[k]:
+		print("Reference grep and dgrep results differ!")
+		sys.exit()
+
+print("Reference grep and dgrep results match!")
