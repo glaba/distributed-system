@@ -54,7 +54,7 @@ for k in range(10):
 			reference[k] += 1
 
 		os.system("echo " + cur_line + " >> ~/tmp.log")
-	
+
 	os.system("scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ~/tmp.log lawsonp2@" + vm_name + ":/home/lawsonp2/machine.i.log")
 
 reference_str = ""
@@ -69,7 +69,7 @@ os.system("dgrep_setup.sh " + str(port))
 actual = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 for k in range(10):
 	vm_name = "fa19-cs425-g60-" + str(k + 1).zfill(2) + ".cs.illinois.edu"
-	lines = subprocess.check_output("client " + vm_name + " " + str(port) + " " + word_to_grep, shell=True).split("\n")
+	lines = subprocess.check_output("dgrep-client " + vm_name + " " + str(port) + " " + word_to_grep, shell=True).split("\n")
 	for j in range(len(lines)):
 		if len(lines[j]) > 0:
 			actual[k] += 1
