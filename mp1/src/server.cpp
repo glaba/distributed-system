@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
 string run_grep_command(string search_text) {
     array<char, 128> buffer;
     string result = "";
-    string cmd = "grep '" + search_text + "' " + log_file;
+    string cmd = "grep -c " + search_text + " " + log_file;
 
     unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
 
