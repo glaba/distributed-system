@@ -31,7 +31,7 @@ uint32_t member_list::add_member(std::string hostname, int join_time) {
     member m = create_member(hostname, join_time);
     auto it = list.begin();
     for (; it != list.end(); it++) {
-        if (m.id > it->id) {
+        if (m.id < it->id) {
             break;
         }
     }
@@ -52,9 +52,9 @@ void member_list::remove_member(uint32_t id) {
     std::lock_guard<std::mutex> guard(member_list_mutex);
 
     for (auto it = list.begin(); it != list.end(); it++) {
-        if (id == it->id) {
+        if (it->id == id) {
             list.erase(it);
-            return;
+            break;
         }
     }
 }
@@ -87,11 +87,19 @@ std::vector<member> member_list::get_neighbors() {
         }
         backward_it--;
 
-        if (backward_it == self)
+        if (backward_it == self || backward_it == forward_it)
             break;
 
         neighbors.push_back(*backward_it);
     }
 
     return neighbors;
+}
+
+std::list<member> member_list::__get_internal_list() {
+    return list;
+}
+
+bool member::operator==(const member &m) {
+    return hostname == m.hostname && id == m.id && last_heartbeat == m.last_heartbeat;
 }

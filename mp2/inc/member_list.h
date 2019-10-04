@@ -10,6 +10,7 @@ typedef struct member {
     uint32_t id;
     std::string hostname;
     uint64_t last_heartbeat;
+    bool operator==(const member &m);
 } member;
 
 // A threadsafe linked list of members sorted by ID
@@ -27,6 +28,8 @@ public:
     void remove_member(uint32_t id);
     // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
     std::vector<member> get_neighbors();
+    // Gets the list of members (for testing)
+    std::list<member> __get_internal_list();
 private:
     std::string local_hostname = "";
     std::list<member> list;
