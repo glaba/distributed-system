@@ -1,23 +1,23 @@
+#include "member.h"
+#include "heartbeat.h"
 #include "utils.h"
 #include "logging.h"
-#include "member.h"
 #include "member_list.h"
 #include "test.h"
 
-std::string introducer = "";
-std::string local_hostname = "";
-uint16_t port = 1234;
-
-member_list *mem_list;
-
 bool testing = false;
 
-int process_params(int argc, char **argv);
+int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing);
 
 int main(int argc, char **argv) {
-    init_logging("member.log");
+    std::string introducer = "";
+    std::string local_hostname = "";
+    uint16_t port = DEFAULT_PORT;
+    bool testing = false;
 
-    if (process_params(argc, argv)) {
+    init_logging(DEFAULT_LOGFILE);
+
+    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing)) {
         return 1;
     }
 
@@ -25,9 +25,16 @@ int main(int argc, char **argv) {
         return run_tests();
     }
 
-    // Create the member list
-    mem_list = new member_list(local_hostname);
+    heartbeater *hb;
+    if (introducer == "self") {
+        hb = new heartbeater(member_list(local_hostname), local_hostname, port);
+    } else {
+        hb = new heartbeater(member_list(local_hostname), local_hostname, introducer, port);
+    }
 
+    hb->start();
+    
+    delete hb;
     return 0;
 }
 
@@ -45,12 +52,12 @@ int print_invalid() {
     return 1;
 }
 
-int process_params(int argc, char **argv) {
+int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing) {
     if (argc == 1)
         return print_invalid();
 
     if (std::string(argv[1]) == "test") {
-        testing = true;
+        *testing = true;
         return 0;
     }
 
@@ -58,7 +65,7 @@ int process_params(int argc, char **argv) {
         // The introducer
         if (std::string(argv[i]) == "-i") {
             if (i + 1 < argc) {
-                introducer = std::string(argv[i + 1]);
+                *introducer = std::string(argv[i + 1]);
             } else return print_invalid();
             i++;
         // The port to use
@@ -66,7 +73,7 @@ int process_params(int argc, char **argv) {
             // Parse the port number from the next argument and fail if it's bad
             if (i + 1 < argc) {
                 try {
-                    port = std::stoi(argv[i + 1]);
+                    *port = std::stoi(argv[i + 1]);
                 } catch (...) {
                     std::cout << "Invalid port number" << std::endl;
                     return print_invalid();
@@ -76,18 +83,20 @@ int process_params(int argc, char **argv) {
         // The hostname
         } else if (std::string(argv[i]) == "-h") {
             if (i + 1 < argc) {
-                local_hostname = argv[i + 1];
+                *local_hostname = argv[i + 1];
             }
             i++;
         } else return print_invalid();
     }
 
-    if (introducer == "") {
+    if (*introducer == "") {
         std::cout << "Option -i required" << std::endl;
+        return 1;
     }
 
-    if (local_hostname == "") {
+    if (*local_hostname == "") {
         std::cout << "Option -h required" << std::endl;
+        return 1;
     }
 
     return 0;

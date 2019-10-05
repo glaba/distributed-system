@@ -96,6 +96,11 @@ std::vector<member> member_list::get_neighbors() {
     return neighbors;
 }
 
+// Get the number of members total
+uint32_t member_list::num_members() {
+    return list.size();
+}
+
 std::list<member> member_list::__get_internal_list() {
     return list;
 }

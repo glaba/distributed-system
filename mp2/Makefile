@@ -1,6 +1,7 @@
 INC_DIR   := inc
 CXX       := -g++
 CXXFLAGS  := -I$(INC_DIR) -std=c++11 -Wall -DDEBUG -g
+LDFLAGS   := -pthread
 
 OBJ_DIR   := obj
 SRC_DIR   := src
@@ -13,7 +14,7 @@ MEMBER    := member
 all: $(MEMBER)
 
 $(MEMBER): $(OBJ_FILES)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
