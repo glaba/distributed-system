@@ -23,6 +23,24 @@ public:
     // Returns true if we have joined a group (i.e. the membership list is non-empty)
     bool has_joined();
 
+    // this function will process the information received in a T (table) message and update the member table
+    void process_table_msg(std::string msg);
+
+    // this function will process the information received in a J (join) message and update the member table
+    void process_join_msg(std::string msg);
+
+    // this function will process the information received in a L (leave) message and update the member table
+    void process_leave_msg(std::string msg);
+
+    // this function will construct a message that encodes the important bits of its member list
+    std::string construct_table_msg();
+
+    // this function will construct a message that can be used to relay that hostname has left the membership
+    std::string construct_leave_msg(std::string hostname);
+
+    // this function will construct a message that can be used to relay that hostname has failed
+    std::string construct_fail_msg(std::string hostname);
+
     /* Server side functions */
     // Server thread function
     void server();

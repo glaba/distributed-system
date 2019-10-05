@@ -14,6 +14,14 @@ member create_member(std::string hostname, int join_time) {
     return cur;
 }
 
+member create_member(std::string hostname, uint32_t id) {
+    member cur;
+    cur.id = id;
+    cur.hostname = hostname;
+    cur.last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    return cur;
+}
+
 // Adds ourselves as the first introducer and returns our ID
 uint32_t member_list::add_self_as_introducer(std::string hostname, int join_time) {
     std::lock_guard<std::mutex> guard(member_list_mutex);
@@ -47,12 +55,45 @@ uint32_t member_list::add_member(std::string hostname, int join_time) {
     return m.id;
 }
 
+// Adds a member to the membership list using hostname and ID
+uint32_t member_list::add_member(std::string hostname, uint32_t id) {
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+
+    member m = create_member(hostname, id);
+    auto it = list.begin();
+    for (; it != list.end(); it++) {
+        if (m.id < it->id) {
+            break;
+        }
+    }
+
+    // auto new_it = list.insert(it, m);
+    list.insert(it, m);
+
+    // TODO: how should we log this? this exists because we don't know the join time of a member in a member_list - this information is not store
+    // therefore I am adding members to other node's list by giving the node the hostname and ID of the member
+    // log("Added member at " + hostname + " with id " + id + "at local time " + duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()  + " to membership list");
+    return m.id;
+}
+
+
 // Removes a member from the membership list
 void member_list::remove_member(uint32_t id) {
     std::lock_guard<std::mutex> guard(member_list_mutex);
 
     for (auto it = list.begin(); it != list.end(); it++) {
         if (it->id == id) {
+            list.erase(it);
+            break;
+        }
+    }
+}
+
+void member_list::remove_member_by_hostname(std::string hostname) {
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+
+    for (auto it = list.begin(); it != list.end(); it++) {
+        if (it->hostname == hostname) {
             list.erase(it);
             break;
         }

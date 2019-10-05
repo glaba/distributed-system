@@ -29,8 +29,12 @@ public:
     uint32_t add_self_as_introducer(std::string hostname, int join_time);
     // Adds a member to the membership list and returns their ID
     uint32_t add_member(std::string hostname, int join_time);
+    // Adds a member to the membership list using hostname and ID
+    uint32_t add_member(std::string hostname, uint32_t id);
     // Removes a member from the membership list
     void remove_member(uint32_t id);
+    // Removes a member from the membership list by hostname
+    void remove_member_by_hostname(std::string hostname);
     // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
     std::vector<member> get_neighbors();
     // Get the number of members total
