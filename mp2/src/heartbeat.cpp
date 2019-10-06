@@ -8,9 +8,12 @@
 
 using namespace std::chrono;
 
+uint64_t heartbeater::heartbeat_interval_ms = 250;
+uint64_t heartbeater::timeout_interval_ms = 1000;
+
 heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, uint16_t port_)
-    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_), 
+    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), port(port_) {
     is_introducer = true;
 
@@ -20,10 +23,10 @@ heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp
 
 heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, std::string introducer_, uint16_t port_)
-    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_), 
+    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), introducer(introducer_), port(port_) {
     is_introducer = false;
-    
+
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
 }
@@ -42,14 +45,40 @@ void heartbeater::client() {
 
     // Remaining client code here
     while (true) {
-        // std::cout << "Just a client doing client things" << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // get list of neighbors
+        uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        std::vector<member> neighbors = mem_list.get_neighbors();
+
+        // construct list of failed nodes
+        std::vector<uint32_t> failed_nodes;
+        for (auto mem : neighbors) {
+            if (current_time - mem.last_heartbeat > timeout_interval_ms) {
+                failed_nodes.push_back(mem.id);
+            }
+        }
+
+        // construct list of left nodes
+        // tbh, leaving these as empty is fine i think because we're sending these out at other times
+        std::vector<uint32_t> left_nodes;
+
+        // construct list of joined_node
+        // tbh, leaving these as empty is fine i think because we're sending these out at other times
+        std::vector<member> joined_nodes;
+
+        unsigned length;
+        char *msg = construct_msg(failed_nodes, left_nodes, joined_nodes, &length);
+        for (auto mem : neighbors) {
+            udp_client->send(mem.hostname, std::to_string(port), msg, length);
+        }
+
+        // sleep for heartbeat_interval milliseconds
+        std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_ms));
     }
 }
 
 // Creates a message that represents the provided set of failed / left / joined nodes
 char *heartbeater::construct_msg(std::vector<uint32_t> failed_nodes, std::vector<uint32_t> left_nodes, std::vector<member> joined_nodes, unsigned *length) {
-    unsigned size = 
+    unsigned size =
         sizeof(uint32_t) + // ID
         sizeof('L') + sizeof(uint32_t) + sizeof(uint32_t) * failed_nodes.size() + // L<num fails><failed IDs>
         sizeof('L') + sizeof(uint32_t) + sizeof(uint32_t) * left_nodes.size() + // L<num leaves><left IDs>

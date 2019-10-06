@@ -39,6 +39,11 @@ public:
     unsigned process_leave_msg(char *buf);
     // Processes a join message (J), updates the member table, and returns the number of bytes consumed
     unsigned process_join_msg(char *buf);
+
+    // time between sending heartbeats (in ms)
+    static uint64_t heartbeat_interval_ms;
+    // time interval between received heartbeats in which node is marked as failed (in ms)
+    static uint64_t timeout_interval_ms;
 private:
     int our_id;
     member_list mem_list;

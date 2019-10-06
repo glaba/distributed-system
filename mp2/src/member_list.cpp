@@ -46,7 +46,7 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
         self = new_it;
     }
 
-    log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " + 
+    log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
         std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
 
     return m.id;
@@ -69,7 +69,7 @@ void member_list::remove_member(uint32_t id) {
     // For the new members, reset their last heartbeat time to be now so that they aren't immediately marked failed
     for (member m : new_neighbors) {
         // If we cannot find this neighbor m in the previous list of neighbors, it is new
-        if (std::find_if(initial_neighbors.begin(), initial_neighbors.end(), 
+        if (std::find_if(initial_neighbors.begin(), initial_neighbors.end(),
                 [=](member n) {return n.id == m.id;}) == initial_neighbors.end()) {
 
             update_heartbeat(m.id);
