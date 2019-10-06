@@ -19,6 +19,8 @@ using std::string;
 
 class udp_client_svc {
 public:
+	virtual ~udp_client_svc() {}
+
 	// Sends a UDP packet to the specified destination
 	virtual void send(string host, string port, char *msg, unsigned length);
 private:
@@ -31,6 +33,8 @@ private:
 
 class udp_server_svc {
 public:
+	virtual ~udp_server_svc() {}
+
 	// Starts the server on the given port
 	virtual void start_server(int port);
 	// Stops the server
