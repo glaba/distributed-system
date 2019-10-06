@@ -1,20 +1,31 @@
 #include "heartbeat.h"
 #include "utils.h"
+#include "logging.h"
 
 #include <chrono>
+#include <cstring>
 #include <iostream>
-#include <unistd.h>
 
 using namespace std::chrono;
 
-heartbeater::heartbeater(member_list mem_list_, std::string local_hostname_, uint16_t port_)
-    : mem_list(mem_list_), local_hostname(local_hostname_), port(port_) {
+heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+        std::string local_hostname_, uint16_t port_)
+    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_), 
+      local_hostname(local_hostname_), port(port_) {
     is_introducer = true;
+
+    int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
 }
 
-heartbeater::heartbeater(member_list mem_list_, std::string local_hostname_, std::string introducer_, uint16_t port_)
-    : mem_list(mem_list_), local_hostname(local_hostname_), introducer(introducer_), port(port_) {
+heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+        std::string local_hostname_, std::string introducer_, uint16_t port_)
+    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_), 
+      local_hostname(local_hostname_), introducer(introducer_), port(port_) {
     is_introducer = false;
+    
+    int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
 }
 
 void heartbeater::start() {
@@ -24,31 +35,6 @@ void heartbeater::start() {
     client();
 }
 
-void heartbeater::join_group(std::string introducer) {
-    // Send a message to the introducer saying that we want to join
-    //  of the format J<hostname>\0<join_time>
-    // J, \0 and join_time take 6 bytes, and the hostname is as long as it is
-    char *join_msg = new char[6 + local_hostname.length()];
-    join_msg[0] = 'J';
-    for (unsigned i = 0; i < local_hostname.length(); i++) {
-        join_msg[i + 1] = local_hostname[i];
-    }
-    join_msg[local_hostname.length() + 1] = '\0';
-    *reinterpret_cast<uint32_t*>(join_msg + 2 + local_hostname.length()) =
-        htonl(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
-
-    // Create a UDP connection to the introducer
-    udp_client_info conn = udp_client(introducer, std::to_string(port));
-
-    // Send the message and close the connection
-    sendto(conn.client_socket, join_msg, 6 + local_hostname.length(), 0, &conn.addr, sizeof(conn.addr));
-    close(conn.client_socket);
-}
-
-bool heartbeater::has_joined() {
-    return mem_list.num_members() > 0;
-}
-
 void heartbeater::client() {
     if (!is_introducer) {
         join_group(introducer);
@@ -56,134 +42,149 @@ void heartbeater::client() {
 
     // Remaining client code here
     while (true) {
-        std::cout << "Just a client doing client things" << std::endl;
+        // std::cout << "Just a client doing client things" << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 }
 
-void heartbeater::server() {
-    int server_fd = udp_server(port);
-    struct timeval tv; // i'm currently experiencing with simply setting a timeout on the socket
-    tv.tv_sec = 0;     // typically you would use select or epoll, but our use case seems slightly different
-    tv.tv_usec = 5000; // than the typical select/epoll use case
-    if (setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO,&tv,sizeof(tv)) < 0) {
-            perror("Error");
+// Creates a message that represents the provided set of failed / left / joined nodes
+char *heartbeater::construct_msg(std::vector<uint32_t> failed_nodes, std::vector<uint32_t> left_nodes, std::vector<member> joined_nodes, unsigned *length) {
+    unsigned size = 
+        sizeof(uint32_t) + // ID
+        sizeof('L') + sizeof(uint32_t) + sizeof(uint32_t) * failed_nodes.size() + // L<num fails><failed IDs>
+        sizeof('L') + sizeof(uint32_t) + sizeof(uint32_t) * left_nodes.size() + // L<num leaves><left IDs>
+        sizeof('J') + sizeof(uint32_t); // J<num joins> ... more to come
+    for (member m : joined_nodes) {
+        size += m.hostname.length() + sizeof('\0') + sizeof(uint32_t); // <hostname>\0<ID>
     }
 
-    int msg_size;
+    char *buf_start = new char[size];
+    char *buf = buf_start;
+
+    *reinterpret_cast<uint32_t*>(buf) = our_id; // ID
+    buf += sizeof(uint32_t);
+
+    *buf++ = 'L'; // L
+    *reinterpret_cast<uint32_t*>(buf) = failed_nodes.size(); // <num fails>
+    buf += sizeof(uint32_t);
+    for (uint32_t id : failed_nodes) {
+        *reinterpret_cast<uint32_t*>(buf) = id; // <failed ID>
+        buf += sizeof(uint32_t);
+    }
+
+    *buf++ = 'L'; // L
+    *reinterpret_cast<uint32_t*>(buf) = left_nodes.size(); // <num leaves>
+    buf += sizeof(uint32_t);
+    for (uint32_t id : left_nodes) {
+        *reinterpret_cast<uint32_t*>(buf) = id; // <left ID>
+        buf += sizeof(uint32_t);
+    }
+
+    *buf++ = 'J'; // J
+    *reinterpret_cast<uint32_t*>(buf) = joined_nodes.size(); // <num joins>
+    buf += sizeof(uint32_t);
+    for (member m : joined_nodes) {
+        for (unsigned i = 0; i < m.hostname.length(); i++) {
+            *buf++ = m.hostname[i]; // <hostname>
+        }
+        *buf++ = '\0'; // \0
+        *reinterpret_cast<uint32_t*>(buf) = m.id; // <joined ID>
+        buf += sizeof(uint32_t);
+    }
+
+    *length = size;
+    return buf;
+}
+
+// Initiates an async request to join the group by sending a message to the introducer
+void heartbeater::join_group(std::string introducer) {
+    member us;
+    us.id = our_id;
+    us.hostname = local_hostname;
+
+    unsigned length;
+    char *msg = construct_msg(std::vector<uint32_t>(), std::vector<uint32_t>(), std::vector<member>{us}, &length);
+    udp_client->send(introducer, std::to_string(port), msg, length);
+
+    delete msg;
+}
+
+bool heartbeater::has_joined() {
+    return mem_list.num_members() > 0;
+}
+
+void heartbeater::server() {
+    udp_server->start_server(port);
+
     char buf[1024];
 
-    socklen_t client_len;
-    struct sockaddr_in client_sa;
-
-    // code to listen for messages and handle them accordingly here
+    // Code to listen for messages and handle them accordingly here
     while (true) {
-        // std::cout << "Just a server doing server things" << std::endl;
-        std::cout << "listening for heartbeats" << std::endl;
-        // listen for messages and process, otherwise sleep until the next cycle
-        while ((msg_size = recvfrom(server_fd, buf, 1024, 0, (struct sockaddr *) &client_sa, &client_len)) > 0) {
-            if (buf[0] == 'T') {
-                continue;
-                process_table_msg(buf);
-            }
-            else if (buf[0] == 'J') {
-                continue;
-                process_join_msg(buf);
-            }
-            else if (buf[0] == 'L') {
-                continue;
-                process_leave_msg(buf);
-            }
-            // update last heartbeat
-            memset(buf, 0, 1024);   // most certainly a better way to do this btw
+        // Listen for messages and process each one
+        if (udp_server->recv(buf, 1024) > 0) {
+            std::lock_guard<std::mutex> guard(member_list_mutex);
+
+            uint32_t id = *reinterpret_cast<uint32_t*>(buf);
+            mem_list.update_heartbeat(id);
+
+            char *cur_pos = buf + sizeof(id);
+            cur_pos += process_fail_msg(cur_pos);
+            cur_pos += process_leave_msg(cur_pos);
+            cur_pos += process_join_msg(cur_pos);
+
+            memset(buf, '\0', 1024);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
-    close(server_fd);
+    udp_server->stop_server();
 }
 
-void heartbeater::process_table_msg(std::string msg) {
-    // table message is of the form "T<hostname>\0<id>\0<hostname>\0<id>..."
-    // each member has a hostname and an id
-    std::cout << "processing table message : " + msg << std::endl;
-    // method of processing inspired by https://stackoverflow.com/questions/14265581/parse-split-a-string-in-c-using-string-delimiter-standard-c
-    unsigned int start = 1;
-    unsigned int end = msg.find("\0");
-    while (end != std::string::npos) {
-        // get the hostname
-        std::string hostname = msg.substr(start, end - start);
-        std::cout << "hostname is : " + hostname << std::endl;
+// Processes a fail message (L), updates the member table, and returns the number of bytes consumed
+unsigned heartbeater::process_fail_msg(char *buf) {
+    return 2;
+}
 
-        // get the id
-        start = end + 1;
-        end = msg.find("\0", start);
-        int id = std::stoi(msg.substr(start, end - start));
-        std::cout << "id is : " + id << std::endl;
+// Processes a leave message (L), updates the member table, and returns the number of bytes consumed
+unsigned heartbeater::process_leave_msg(char *buf) {
+    int i = 0;
 
-        // add to the member list
+    // Increment past the 'L'
+    i++;
+
+    uint8_t num_leaves = buf[i];
+    i += sizeof(num_leaves);
+
+    for (uint32_t j = 0; j < num_leaves; j++) {
+        mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
+        i += sizeof(uint32_t);
+    }
+
+    return i;
+}
+
+// Processes a join message (J), updates the member table, and returns the number of bytes consumed
+unsigned heartbeater::process_join_msg(char *buf) {
+    int i = 0;
+
+    // Increment past the 'J'
+    i++;
+
+    uint8_t num_joins = buf[i];
+    i += sizeof(num_joins);
+
+    for (uint32_t j = 0; j < num_joins; j++) {
+        std::string hostname = "";
+
+        for (; buf[i] != '\0'; i++) {
+            hostname += buf[i];
+        }
+        i++; // Increment past the \0
+
+        uint32_t id = *reinterpret_cast<uint32_t*>(buf + i);
+        i += sizeof(num_joins);
+
         mem_list.add_member(hostname, id);
-
-        // iterate to next hostname & id
-        start = end + 1;
-        end = msg.find("\0", start);
     }
-    std::cout << "finised processing table message" << std::endl;
-}
 
-void heartbeater::process_join_msg(std::string msg) {
-    // join meessage is of the form "J<hostname>\0<join_time>"
-    std::cout << "processing join message : " + msg << std::endl;
-    unsigned int start = 1;
-    unsigned int end = msg.find("\0");
-    std::string hostname = msg.substr(start, end - start);
-    std::cout << "hostname is : " + hostname << std::endl;
-
-    // get the id
-    start = end + 1;
-    end = msg.length();
-    int join_time = std::stoi(msg.substr(start, end - start));
-    std::cout << "join_time is : " + join_time << std::endl;
-    std::cout << "finised processing join message" << std::endl;
-}
-
-void heartbeater::process_leave_msg(std::string msg) {
-    // leave message is of the form "L<hostname>\0"
-    std::cout << "processing leave message : " + msg << std::endl;
-    unsigned int start = 1;
-    unsigned int end = msg.find("\0");
-    std::string hostname = msg.substr(start, end - start);
-    mem_list.remove_member_by_hostname(hostname);
-    std::cout << "finised processing leave message" << std::endl;
-}
-
-/*
-typedef struct member {
-    uint32_t id;
-    std::string hostname;
-    uint64_t last_heartbeat;
-    bool operator==(const member &m);
-} member;
-*/
-// TODO: are we okay with just adding these in using hostname and ID?
-// if not, we need to modify member to also include a join time and
-// the TODO refers to changing this implementation to use join_time instead
-std::string heartbeater::construct_table_msg() {
-    // table message is of the form "T<hostname>\0<id>\0<hostname>\0<id>..."
-    std::string result = "T";
-    std::list<member> members = mem_list.__get_internal_list();
-    for (auto mem : members) {
-        result += (mem.hostname + "\0" + std::to_string(mem.id) + "\0");
-    }
-    return result;
-}
-
-std::string heartbeater::construct_leave_msg(std::string hostname) {
-    std::string result = "L" + hostname + "\0";
-    return result;
-}
-
-std::string heartbeater::construct_fail_msg(std::string hostname) {
-    std::string result = "F" + hostname + "\0";
-    return result;
+    return i;
 }

@@ -6,6 +6,11 @@
 #include <mutex>
 #include <list>
 
+#include <chrono>
+#include <ctime>
+
+using namespace std::chrono;
+
 typedef struct member {
     uint32_t id;
     std::string hostname;
@@ -13,7 +18,7 @@ typedef struct member {
     bool operator==(const member &m);
 } member;
 
-// A threadsafe linked list of members sorted by ID
+// A linked list of members sorted by ID
 class member_list {
 public:
     // Initialize the member list with the local hostname
@@ -25,16 +30,14 @@ public:
         list = m.list;
     }
 
-    // Adds ourselves as the first introducer and returns our ID
+    // Adds ourselves as the first introducer and returns the ID
     uint32_t add_self_as_introducer(std::string hostname, int join_time);
-    // Adds a member to the membership list and returns their ID
-    uint32_t add_member(std::string hostname, int join_time);
-    // Adds a member to the membership list using hostname and ID
+    // Adds a member to the membership list using hostname and ID and returns the ID
     uint32_t add_member(std::string hostname, uint32_t id);
     // Removes a member from the membership list
     void remove_member(uint32_t id);
-    // Removes a member from the membership list by hostname
-    void remove_member_by_hostname(std::string hostname);
+    // Updates the heartbeat for a member to the current time
+    void update_heartbeat(uint32_t id);
     // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
     std::vector<member> get_neighbors();
     // Get the number of members total
@@ -45,5 +48,4 @@ private:
     std::string local_hostname = "";
     std::list<member> list;
     std::list<member>::iterator self;
-    std::mutex member_list_mutex;
 };

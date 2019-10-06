@@ -1,8 +1,24 @@
 #include "utils.h"
+#include "logging.h"
+
+#include <unistd.h>
 
 extern int errno;
 
-udp_client_info udp_client(string host, string port) {
+// Sends a UDP packet to the specified destination
+void udp_client_svc::send(string host, string port, char *msg, unsigned length) {
+    udp_client_info conn = udp_client(host, port);
+
+    // Send the message and close the connection
+    sendto(conn.client_socket, msg, length, 0, &conn.addr, sizeof(conn.addr));
+    close(conn.client_socket);
+}
+
+/*
+ * Creates a UDP connection to a given host and port.
+ * Returns a socket fd to the host, otherwise crashes on failure.
+ */
+udp_client_info udp_client_svc::udp_client(string host, string port) {
     int client_socket;
     udp_client_info ret;
 
@@ -34,7 +50,30 @@ udp_client_info udp_client(string host, string port) {
     return ret;
 }
 
-int udp_server(int port) {
+// Starts the server on the given port
+void udp_server_svc::start_server(int port) {
+    server_fd = udp_server(port);
+}
+
+// Stops the server
+void udp_server_svc::stop_server() {
+    close(server_fd);
+}
+
+// Wrapper function around recvfrom that handles errors
+int udp_server_svc::recv(char *buf, unsigned length) {
+    struct sockaddr_in client_sa;
+    socklen_t client_len = sizeof(client_sa);
+
+    int msg_size = recvfrom(server_fd, buf, length, 0, (struct sockaddr*)&client_sa, &client_len);
+    if (msg_size < 0) {
+        log_v("Unexpected error in receiving UDP packet, errno " + errno);
+    }
+
+    return msg_size;
+}
+
+int udp_server_svc::udp_server(int port) {
     int server_fd;
     struct sockaddr_in server_sa;
 

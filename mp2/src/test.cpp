@@ -15,9 +15,9 @@ int test_member_list() {
     {
         member_list ml("local");
         std::vector<int> ids;
-        ids.push_back(ml.add_member("1", 10));
-        ids.push_back(ml.add_member("2", 10));
-        ids.push_back(ml.add_member("local", 10));
+        ids.push_back(ml.add_member("1", std::hash<std::string>()("1")));
+        ids.push_back(ml.add_member("2", std::hash<std::string>()("2")));
+        ids.push_back(ml.add_member("local", std::hash<std::string>()("local")));
 
         // Check that all the generated IDs are unique
         assert(std::unique(ids.begin(), ids.end()) == ids.end());
@@ -35,9 +35,9 @@ int test_member_list() {
         member_list ml("local");
         std::vector<int> ids;
         for (int i = 0; i < 10; i++) {
-            ids.push_back(ml.add_member(std::to_string(i), 10));
+            ids.push_back(ml.add_member(std::to_string(i), std::hash<int>()(i)));
         }
-        ids.push_back(ml.add_member("local", 10));
+        ids.push_back(ml.add_member("local", std::hash<std::string>()("local")));
 
         // Check that all the generated IDs are unique
         assert(std::unique(ids.begin(), ids.end()) == ids.end());
@@ -65,9 +65,9 @@ int test_member_list() {
         member_list ml("9");
         std::vector<int> ids;
         for (int i = 0; i < 9; i++) {
-            ids.push_back(ml.add_member(std::to_string(i), 10));
+            ids.push_back(ml.add_member(std::to_string(i), std::hash<int>()(i)));
         }
-        ids.push_back(ml.add_member("9", 10));
+        ids.push_back(ml.add_member("9", std::hash<int>()(9)));
         // ml: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
 
         for (int i = 0; i < 10; i += 2) {

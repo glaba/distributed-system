@@ -1,18 +1,7 @@
 #include "member_list.h"
 #include "logging.h"
 
-#include <chrono>
-#include <ctime>
-
-using namespace std::chrono;
-
-member create_member(std::string hostname, int join_time) {
-    member cur;
-    cur.id = std::hash<std::string>()(hostname) ^ std::hash<int>()(join_time);
-    cur.hostname = hostname;
-    cur.last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    return cur;
-}
+#include <algorithm>
 
 member create_member(std::string hostname, uint32_t id) {
     member cur;
@@ -24,19 +13,25 @@ member create_member(std::string hostname, uint32_t id) {
 
 // Adds ourselves as the first introducer and returns our ID
 uint32_t member_list::add_self_as_introducer(std::string hostname, int join_time) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
-
-    member m = create_member(hostname, join_time);
+    member m = create_member(hostname, std::hash<std::string>()(hostname) ^ std::hash<int>()(join_time));
     list.insert(list.end(), m);
     log("Added self to membership list as introducer at local time " + std::to_string(join_time));
     return m.id;
 }
 
-// Adds a member to the membership list and returns their ID
-uint32_t member_list::add_member(std::string hostname, int join_time) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+// Adds a member to the membership list using hostname and ID
+uint32_t member_list::add_member(std::string hostname, uint32_t id) {
+    log_v("Received message to add member at " + hostname + " with id " + std::to_string(id));
 
-    member m = create_member(hostname, join_time);
+    member m = create_member(hostname, id);
+
+    // First check if the member already exists
+    for (auto i = list.begin(); i != list.end(); i++) {
+        if (m.id == i->id) {
+            return m.id;
+        }
+    }
+
     auto it = list.begin();
     for (; it != list.end(); it++) {
         if (m.id < it->id) {
@@ -51,35 +46,16 @@ uint32_t member_list::add_member(std::string hostname, int join_time) {
         self = new_it;
     }
 
-    log("Added member at " + hostname + " with remote join time " + std::to_string(join_time) + " to membership list");
-    return m.id;
-}
+    log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " + 
+        std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
 
-// Adds a member to the membership list using hostname and ID
-uint32_t member_list::add_member(std::string hostname, uint32_t id) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
-
-    member m = create_member(hostname, id);
-    auto it = list.begin();
-    for (; it != list.end(); it++) {
-        if (m.id < it->id) {
-            break;
-        }
-    }
-
-    // auto new_it = list.insert(it, m);
-    list.insert(it, m);
-
-    // TODO: how should we log this? this exists because we don't know the join time of a member in a member_list - this information is not store
-    // therefore I am adding members to other node's list by giving the node the hostname and ID of the member
-    // log("Added member at " + hostname + " with id " + id + "at local time " + duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()  + " to membership list");
     return m.id;
 }
 
 
 // Removes a member from the membership list
 void member_list::remove_member(uint32_t id) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::vector<member> initial_neighbors = get_neighbors();
 
     for (auto it = list.begin(); it != list.end(); it++) {
         if (it->id == id) {
@@ -87,15 +63,26 @@ void member_list::remove_member(uint32_t id) {
             break;
         }
     }
+
+    std::vector<member> new_neighbors = get_neighbors();
+
+    // For the new members, reset their last heartbeat time to be now so that they aren't immediately marked failed
+    for (member m : new_neighbors) {
+        // If we cannot find this neighbor m in the previous list of neighbors, it is new
+        if (std::find_if(initial_neighbors.begin(), initial_neighbors.end(), 
+                [=](member n) {return n.id == m.id;}) == initial_neighbors.end()) {
+
+            update_heartbeat(m.id);
+        }
+    }
 }
 
-void member_list::remove_member_by_hostname(std::string hostname) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
-
+// Updates the heartbeat for a member to the current time
+void member_list::update_heartbeat(uint32_t id) {
     for (auto it = list.begin(); it != list.end(); it++) {
-        if (it->hostname == hostname) {
-            list.erase(it);
-            break;
+        if (it->id == id) {
+            log_v("Detected heartbeat from node at " + it->hostname + " with id " + std::to_string(id));
+            it->last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         }
     }
 }

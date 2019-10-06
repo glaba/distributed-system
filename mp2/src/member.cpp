@@ -7,29 +7,33 @@
 
 bool testing = false;
 
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing);
+int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing, bool *verbose);
 
 int main(int argc, char **argv) {
     std::string introducer = "";
     std::string local_hostname = "";
     uint16_t port = DEFAULT_PORT;
     bool testing = false;
+    bool verbose = false;
 
-    init_logging(DEFAULT_LOGFILE);
-
-    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing)) {
+    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing, &verbose)) {
         return 1;
     }
+
+    init_logging(DEFAULT_LOGFILE, verbose);
 
     if (testing) {
         return run_tests();
     }
 
+    udp_client_svc *udp_client = new udp_client_svc();
+    udp_server_svc *udp_server = new udp_server_svc();
+
     heartbeater *hb;
     if (introducer == "self") {
-        hb = new heartbeater(member_list(local_hostname), local_hostname, port);
+        hb = new heartbeater(member_list(local_hostname), udp_client, udp_server, local_hostname, port);
     } else {
-        hb = new heartbeater(member_list(local_hostname), local_hostname, introducer, port);
+        hb = new heartbeater(member_list(local_hostname), udp_client, udp_server, local_hostname, introducer, port);
     }
 
     hb->start();
@@ -44,6 +48,7 @@ void print_help() {
     std::cout << " -h\tThe hostname of this machine that other members can use" << std::endl;
     std::cout << " -i\tIntroducer hostname or self if this is the introducer" << std::endl;
     std::cout << " -p\tThe port to use" << std::endl;
+    std::cout << " -v\tEnable verbose logging" << std::endl;
 }
 
 int print_invalid() {
@@ -52,7 +57,7 @@ int print_invalid() {
     return 1;
 }
 
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing) {
+int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing, bool *verbose) {
     if (argc == 1)
         return print_invalid();
 
@@ -86,6 +91,9 @@ int process_params(int argc, char **argv, std::string *introducer, std::string *
                 *local_hostname = argv[i + 1];
             }
             i++;
+        // Whether or not to use verbose logging
+        } else if (std::string(argv[i]) == "-v") {
+            *verbose = true;
         } else return print_invalid();
     }
 
