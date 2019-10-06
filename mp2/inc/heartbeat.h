@@ -53,6 +53,5 @@ private:
     std::string introducer;
     bool is_introducer;
     uint16_t port;
-    // TODO: make sure this mutex is properly used between all threads
     std::mutex member_list_mutex;
 };

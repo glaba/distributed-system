@@ -45,11 +45,13 @@ void heartbeater::client() {
 
     // Remaining client code here
     while (true) {
-        // get list of neighbors
+        std::lock_guard<std::mutex> guard(member_list_mutex);
+        
+        // Get list of neighbors
         uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         std::vector<member> neighbors = mem_list.get_neighbors();
 
-        // construct list of failed nodes
+        // Construct list of failed nodes
         std::vector<uint32_t> failed_nodes;
         for (auto mem : neighbors) {
             if (current_time - mem.last_heartbeat > timeout_interval_ms) {
@@ -70,6 +72,8 @@ void heartbeater::client() {
         for (auto mem : neighbors) {
             udp_client->send(mem.hostname, std::to_string(port), msg, length);
         }
+
+        delete msg;
 
         // sleep for heartbeat_interval milliseconds
         std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_ms));
