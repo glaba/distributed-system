@@ -102,7 +102,7 @@ int process_params(int argc, char **argv, std::string *introducer, std::string *
         // The hostname
         } else if (std::string(argv[i]) == "-h") {
             if (i + 1 < argc) {
-                *local_hostname = argv[i + 1];
+                *local_hostname = std::string(argv[i + 1]);
             }
             i++;
         // Whether or not to use verbose logging
