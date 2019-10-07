@@ -77,7 +77,7 @@ void heartbeater::client() {
             while (k != std::end(failed_nodes_counts)) {
                 auto id_cnt_tup = *k;
                 failed_nodes.push_back(std::get<0>(id_cnt_tup));
-                std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+                std::get<1>(*k) = std::get<1>(id_cnt_tup) - 1;
 
                 if (std::get<1>(id_cnt_tup) <= 0) {
                     k = failed_nodes_counts.erase(k);
@@ -92,7 +92,7 @@ void heartbeater::client() {
             while (i != std::end(left_nodes_counts)) {
                 auto id_cnt_tup = *i;
                 left_nodes.push_back(std::get<0>(id_cnt_tup));
-                std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+                std::get<1>(*i) = std::get<1>(id_cnt_tup) - 1;
 
                 if (std::get<1>(id_cnt_tup) <= 0) {
                     i = left_nodes_counts.erase(i);
