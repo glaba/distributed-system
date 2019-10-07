@@ -150,7 +150,7 @@ std::list<member> member_list::__get_internal_list() {
 
 // Prints the membership list
 void member_list::print() {
-    std::cout << "Hostname\tID\t\tLast heartbeat" << std::endl;
+    std::cout << "Hostname\t\tID\t\tLast heartbeat" << std::endl;
     for (auto it = list.begin(); it != list.end(); it++) {
         member &m = *it;
         std::cout << m.hostname << "\t" << +m.id << "\t" << m.last_heartbeat << std::endl;
