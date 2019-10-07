@@ -50,76 +50,97 @@ void heartbeater::client() {
 
     // Remaining client code here
     while (true) {
-        std::lock_guard<std::mutex> guard(member_list_mutex);
+        {
+            std::lock_guard<std::mutex> guard(member_list_mutex);
 
-        // Get list of neighbors
-        uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-        std::vector<member> neighbors = mem_list.get_neighbors();
+            // Get list of neighbors
+            uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+            std::vector<member> neighbors = mem_list.get_neighbors();
 
-        // comb neighbors list to see if any nodes failed
-        for (auto mem : neighbors) {
-            if (current_time - mem.last_heartbeat > timeout_interval_ms) {
-                failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
-                // failed_nodes.push_back(mem.id);
+            // comb neighbors list to see if any nodes failed
+            for (auto mem : neighbors) {
+                if (current_time - mem.last_heartbeat > timeout_interval_ms) {
+                    failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
+                    // failed_nodes.push_back(mem.id);
+                }
+            }
+
+            // the following vector constructions iterate over the respective "message queues"
+            // and append messages details to the vector (e.g. ids) - they then decrement the amount
+            // of messages that still need to be sent, and will erase entries in the queue that are finished
+
+            std::vector<uint32_t> failed_nodes;
+            // @TODO: THIS SHOULD BE THREAD SAFE
+            auto k = std::begin(failed_nodes_counts);
+            while (k != std::end(failed_nodes_counts)) {
+                auto id_cnt_tup = *k;
+                failed_nodes.push_back(std::get<0>(id_cnt_tup));
+                std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+
+                if (std::get<1>(id_cnt_tup) <= 0) {
+                    k = failed_nodes_counts.erase(k);
+                } else {
+                    ++k;
+                }
+            }
+
+            std::vector<uint32_t> left_nodes;
+            // @TODO: THIS SHOULD BE THREAD SAFE
+            auto i = std::begin(left_nodes_counts);
+            while (i != std::end(left_nodes_counts)) {
+                auto id_cnt_tup = *i;
+                left_nodes.push_back(std::get<0>(id_cnt_tup));
+                std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+
+                if (std::get<1>(id_cnt_tup) <= 0) {
+                    i = left_nodes_counts.erase(i);
+                } else {
+                    ++i;
+                }
+            }
+
+            std::vector<member> joined_nodes;
+            // @TODO: THIS SHOULD BE THREAD SAFE
+            auto j = std::begin(joined_nodes_counts);
+            while (j != std::end(joined_nodes_counts)) {
+                auto mem_cnt_tup = *j;
+                joined_nodes.push_back(std::get<0>(mem_cnt_tup));
+                std::get<1>(mem_cnt_tup) = std::get<1>(mem_cnt_tup) - 1;
+
+                if (std::get<1>(mem_cnt_tup) <= 0) {
+                    j = joined_nodes_counts.erase(j);
+                } else {
+                    ++j;
+                }
+            }
+
+            unsigned length;
+            char *msg = construct_msg(failed_nodes, left_nodes, joined_nodes, &length);
+            for (auto mem : neighbors) {
+                udp_client->send(mem.hostname, std::to_string(port), msg, length);
+            }
+
+            delete msg;
+
+            if (is_introducer) {
+                auto it = new_node_introduction_counts.begin();
+                while (it != new_node_introduction_counts.end()) {
+                    auto intro = *it;
+
+                    udp_client->send(mem_list.get_member_by_id(std::get<2>(intro)).hostname,
+                    std::to_string(port), std::get<0>(intro), std::get<1>(intro));
+
+                    // Remove the item from the vector if the TTL has expired
+                    std::get<3>(intro) = std::get<3>(intro) - 1;
+                    if (std::get<3>(intro) == 0) {
+                        delete std::get<0>(intro); // Free the memory for the message
+                        it = new_node_introduction_counts.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
             }
         }
-
-        // the following vector constructions iterate over the respective "message queues"
-        // and append messages details to the vector (e.g. ids) - they then decrement the amount
-        // of messages that still need to be sent, and will erase entries in the queue that are finished
-
-        std::vector<uint32_t> failed_nodes;
-        // @TODO: THIS SHOULD BE THREAD SAFE
-        auto k = std::begin(failed_nodes_counts);
-        while (k != std::end(failed_nodes_counts)) {
-            auto id_cnt_tup = *k;
-            failed_nodes.push_back(std::get<0>(id_cnt_tup));
-            std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
-
-            if (std::get<1>(id_cnt_tup) <= 0) {
-                k = failed_nodes_counts.erase(k);
-            } else {
-                ++k;
-            }
-        }
-
-        std::vector<uint32_t> left_nodes;
-        // @TODO: THIS SHOULD BE THREAD SAFE
-        auto i = std::begin(left_nodes_counts);
-        while (i != std::end(left_nodes_counts)) {
-            auto id_cnt_tup = *i;
-            left_nodes.push_back(std::get<0>(id_cnt_tup));
-            std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
-
-            if (std::get<1>(id_cnt_tup) <= 0) {
-                i = left_nodes_counts.erase(i);
-            } else {
-                ++i;
-            }
-        }
-
-        std::vector<member> joined_nodes;
-        // @TODO: THIS SHOULD BE THREAD SAFE
-        auto j = std::begin(joined_nodes_counts);
-        while (j != std::end(joined_nodes_counts)) {
-            auto mem_cnt_tup = *j;
-            joined_nodes.push_back(std::get<0>(mem_cnt_tup));
-            std::get<1>(mem_cnt_tup) = std::get<1>(mem_cnt_tup) - 1;
-
-            if (std::get<1>(mem_cnt_tup) <= 0) {
-                j = joined_nodes_counts.erase(j);
-            } else {
-                ++j;
-            }
-        }
-
-        unsigned length;
-        char *msg = construct_msg(failed_nodes, left_nodes, joined_nodes, &length);
-        for (auto mem : neighbors) {
-            udp_client->send(mem.hostname, std::to_string(port), msg, length);
-        }
-
-        delete msg;
 
         // sleep for heartbeat_interval milliseconds
         std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_ms));
@@ -249,8 +270,13 @@ unsigned heartbeater::process_leave_msg(char *buf) {
     i += sizeof(num_leaves);
 
     for (uint32_t j = 0; j < num_leaves; j++) {
+        uint32_t id = *reinterpret_cast<uint32_t*>(buf + i);
+
+        // Only propagate the message if the member has not yet been removed
+        if (mem_list.get_member_by_id(id).id == id)
+            add_leave_msg_to_list(id);
+
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
-        add_leave_msg_to_list(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
     }
 
@@ -278,8 +304,20 @@ unsigned heartbeater::process_join_msg(char *buf) {
         uint32_t id = *reinterpret_cast<uint32_t*>(buf + i);
         i += sizeof(num_joins);
 
-        mem_list.add_member(hostname, id);
-        add_join_msg_to_list(id);
+        // Only propagate the message if the member has not yet joined
+        if (mem_list.get_member_by_id(id).id == 0) {
+            mem_list.add_member(hostname, id);
+            
+            add_join_msg_to_list(id);
+
+            if (is_introducer) {
+                // Send entire membership list to this node if we are the introducer
+                unsigned length;
+                char *msg = construct_msg(std::vector<uint32_t>(), std::vector<uint32_t>(), mem_list.get_members(), &length);
+                new_node_introduction_counts.push_back(std::make_tuple(msg, length, id, message_redundancy));
+            }
+        }
+
     }
 
     return i;

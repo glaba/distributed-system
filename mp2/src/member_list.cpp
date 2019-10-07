@@ -120,6 +120,8 @@ member member_list::get_member_by_id(uint32_t id) {
             return *it;
         }
     }
+
+    return member();
 }
 
 // Get the number of members total
@@ -130,7 +132,7 @@ uint32_t member_list::num_members() {
 // Gets a list of all the members (to be used by introducer)
 std::vector<member> member_list::get_members() {
     std::vector<member> members;
-    for (auto it = list.begin(); it != list.end(); i++) {
+    for (auto it = list.begin(); it != list.end(); it++) {
         members.push_back(*it);
     }
     return members;

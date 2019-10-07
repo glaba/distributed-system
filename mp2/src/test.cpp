@@ -185,10 +185,11 @@ int test_mock_udp(logger *lg) {
 }
 
 int test_joining(logger *lg) {
-    std::cout << "=== TESTING JOINING ===" << std::endl;
-    {
-        mock_udp_factory *fac = new mock_udp_factory();
-    }
+    // std::cout << "=== TESTING JOINING ===" << std::endl;
+    // {
+    //     mock_udp_factory *fac = new mock_udp_factory();
+    // }
+    return 0;
 }
 
 int run_tests(logger *lg) {
