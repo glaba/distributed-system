@@ -102,7 +102,6 @@ void heartbeater::client() {
             auto j = std::begin(joined_nodes_counts);
             while (j != std::end(joined_nodes_counts)) {
                 auto mem_cnt_tup = *j;
-                // lg->log("id of joining node is : " + std::to_string(std::get<0>(mem_cnt_tup).id) + " count of msg is : " + std::to_string(std::get<1>(mem_cnt_tup)));
                 joined_nodes.push_back(std::get<0>(mem_cnt_tup));
                 std::get<1>(*j) = std::get<1>(mem_cnt_tup) - 1;
 
@@ -341,6 +340,5 @@ void heartbeater::add_leave_msg_to_list(uint32_t id) {
 
 void heartbeater::add_join_msg_to_list(uint32_t id) {
     // iterate through the queue of join msgs
-    // lg->log("adding the following id to join msg " + std::to_string(id));
     joined_nodes_counts.push_back(std::make_tuple(mem_list.get_member_by_id(id), message_redundancy));
 }
