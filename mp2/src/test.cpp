@@ -200,7 +200,7 @@ int test_joining(logger *lg) {
 
         // h1 is the introducer
         heartbeater *hb1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
-        heartbeater *hb2 = new heartbeater(member_list("h2", lg2), lg2, h2_client, h2_server, "h2", "h1", 1234);
+        heartbeater *hb2 = new heartbeater(member_list("h2", lg2), lg2, h2_client, h2_server, "h2", false, "h1", 1234);
 
         std::thread hb1_thread([=] {
             hb1->start();

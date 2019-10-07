@@ -21,6 +21,7 @@ heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
 
     mem_list.add_member(local_hostname, our_id);
+    joined_ids.insert(our_id);
 }
 
 heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
@@ -311,8 +312,10 @@ unsigned heartbeater::process_join_msg(char *buf) {
         i += sizeof(num_joins);
 
         // Only propagate the message if the member has not yet joined
-        if (mem_list.get_member_by_id(id).id == 0) {
+        // and if we have never seen the member before (to prevent leave/join cycles)
+        if (mem_list.get_member_by_id(id).id == 0 && (joined_ids.find(id) == joined_ids.end())) {
             mem_list.add_member(hostname, id);
+            joined_ids.insert(id);
 
             add_join_msg_to_list(id);
 

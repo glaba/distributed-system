@@ -8,6 +8,7 @@
 #include <thread>
 #include <mutex>
 #include <tuple>
+#include <set>
 
 class heartbeater {
 public:
@@ -67,4 +68,5 @@ private:
     std::vector<std::tuple<char*, unsigned, uint32_t, int>> new_node_introduction_counts;
     uint16_t port;
     std::mutex member_list_mutex;
+    std::set<uint32_t> joined_ids; // Set containing all IDs that have joined before
 };
