@@ -16,12 +16,12 @@ heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp
         std::string local_hostname_, uint16_t port_)
     : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), port(port_) {
-    
+
     is_introducer = true;
-    
+
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
-    
+
     mem_list.add_member(local_hostname, our_id);
 }
 
@@ -29,7 +29,7 @@ heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp
         std::string local_hostname_, std::string introducer_, uint16_t port_)
     : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), introducer(introducer_), port(port_) {
-    
+
     is_introducer = false;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -64,7 +64,6 @@ void heartbeater::client() {
                 if (current_time - mem.last_heartbeat > timeout_interval_ms) {
                     mem_list.remove_member(mem.id);
                     failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
-                    // failed_nodes.push_back(mem.id);
                 }
             }
 
@@ -108,7 +107,7 @@ void heartbeater::client() {
             while (j != std::end(joined_nodes_counts)) {
                 auto mem_cnt_tup = *j;
                 joined_nodes.push_back(std::get<0>(mem_cnt_tup));
-                std::get<1>(mem_cnt_tup) = std::get<1>(mem_cnt_tup) - 1;
+                std::get<1>(*j) = std::get<1>(mem_cnt_tup) - 1;
 
                 if (std::get<1>(mem_cnt_tup) <= 0) {
                     j = joined_nodes_counts.erase(j);
@@ -313,7 +312,7 @@ unsigned heartbeater::process_join_msg(char *buf) {
         // Only propagate the message if the member has not yet joined
         if (mem_list.get_member_by_id(id).id == 0) {
             mem_list.add_member(hostname, id);
-            
+
             add_join_msg_to_list(id);
 
             if (is_introducer) {
@@ -341,5 +340,6 @@ void heartbeater::add_leave_msg_to_list(uint32_t id) {
 
 void heartbeater::add_join_msg_to_list(uint32_t id) {
     // iterate through the queue of join msgs
+    lg->log("adding the following id to join msg " + std::to_string(id));
     joined_nodes_counts.push_back(std::make_tuple(mem_list.get_member_by_id(id), message_redundancy));
 }
