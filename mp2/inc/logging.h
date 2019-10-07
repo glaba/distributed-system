@@ -1,11 +1,16 @@
 #pragma once
 
 #include <string>
+#include <cstdio>
+#include <fstream>
 
 class logger {
 public:
 	logger(std::string log_file_path_, std::string prefix_, bool verbose_)
-		: use_stdout(false), log_file_path(log_file_path_), prefix(prefix_), verbose(verbose_) {}
+		: use_stdout(false), log_file_path(log_file_path_), prefix(prefix_), verbose(verbose_) {
+
+		log_stream = std::ofstream(log_file_path);
+	}
 
 	logger(std::string prefix_, bool verbose_)
 		: use_stdout(true), prefix(prefix_), verbose(verbose_) {}
@@ -19,4 +24,6 @@ private:
 	std::string log_file_path;
 	std::string prefix;
 	bool verbose;
+
+	std::ofstream log_stream;
 };
