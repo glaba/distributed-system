@@ -59,7 +59,7 @@ void heartbeater::client() {
             for (auto mem : neighbors) {
                 if (current_time - mem.last_heartbeat > timeout_interval_ms) {
                     mem_list.remove_member(mem.id);
-                    failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
+                    add_fail_msg_to_list(mem.id);
                 }
             }
 
@@ -102,6 +102,7 @@ void heartbeater::client() {
             auto j = std::begin(joined_nodes_counts);
             while (j != std::end(joined_nodes_counts)) {
                 auto mem_cnt_tup = *j;
+                // lg->log("id of joining node is : " + std::to_string(std::get<0>(mem_cnt_tup).id) + " count of msg is : " + std::to_string(std::get<1>(mem_cnt_tup)));
                 joined_nodes.push_back(std::get<0>(mem_cnt_tup));
                 std::get<1>(*j) = std::get<1>(mem_cnt_tup) - 1;
 
@@ -243,7 +244,6 @@ void heartbeater::server() {
 
 // Processes a fail message (L), updates the member table, and returns the number of bytes consumed
 unsigned heartbeater::process_fail_msg(char *buf) {
-    // @TODO: fail message processing
     int i = 0;
 
     // Increment past the 'L'
@@ -253,8 +253,13 @@ unsigned heartbeater::process_fail_msg(char *buf) {
     i += sizeof(num_fails);
 
     for (uint32_t j = 0; j < num_fails; j++) {
+        uint32_t id = *reinterpret_cast<uint32_t*>(buf + i);
+
+        // Only propagate the message if the member has not yet been removed
+        if (mem_list.get_member_by_id(id).id == id)
+            add_fail_msg_to_list(id);
+
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
-        add_fail_msg_to_list(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
     }
 
@@ -336,6 +341,6 @@ void heartbeater::add_leave_msg_to_list(uint32_t id) {
 
 void heartbeater::add_join_msg_to_list(uint32_t id) {
     // iterate through the queue of join msgs
-    lg->log("adding the following id to join msg " + std::to_string(id));
+    // lg->log("adding the following id to join msg " + std::to_string(id));
     joined_nodes_counts.push_back(std::make_tuple(mem_list.get_member_by_id(id), message_redundancy));
 }
