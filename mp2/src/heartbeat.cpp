@@ -8,6 +8,7 @@
 
 using namespace std::chrono;
 
+int heartbeater::message_redundancy = 4;
 uint64_t heartbeater::heartbeat_interval_ms = 250;
 uint64_t heartbeater::timeout_interval_ms = 1000;
 
@@ -55,21 +56,62 @@ void heartbeater::client() {
         uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         std::vector<member> neighbors = mem_list.get_neighbors();
 
-        // Construct list of failed nodes
-        std::vector<uint32_t> failed_nodes;
+        // comb neighbors list to see if any nodes failed
         for (auto mem : neighbors) {
             if (current_time - mem.last_heartbeat > timeout_interval_ms) {
-                failed_nodes.push_back(mem.id);
+                failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
+                // failed_nodes.push_back(mem.id);
             }
         }
 
-        // construct list of left nodes
-        // tbh, leaving these as empty is fine i think because we're sending these out at other times
-        std::vector<uint32_t> left_nodes;
+        // the following vector constructions iterate over the respective "message queues"
+        // and append messages details to the vector (e.g. ids) - they then decrement the amount
+        // of messages that still need to be sent, and will erase entries in the queue that are finished
 
-        // construct list of joined_node
-        // tbh, leaving these as empty is fine i think because we're sending these out at other times
+        std::vector<uint32_t> failed_nodes;
+        // @TODO: THIS SHOULD BE THREAD SAFE
+        auto k = std::begin(failed_nodes_counts);
+        while (k != std::end(failed_nodes_counts)) {
+            auto id_cnt_tup = *k;
+            failed_nodes.push_back(std::get<0>(id_cnt_tup));
+            std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+
+            if (std::get<1>(id_cnt_tup) <= 0) {
+                k = failed_nodes_counts.erase(k);
+            } else {
+                ++k;
+            }
+        }
+
+        std::vector<uint32_t> left_nodes;
+        // @TODO: THIS SHOULD BE THREAD SAFE
+        auto i = std::begin(left_nodes_counts);
+        while (i != std::end(left_nodes_counts)) {
+            auto id_cnt_tup = *i;
+            left_nodes.push_back(std::get<0>(id_cnt_tup));
+            std::get<1>(id_cnt_tup) = std::get<1>(id_cnt_tup) - 1;
+
+            if (std::get<1>(id_cnt_tup) <= 0) {
+                i = left_nodes_counts.erase(i);
+            } else {
+                ++i;
+            }
+        }
+
         std::vector<member> joined_nodes;
+        // @TODO: THIS SHOULD BE THREAD SAFE
+        auto j = std::begin(joined_nodes_counts);
+        while (j != std::end(joined_nodes_counts)) {
+            auto mem_cnt_tup = *j;
+            joined_nodes.push_back(std::get<0>(mem_cnt_tup));
+            std::get<1>(mem_cnt_tup) = std::get<1>(mem_cnt_tup) - 1;
+
+            if (std::get<1>(mem_cnt_tup) <= 0) {
+                j = joined_nodes_counts.erase(j);
+            } else {
+                ++j;
+            }
+        }
 
         unsigned length;
         char *msg = construct_msg(failed_nodes, left_nodes, joined_nodes, &length);
@@ -178,6 +220,8 @@ void heartbeater::server() {
 
 // Processes a fail message (L), updates the member table, and returns the number of bytes consumed
 unsigned heartbeater::process_fail_msg(char *buf) {
+    // @TODO: fail message processing
+    // add_fail_msg_to_list(
     return 2;
 }
 
@@ -193,6 +237,7 @@ unsigned heartbeater::process_leave_msg(char *buf) {
 
     for (uint32_t j = 0; j < num_leaves; j++) {
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
+        add_leave_msg_to_list(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
     }
 
@@ -221,7 +266,28 @@ unsigned heartbeater::process_join_msg(char *buf) {
         i += sizeof(num_joins);
 
         mem_list.add_member(hostname, id);
+        add_join_msg_to_list(hostname, id);
     }
 
+
     return i;
+}
+
+
+void heartbeater::add_fail_msg_to_list(uint32_t id) {
+    // @TODO: MAKE THIS THREAD SAFE
+    // iterate through the queue of fail msgs
+
+}
+
+void heartbeater::add_leave_msg_to_list(uint32_t id) {
+    // @TODO: MAKE THIS THREAD SAFE
+    // iterate through the queue of leave msgs
+
+}
+
+void heartbeater::add_join_msg_to_list(std::string hostname, uint64_t id) {
+    // @TODO: MAKE THIS THREAD SAFE
+    // iterate through the queue of join msgs
+
 }

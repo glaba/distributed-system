@@ -7,6 +7,7 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <tuple>
 
 class heartbeater {
 public:
@@ -40,6 +41,12 @@ public:
     // Processes a join message (J), updates the member table, and returns the number of bytes consumed
     unsigned process_join_msg(char *buf);
 
+    void add_fail_msg_to_list(uint32_t id);
+    void add_leave_msg_to_list(uint32_t id);
+    void add_join_msg_to_list(std::string hostname, uint64_t id);
+
+    // number of times to send each message
+    static int message_redundancy;
     // time between sending heartbeats (in ms)
     static uint64_t heartbeat_interval_ms;
     // time interval between received heartbeats in which node is marked as failed (in ms)
@@ -52,6 +59,9 @@ private:
     udp_server_svc *udp_server; // Separated UDP server service for easy mocking
     std::string local_hostname;
     std::string introducer;
+    std::vector<std::tuple<uint32_t, int>> failed_nodes_counts;
+    std::vector<std::tuple<uint32_t, int>> left_nodes_counts;
+    std::vector<std::tuple<member, int>> joined_nodes_counts;
     bool is_introducer;
     uint16_t port;
     std::mutex member_list_mutex;
