@@ -11,20 +11,20 @@ int process_params(int argc, char **argv, std::string *introducer, std::string *
 
 int main(int argc, char **argv) {
     std::string introducer = "";
+    bool is_introducer = false;
     std::string local_hostname = "";
     uint16_t port = DEFAULT_PORT;
     bool testing = false;
     bool verbose = false;
 
-    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing, &verbose)) {
+    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing, &verbose, &is_introducer)) {
         return 1;
     }
 
     logger *lg = new logger("", verbose);
 
     if (testing) {
-        // int retval = run_tests(lg);
-        int retval = 0;
+        int retval = run_tests(lg);
         delete lg;
         return retval;
     }
@@ -33,10 +33,10 @@ int main(int argc, char **argv) {
     udp_server_svc *udp_server = new udp_server_svc(lg);
 
     heartbeater *hb;
-    if (introducer == "self") {
+    if (introducer == "none") {
         hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, port);
     } else {
-        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, introducer, port);
+        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, is_introducer, introducer, port);
     }
 
     hb->start();
@@ -49,10 +49,11 @@ int main(int argc, char **argv) {
 }
 
 void print_help() {
-    std::cout << "Usage: member [test | -i <introducer> -h <hostname> -p <port>]" << std::endl << std::endl;
+    std::cout << "Usage: member [test | -i <introducer> -h <hostname> -p <port>] -v" << std::endl << std::endl;
     std::cout << "Option\tMeaning" << std::endl;
     std::cout << " -h\tThe hostname of this machine that other members can use" << std::endl;
-    std::cout << " -i\tIntroducer hostname or self if this is the introducer" << std::endl;
+    std::cout << " -i\tIntroducer hostname or \"none\" if this is the first introducer" << std::endl;
+    std::cout << " -n\tThis machine is an introducer" << std::endl;
     std::cout << " -p\tThe port to use" << std::endl;
     std::cout << " -v\tEnable verbose logging" << std::endl;
 }
@@ -63,7 +64,8 @@ int print_invalid() {
     return 1;
 }
 
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, uint16_t *port, bool *testing, bool *verbose) {
+int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname, 
+        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer) {
     if (argc == 1)
         return print_invalid();
 
@@ -104,6 +106,8 @@ int process_params(int argc, char **argv, std::string *introducer, std::string *
         // Whether or not to use verbose logging
         } else if (std::string(argv[i]) == "-v") {
             *verbose = true;
+        } else if (std::string(argv[i]) == "-n") {
+            *is_introducer = true;
         } else return print_invalid();
     }
 

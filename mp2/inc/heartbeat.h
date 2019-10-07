@@ -11,13 +11,13 @@
 
 class heartbeater {
 public:
-    // Constructor to be used if the current machine is the introducer
+    // Constructor to be used if the current machine is an introducer and is not joining using an introducer
     heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, uint16_t port_);
 
-    // Constructor to be used if the current machine is not the introducer
+    // Constructor to be used if the current machine is joining using an introducer
     heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
-        std::string local_hostname_, std::string introducer_, uint16_t port_);
+        std::string local_hostname_, bool is_introducer_, std::string introducer_, uint16_t port_);
 
     void start();
 
@@ -58,13 +58,13 @@ private:
     udp_client_svc *udp_client; // Separated UDP client service for easy mocking
     udp_server_svc *udp_server; // Separated UDP server service for easy mocking
     std::string local_hostname;
+    bool is_introducer;
     std::string introducer;
     std::vector<std::tuple<uint32_t, int>> failed_nodes_counts;
     std::vector<std::tuple<uint32_t, int>> left_nodes_counts;
     std::vector<std::tuple<member, int>> joined_nodes_counts;
     // Tuple of <membership table LLJ... message, message length, new node ID, TTL> for all new nodes if we are introducer
     std::vector<std::tuple<char*, unsigned, uint32_t, int>> new_node_introduction_counts;
-    bool is_introducer;
     uint16_t port;
     std::mutex member_list_mutex;
 };

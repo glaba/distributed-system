@@ -15,9 +15,7 @@ uint64_t heartbeater::timeout_interval_ms = 1000;
 heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, uint16_t port_)
     : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
-      local_hostname(local_hostname_), port(port_) {
-
-    is_introducer = true;
+      local_hostname(local_hostname_), is_introducer(true), introducer(""), port(port_) {
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
@@ -26,11 +24,9 @@ heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp
 }
 
 heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
-        std::string local_hostname_, std::string introducer_, uint16_t port_)
+        std::string local_hostname_, bool is_introducer_, std::string introducer_, uint16_t port_)
     : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
-      local_hostname(local_hostname_), introducer(introducer_), port(port_) {
-
-    is_introducer = false;
+      local_hostname(local_hostname_), is_introducer(is_introducer_), introducer(introducer_), port(port_) {
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
@@ -46,7 +42,7 @@ void heartbeater::start() {
 }
 
 void heartbeater::client() {
-    if (!is_introducer) {
+    if (introducer != "") {
         join_group(introducer);
     }
 
