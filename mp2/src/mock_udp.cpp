@@ -40,7 +40,7 @@ int mock_udp_coordinator::recv(string hostname, char *buf, unsigned length) {
         buf[i] = msg_buf[i];
     }
 
-    delete msg_buf;
+    delete[] msg_buf;
 
     return static_cast<int>(i);
 }
@@ -69,7 +69,7 @@ void mock_udp_coordinator::stop_server(string hostname) {
 
     // Clear the queue and free allocated memory
     while (messages.size() > 0) {
-        delete std::get<0>(messages.front());
+        delete[] std::get<0>(messages.front());
         messages.pop();
     }
 
@@ -99,7 +99,8 @@ int mock_udp_server_svc::recv(char *buf, unsigned length) {
     volatile bool flag = false;
     
     coordinator->notify_waiting(hostname, &flag);
-    while (!flag && !stopped); // Wait for a message to arrive while the server is still up
+    // Wait for a message to arrive while the server is still up
+    while (!flag && !stopped);
 
     return coordinator->recv(hostname, buf, length);
 }

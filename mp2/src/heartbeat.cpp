@@ -123,7 +123,7 @@ void heartbeater::client() {
                 udp_client->send(mem.hostname, std::to_string(port), msg, length);
             }
 
-            delete msg;
+            delete[] msg;
 
             if (is_introducer) {
                 auto it = new_node_introduction_counts.begin();
@@ -212,7 +212,7 @@ void heartbeater::join_group(std::string introducer) {
 
     udp_client->send(introducer, std::to_string(port), msg, length);
 
-    delete msg;
+    delete[] msg;
 }
 
 bool heartbeater::has_joined() {
@@ -222,12 +222,13 @@ bool heartbeater::has_joined() {
 void heartbeater::server() {
     udp_server->start_server(port);
 
+    int size;
     char buf[1024];
 
     // Code to listen for messages and handle them accordingly here
     while (true) {
         // Listen for messages and process each one
-        if (udp_server->recv(buf, 1024) > 0) {
+        if ((size = udp_server->recv(buf, 1024)) > 0) {
             std::lock_guard<std::mutex> guard(member_list_mutex);
 
             uint32_t id = *reinterpret_cast<uint32_t*>(buf);
@@ -323,7 +324,6 @@ unsigned heartbeater::process_join_msg(char *buf) {
                 new_node_introduction_counts.push_back(std::make_tuple(msg, length, id, message_redundancy));
             }
         }
-
     }
 
     return i;
