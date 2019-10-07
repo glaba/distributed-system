@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    logger *lg = new logger(verbose);
+    logger *lg = new logger("", verbose);
 
     if (testing) {
         int retval = run_tests(lg);

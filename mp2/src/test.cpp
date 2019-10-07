@@ -2,6 +2,7 @@
 #include "member.h"
 #include "member_list.h"
 #include "mock_udp.h"
+#include "heartbeat.h"
 
 #include <algorithm>
 #include <cassert>
@@ -185,16 +186,37 @@ int test_mock_udp(logger *lg) {
 }
 
 int test_joining(logger *lg) {
-    // std::cout << "=== TESTING JOINING ===" << std::endl;
-    // {
-    //     mock_udp_factory *fac = new mock_udp_factory();
-    // }
+    std::cout << "=== TESTING JOINING ===" << std::endl;
+    {
+        mock_udp_factory *fac = new mock_udp_factory();
+
+        udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
+        udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
+        udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
+        udp_server_svc *h2_server = fac->get_mock_udp_server("h2");  
+        
+        logger *lg1 = new logger("h1", true);
+        logger *lg2 = new logger("h2", true);
+
+        // h1 is the introducer
+        heartbeater *hb1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
+        heartbeater *hb2 = new heartbeater(member_list("h2", lg2), lg2, h2_client, h2_server, "h2", "h1", 1234);
+
+        std::thread hb1_thread([=] {
+            hb1->start();
+        });
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+        hb2->start();
+    }
     return 0;
 }
 
 int run_tests(logger *lg) {
-    assert(test_member_list(lg) == 0);
-    assert(test_mock_udp(lg) == 0);
+    // assert(test_member_list(lg) == 0);
+    // assert(test_mock_udp(lg) == 0);
+    test_joining(lg);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;

@@ -37,6 +37,8 @@ heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp
 }
 
 void heartbeater::start() {
+    lg->log("Starting heartbeater");
+
     std::thread server_thread([this] {server();});
     server_thread.detach();
 
@@ -194,17 +196,20 @@ char *heartbeater::construct_msg(std::vector<uint32_t> failed_nodes, std::vector
     }
 
     *length = size;
-    return buf;
+    return buf_start;
 }
 
 // Initiates an async request to join the group by sending a message to the introducer
 void heartbeater::join_group(std::string introducer) {
+    lg->log("Requesting introducer to join group");
+
     member us;
     us.id = our_id;
     us.hostname = local_hostname;
 
     unsigned length;
     char *msg = construct_msg(std::vector<uint32_t>(), std::vector<uint32_t>(), std::vector<member>{us}, &length);
+
     udp_client->send(introducer, std::to_string(port), msg, length);
 
     delete msg;
@@ -248,10 +253,10 @@ unsigned heartbeater::process_fail_msg(char *buf) {
     // Increment past the 'L'
     i++;
 
-    uint8_t num_leaves = buf[i];
-    i += sizeof(num_leaves);
+    uint32_t num_fails = *reinterpret_cast<uint32_t*>(buf + i);
+    i += sizeof(num_fails);
 
-    for (uint32_t j = 0; j < num_leaves; j++) {
+    for (uint32_t j = 0; j < num_fails; j++) {
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
         add_fail_msg_to_list(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
@@ -267,7 +272,7 @@ unsigned heartbeater::process_leave_msg(char *buf) {
     // Increment past the 'L'
     i++;
 
-    uint8_t num_leaves = buf[i];
+    uint32_t num_leaves = *reinterpret_cast<uint32_t*>(buf + i);
     i += sizeof(num_leaves);
 
     for (uint32_t j = 0; j < num_leaves; j++) {
@@ -291,7 +296,7 @@ unsigned heartbeater::process_join_msg(char *buf) {
     // Increment past the 'J'
     i++;
 
-    uint8_t num_joins = buf[i];
+    uint32_t num_joins = *reinterpret_cast<uint32_t*>(buf + i);
     i += sizeof(num_joins);
 
     for (uint32_t j = 0; j < num_joins; j++) {
