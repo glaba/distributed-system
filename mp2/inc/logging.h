@@ -7,9 +7,7 @@
 class logger {
 public:
 	logger(std::string log_file_path_, std::string prefix_, bool verbose_)
-		: use_stdout(false), log_file_path(log_file_path_), prefix(prefix_), verbose(verbose_) {
-
-		log_stream = std::ofstream(log_file_path);
+		: use_stdout(false), log_file_path(log_file_path_), prefix(prefix_), verbose(verbose_), log_stream(log_file_path) {
 	}
 
 	logger(std::string prefix_, bool verbose_)
