@@ -1,6 +1,7 @@
 #include "member_list.h"
 
 #include <algorithm>
+#include <iostream>
 
 member create_member(std::string hostname, uint32_t id) {
     member cur;
@@ -145,6 +146,15 @@ std::vector<member> member_list::get_members() {
 
 std::list<member> member_list::__get_internal_list() {
     return list;
+}
+
+// Prints the membership list
+void member_list::print() {
+    std::cout << "Hostname\tID\t\tLast heartbeat" << std::endl;
+    for (auto it = list.begin(); it != list.end(); it++) {
+        member &m = *it;
+        std::cout << m.hostname << "\t" << +m.id << "\t" << m.last_heartbeat << std::endl;
+    }
 }
 
 bool member::operator==(const member &m) {

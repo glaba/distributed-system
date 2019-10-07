@@ -19,6 +19,10 @@ public:
 	void log(std::string data);
 	// Adds a verbose log line to the log file if verbose logging is enabled
 	void log_v(std::string data);
+
+	bool using_stdout() {
+		return use_stdout;
+	}
 private:
 	bool use_stdout;
 	std::string log_file_path;

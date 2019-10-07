@@ -53,7 +53,7 @@ public:
     // time interval between received heartbeats in which node is marked as failed (in ms)
     static uint64_t timeout_interval_ms;
 private:
-    int our_id;
+    uint32_t our_id;
     member_list mem_list;
     logger *lg;
     udp_client_svc *udp_client; // Separated UDP client service for easy mocking

@@ -39,13 +39,57 @@ void heartbeater::start() {
     std::thread server_thread([this] {server();});
     server_thread.detach();
 
-    client();
+    std::thread client_thread([this] {client();});
+    client_thread.detach();
+
+    // Here we will have a command prompt if logging to a file
+    if (!lg->using_stdout()) {
+        std::cout << "m for membership list" << std::endl;
+        std::cout << "i for our ID" << std::endl;
+        std::cout << "j to join the group" << std::endl;
+        std::cout << "l to leave the group" << std::endl;
+    }
+    bool already_joined = false;
+    while (true) {
+        if (lg->using_stdout()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        } else {
+            std::cout << "> ";
+            std::string input;
+            std::cin >> input;
+
+            if (input == "m") {
+                mem_list.print();
+            } else if (input == "i") {
+                std::cout << our_id << std::endl;
+            } else if (input == "j") {
+                if (already_joined) {
+                    std::cout << "Already joined" << std::endl;
+                } else {
+                    std::lock_guard<std::mutex> guard(member_list_mutex);
+                    if (introducer != "") {
+                        std::cout << "Joining..." << std::endl;
+                        join_group(introducer);
+                    } else {
+                        std::cout << "We are the introducer" << std::endl;
+                    }
+                }
+            } else if (input == "l") {
+                std::lock_guard<std::mutex> guard(member_list_mutex);
+                std::cout << "Leaving..." << std::endl;
+                add_leave_msg_to_list(our_id);
+                break;
+            } else {
+                std::cout << "Invalid command" << std::endl;
+            }
+        }
+    }
 }
 
 void heartbeater::client() {
-    if (introducer != "") {
-        join_group(introducer);
-    }
+    // if (introducer != "") {
+    //     join_group(introducer);
+    // }
 
     // Remaining client code here
     while (true) {
