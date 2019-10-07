@@ -60,6 +60,7 @@ void heartbeater::client() {
             // comb neighbors list to see if any nodes failed
             for (auto mem : neighbors) {
                 if (current_time - mem.last_heartbeat > timeout_interval_ms) {
+                    mem_list.remove_member(mem.id);
                     failed_nodes_counts.push_back(std::make_tuple(mem.id, message_redundancy));
                     // failed_nodes.push_back(mem.id);
                 }
