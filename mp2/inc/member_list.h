@@ -35,6 +35,8 @@ public:
     // Adds a member to the membership list using hostname and ID and returns the ID
     uint32_t add_member(std::string hostname, uint32_t id);
     // Removes a member from the membership list
+    member get_member_by_id(uint32_t id);
+    // Removes a member from the membership list
     void remove_member(uint32_t id);
     // Updates the heartbeat for a member to the current time
     void update_heartbeat(uint32_t id);

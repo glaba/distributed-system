@@ -43,7 +43,7 @@ public:
 
     void add_fail_msg_to_list(uint32_t id);
     void add_leave_msg_to_list(uint32_t id);
-    void add_join_msg_to_list(std::string hostname, uint64_t id);
+    void add_join_msg_to_list(uint32_t id);
 
     // number of times to send each message
     static int message_redundancy;

@@ -124,6 +124,14 @@ std::vector<member> member_list::get_neighbors() {
     return neighbors;
 }
 
+member member_list::get_member_by_id(uint32_t id) {
+    for (auto it = list.begin(); it != list.end(); it++) {
+        if (it->id == id) {
+            return *it;
+        }
+    }
+}
+
 // Get the number of members total
 uint32_t member_list::num_members() {
     return list.size();

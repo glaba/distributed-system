@@ -262,7 +262,7 @@ unsigned heartbeater::process_join_msg(char *buf) {
         i += sizeof(num_joins);
 
         mem_list.add_member(hostname, id);
-        add_join_msg_to_list(hostname, id);
+        add_join_msg_to_list(id);
     }
 
 
@@ -273,17 +273,17 @@ unsigned heartbeater::process_join_msg(char *buf) {
 void heartbeater::add_fail_msg_to_list(uint32_t id) {
     // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of fail msgs
-
+    failed_nodes_counts.push_back(std::make_tuple(id, message_redundancy));
 }
 
 void heartbeater::add_leave_msg_to_list(uint32_t id) {
     // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of leave msgs
-
+    left_nodes_counts.push_back(std::make_tuple(id, message_redundancy));
 }
 
-void heartbeater::add_join_msg_to_list(std::string hostname, uint64_t id) {
+void heartbeater::add_join_msg_to_list(uint32_t id) {
     // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of join msgs
-
+    joined_nodes_counts.push_back(std::make_tuple(mem_list.get_member_by_id(id), message_redundancy));
 }
