@@ -1,10 +1,14 @@
 #include "test.h"
 #include "member.h"
 #include "member_list.h"
+#include "mock_udp.h"
 
 #include <algorithm>
 #include <cassert>
 #include <iostream>
+#include <thread>
+#include <chrono>
+#include <memory>
 
 bool compare_hostnames(member &m1, member &m2) {
     return (m1.hostname.compare(m2.hostname) < 0) ? true : false;
@@ -101,8 +105,88 @@ int test_member_list() {
     return 0;
 }
 
+int test_mock_udp() {
+    mock_udp_factory *fac = new mock_udp_factory();
+
+    udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
+    udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
+    udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
+    udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+
+    volatile bool end = false;
+
+    std::thread h1c([h1_client] {
+        for (char i = 0; i < 20; i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+            h1_client->send("h2", std::to_string(1234), const_cast<char*>(std::string(1, i).c_str()), 1);
+        }
+
+        std::cout << "h1c terminating" << std::endl;
+    });
+
+    std::thread h1s([end, h1_server] {
+        char buf[1024];
+        int counter = 0;
+
+        while (true) {
+            memset(buf, '\0', 1024);
+
+            if (h1_server->recv(buf, 1024) > 0) {
+                assert(buf[0] == counter * 2);
+                std::cout << std::to_string(buf[0]) << std::endl;
+            }
+
+            counter++;
+
+            if (end) break;
+        }
+
+        std::cout << "h1s terminating" << std::endl;
+    });
+
+    std::thread h2([end, h2_server, h2_client] {
+        char buf[1024];
+
+        while (true) {
+            memset(buf, '\0', 1024);
+            
+            // Listen for messages and send back 2 * the result
+            std::cout << "Listening" << std::endl;
+            if (h2_server->recv(buf, 1024) > 0) {
+                std::cout << "Got message" << std::endl;
+                char val = buf[0];
+                h2_client->send("h1", std::to_string(1234), const_cast<char*>(std::string(1, val * 2).c_str()), 1);
+            }
+            std::cout << "Past message" << std::endl;
+
+            if (end) break;
+        }
+
+        std::cout << "h2s terminating" << std::endl;
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+
+    std::cout << "Stopping servers" << std::endl;
+    end = true;
+    h1_server->stop_server();
+    h2_server->stop_server();
+
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    delete h1_client;
+    delete h1_server;
+    delete h2_client;
+    delete h2_server;
+    delete fac;
+    return 0;
+}
+
 int run_tests() {
     assert(test_member_list() == 0);
+    assert(test_mock_udp() == 0);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;
