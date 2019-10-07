@@ -88,11 +88,14 @@ std::vector<member> member_list::get_neighbors() {
     auto forward_it = std::find_if(list.begin(), list.end(),
         [=] (member m) {return m.hostname == local_hostname;});
 
+    std::string stop_hostname;
     for (int i = 0; i < 2; i++) {
         forward_it++;
         if (forward_it == list.end()) {
             forward_it = list.begin();
         }
+
+        stop_hostname = forward_it->hostname;
 
         if (forward_it->hostname == local_hostname)
             break;
@@ -109,7 +112,7 @@ std::vector<member> member_list::get_neighbors() {
         }
         backward_it--;
 
-        if (backward_it->hostname == local_hostname || backward_it == forward_it)
+        if (backward_it->hostname == local_hostname || backward_it->hostname == stop_hostname)
             break;
 
         if (neighbors.size() != 1) {
