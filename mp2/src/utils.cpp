@@ -33,7 +33,6 @@ udp_client_info udp_client_svc::udp_client(string host, string port) {
     if (s != 0) {
         // get the error using gai
         std::cerr << "gai failed " << gai_strerror(s) << std::endl;
-        exit(1);
     }
 
     // get a socket for the client
