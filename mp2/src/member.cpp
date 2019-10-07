@@ -20,24 +20,29 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    init_logging(DEFAULT_LOGFILE, verbose);
+    logger *lg = new logger(verbose);
 
     if (testing) {
-        return run_tests();
+        int retval = run_tests(lg);
+        delete lg;
+        return retval;
     }
 
-    udp_client_svc *udp_client = new udp_client_svc();
-    udp_server_svc *udp_server = new udp_server_svc();
+    udp_client_svc *udp_client = new udp_client_svc(lg);
+    udp_server_svc *udp_server = new udp_server_svc(lg);
 
     heartbeater *hb;
     if (introducer == "self") {
-        hb = new heartbeater(member_list(local_hostname), udp_client, udp_server, local_hostname, port);
+        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, port);
     } else {
-        hb = new heartbeater(member_list(local_hostname), udp_client, udp_server, local_hostname, introducer, port);
+        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, introducer, port);
     }
 
     hb->start();
     
+    delete lg;
+    delete udp_client;
+    delete udp_server;
     delete hb;
     return 0;
 }
@@ -63,6 +68,10 @@ int process_params(int argc, char **argv, std::string *introducer, std::string *
 
     if (std::string(argv[1]) == "test") {
         *testing = true;
+
+        if (argc >= 3 && std::string(argv[2]) == "-v")
+            *verbose = true;
+        
         return 0;
     }
 

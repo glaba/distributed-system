@@ -12,20 +12,24 @@ int heartbeater::message_redundancy = 4;
 uint64_t heartbeater::heartbeat_interval_ms = 250;
 uint64_t heartbeater::timeout_interval_ms = 1000;
 
-heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, uint16_t port_)
-    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_),
+    : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), port(port_) {
+    
     is_introducer = true;
-
+    
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
+    
+    mem_list.add_member(local_hostname, our_id);
 }
 
-heartbeater::heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+heartbeater::heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, std::string introducer_, uint16_t port_)
-    : mem_list(mem_list_), udp_client(udp_client_), udp_server(udp_server_),
+    : mem_list(mem_list_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_),
       local_hostname(local_hostname_), introducer(introducer_), port(port_) {
+    
     is_introducer = false;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -47,7 +51,7 @@ void heartbeater::client() {
     // Remaining client code here
     while (true) {
         std::lock_guard<std::mutex> guard(member_list_mutex);
-        
+
         // Get list of neighbors
         uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         std::vector<member> neighbors = mem_list.get_neighbors();

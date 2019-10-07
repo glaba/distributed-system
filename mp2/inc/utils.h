@@ -1,4 +1,7 @@
 #pragma once
+
+#include "logging.h"
+
 #include <string>
 #include <iostream>
 
@@ -19,6 +22,7 @@ using std::string;
 
 class udp_client_svc {
 public:
+	udp_client_svc(logger *lg_) : lg(lg_) {}
 	virtual ~udp_client_svc() {}
 
 	// Sends a UDP packet to the specified destination
@@ -29,10 +33,13 @@ private:
 	 * Returns a socket fd to the host, otherwise -1 on failure.
 	 */
 	udp_client_info udp_client(string host, string port);
+
+	logger *lg;
 };
 
 class udp_server_svc {
 public:
+	udp_server_svc(logger *lg_) : lg(lg_) {}
 	virtual ~udp_server_svc() {}
 
 	// Starts the server on the given port
@@ -49,4 +56,5 @@ private:
 	int udp_server(int port);
 
 	int server_fd;
+	logger *lg;
 };
