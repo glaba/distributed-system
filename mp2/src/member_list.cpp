@@ -46,6 +46,7 @@ void member_list::remove_member(uint32_t id) {
     for (auto it = list.begin(); it != list.end(); it++) {
         if (it->id == id) {
             list.erase(it);
+            lg->log("removed member from list with id " + std::to_string(id));
             break;
         }
     }
@@ -76,7 +77,7 @@ void member_list::update_heartbeat(uint32_t id) {
 // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
 std::vector<member> member_list::get_neighbors() {
     std::vector<member> neighbors;
-    
+
     if (list.empty()) return neighbors;
 
     if (local_hostname == "") {
@@ -110,7 +111,10 @@ std::vector<member> member_list::get_neighbors() {
         if (backward_it->hostname == local_hostname || backward_it == forward_it)
             break;
 
-        neighbors.push_back(*backward_it);
+        if (neighbors.size() != 1) {
+            // if the neighbors list is of size one, this would add the same element twice
+            neighbors.push_back(*backward_it);
+        }
     }
 
     return neighbors;
@@ -122,7 +126,6 @@ member member_list::get_member_by_id(uint32_t id) {
             return *it;
         }
     }
-
     return member();
 }
 
