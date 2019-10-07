@@ -303,6 +303,7 @@ unsigned heartbeater::process_fail_msg(char *buf) {
         if (mem_list.get_member_by_id(id).id == id)
             add_fail_msg_to_list(id);
 
+        lg->log("Member at hostname " + mem_list.get_member_by_id(id).hostname + " failed");
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
     }
@@ -327,6 +328,7 @@ unsigned heartbeater::process_leave_msg(char *buf) {
         if (mem_list.get_member_by_id(id).id == id)
             add_leave_msg_to_list(id);
 
+        lg->log("Member at hostname " + mem_list.get_member_by_id(id).hostname + " left");
         mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
         i += sizeof(uint32_t);
     }

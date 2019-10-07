@@ -47,7 +47,7 @@ void member_list::remove_member(uint32_t id) {
     for (auto it = list.begin(); it != list.end(); it++) {
         if (it->id == id) {
             list.erase(it);
-            lg->log("removed member from list with id " + std::to_string(id));
+            lg->log("Removed member at " + it->hostname + " from list with id " + std::to_string(id));
             break;
         }
     }
