@@ -217,8 +217,21 @@ void heartbeater::server() {
 // Processes a fail message (L), updates the member table, and returns the number of bytes consumed
 unsigned heartbeater::process_fail_msg(char *buf) {
     // @TODO: fail message processing
-    // add_fail_msg_to_list(
-    return 2;
+    int i = 0;
+
+    // Increment past the 'L'
+    i++;
+
+    uint8_t num_leaves = buf[i];
+    i += sizeof(num_leaves);
+
+    for (uint32_t j = 0; j < num_leaves; j++) {
+        mem_list.remove_member(*reinterpret_cast<uint32_t*>(buf + i));
+        add_fail_msg_to_list(*reinterpret_cast<uint32_t*>(buf + i));
+        i += sizeof(uint32_t);
+    }
+
+    return i;
 }
 
 // Processes a leave message (L), updates the member table, and returns the number of bytes consumed
@@ -265,25 +278,20 @@ unsigned heartbeater::process_join_msg(char *buf) {
         add_join_msg_to_list(id);
     }
 
-
     return i;
 }
 
-
 void heartbeater::add_fail_msg_to_list(uint32_t id) {
-    // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of fail msgs
     failed_nodes_counts.push_back(std::make_tuple(id, message_redundancy));
 }
 
 void heartbeater::add_leave_msg_to_list(uint32_t id) {
-    // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of leave msgs
     left_nodes_counts.push_back(std::make_tuple(id, message_redundancy));
 }
 
 void heartbeater::add_join_msg_to_list(uint32_t id) {
-    // @TODO: MAKE THIS THREAD SAFE
     // iterate through the queue of join msgs
     joined_nodes_counts.push_back(std::make_tuple(mem_list.get_member_by_id(id), message_redundancy));
 }
