@@ -76,6 +76,7 @@ void member_list::update_heartbeat(uint32_t id) {
 // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
 std::vector<member> member_list::get_neighbors() {
     std::vector<member> neighbors;
+    if (list.empty()) return neighbors;
 
     if (local_hostname == "") {
         return neighbors;
