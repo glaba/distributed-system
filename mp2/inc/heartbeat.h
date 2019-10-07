@@ -11,11 +11,11 @@
 class heartbeater {
 public:
     // Constructor to be used if the current machine is the introducer
-    heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+    heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, uint16_t port_);
 
     // Constructor to be used if the current machine is not the introducer
-    heartbeater(member_list mem_list_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
+    heartbeater(member_list mem_list_, logger *lg_, udp_client_svc *udp_client_, udp_server_svc *udp_server_,
         std::string local_hostname_, std::string introducer_, uint16_t port_);
 
     void start();
@@ -47,6 +47,7 @@ public:
 private:
     int our_id;
     member_list mem_list;
+    logger *lg;
     udp_client_svc *udp_client; // Separated UDP client service for easy mocking
     udp_server_svc *udp_server; // Separated UDP server service for easy mocking
     std::string local_hostname;

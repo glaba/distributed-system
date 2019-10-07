@@ -53,7 +53,8 @@ private:
 // Mock UDP client service, should not be instantiated but obtained from the factory
 class mock_udp_client_svc : public udp_client_svc {
 public:
-    mock_udp_client_svc(string hostname_, mock_udp_coordinator *coordinator_) : hostname(hostname_), coordinator(coordinator_) {}
+    mock_udp_client_svc(string hostname_, mock_udp_coordinator *coordinator_)
+        : udp_client_svc(nullptr), hostname(hostname_), coordinator(coordinator_) {}
     ~mock_udp_client_svc() {}
 
     // Sends a UDP packet to the specified destination
@@ -67,7 +68,7 @@ private:
 class mock_udp_server_svc : public udp_server_svc {
 public:
     mock_udp_server_svc(string hostname_, mock_udp_coordinator *coordinator_) 
-        : hostname(hostname_), coordinator(coordinator_), stopped(false) {}
+        : udp_server_svc(nullptr), hostname(hostname_), coordinator(coordinator_), stopped(false) {}
     ~mock_udp_server_svc() {}
 
     // Starts the server on the machine with the given hostname on the given port

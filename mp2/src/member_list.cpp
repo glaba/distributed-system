@@ -1,5 +1,4 @@
 #include "member_list.h"
-#include "logging.h"
 
 #include <algorithm>
 
@@ -11,17 +10,9 @@ member create_member(std::string hostname, uint32_t id) {
     return cur;
 }
 
-// Adds ourselves as the first introducer and returns our ID
-uint32_t member_list::add_self_as_introducer(std::string hostname, int join_time) {
-    member m = create_member(hostname, std::hash<std::string>()(hostname) ^ std::hash<int>()(join_time));
-    list.insert(list.end(), m);
-    log("Added self to membership list as introducer at local time " + std::to_string(join_time));
-    return m.id;
-}
-
 // Adds a member to the membership list using hostname and ID
 uint32_t member_list::add_member(std::string hostname, uint32_t id) {
-    log_v("Received message to add member at " + hostname + " with id " + std::to_string(id));
+    lg->log_v("Received message to add member at " + hostname + " with id " + std::to_string(id));
 
     member m = create_member(hostname, id);
 
@@ -39,14 +30,9 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
         }
     }
 
-    auto new_it = list.insert(it, m);
+    list.insert(it, m);
 
-    // Check if the new member is ourself and note it down if so
-    if (hostname == local_hostname) {
-        self = new_it;
-    }
-
-    log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
+    lg->log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
         std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
 
     return m.id;
@@ -81,7 +67,7 @@ void member_list::remove_member(uint32_t id) {
 void member_list::update_heartbeat(uint32_t id) {
     for (auto it = list.begin(); it != list.end(); it++) {
         if (it->id == id) {
-            log_v("Detected heartbeat from node at " + it->hostname + " with id " + std::to_string(id));
+            lg->log_v("Detected heartbeat from node at " + it->hostname + " with id " + std::to_string(id));
             it->last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         }
     }
@@ -95,27 +81,31 @@ std::vector<member> member_list::get_neighbors() {
         return neighbors;
     }
 
-    auto forward_it = self;
+    auto forward_it = std::find_if(list.begin(), list.end(),
+        [=] (member m) {return m.hostname == local_hostname;});
+
     for (int i = 0; i < 2; i++) {
         forward_it++;
         if (forward_it == list.end()) {
             forward_it = list.begin();
         }
 
-        if (forward_it == self)
+        if (forward_it->hostname == local_hostname)
             break;
 
         neighbors.push_back(*forward_it);
     }
 
-    auto backward_it = self;
+    auto backward_it = std::find_if(list.begin(), list.end(),
+        [=] (member m) {return m.hostname == local_hostname;});
+
     for (int i = 0; i < 2; i++) {
         if (backward_it == list.begin()) {
             backward_it = list.end();
         }
         backward_it--;
 
-        if (backward_it == self || backward_it == forward_it)
+        if (backward_it->hostname == local_hostname || backward_it == forward_it)
             break;
 
         neighbors.push_back(*backward_it);
@@ -127,6 +117,15 @@ std::vector<member> member_list::get_neighbors() {
 // Get the number of members total
 uint32_t member_list::num_members() {
     return list.size();
+}
+
+// Gets a list of all the members (to be used by introducer)
+std::vector<member> member_list::get_members() {
+    std::vector<member> members;
+    for (auto it = list.begin(); it != list.end(); i++) {
+        members.push_back(*it);
+    }
+    return members;
 }
 
 std::list<member> member_list::__get_internal_list() {

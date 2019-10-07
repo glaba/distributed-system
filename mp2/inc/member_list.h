@@ -1,5 +1,7 @@
 #pragma once
 
+#include "logging.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -22,16 +24,15 @@ typedef struct member {
 class member_list {
 public:
     // Initialize the member list with the local hostname
-    member_list(std::string local_hostname_) :
-        local_hostname(local_hostname_) {}
+    member_list(std::string local_hostname_, logger *lg_) :
+        local_hostname(local_hostname_), lg(lg_) {}
 
     member_list(const member_list &m) {
         local_hostname = m.local_hostname;
         list = m.list;
+        lg = m.lg;
     }
 
-    // Adds ourselves as the first introducer and returns the ID
-    uint32_t add_self_as_introducer(std::string hostname, int join_time);
     // Adds a member to the membership list using hostname and ID and returns the ID
     uint32_t add_member(std::string hostname, uint32_t id);
     // Removes a member from the membership list
@@ -42,10 +43,12 @@ public:
     std::vector<member> get_neighbors();
     // Get the number of members total
     uint32_t num_members();
+    // Gets a list of all the members (to be used by introducer)
+    std::vector<member> get_members();
     // Gets the list of members (for testing)
     std::list<member> __get_internal_list();
 private:
     std::string local_hostname = "";
     std::list<member> list;
-    std::list<member>::iterator self;
+    logger *lg;
 };

@@ -1,5 +1,4 @@
 #include "utils.h"
-#include "logging.h"
 
 #include <unistd.h>
 
@@ -67,7 +66,7 @@ int udp_server_svc::recv(char *buf, unsigned length) {
 
     int msg_size = recvfrom(server_fd, buf, length, 0, (struct sockaddr*)&client_sa, &client_len);
     if (msg_size < 0) {
-        log_v("Unexpected error in receiving UDP packet, errno " + errno);
+        lg->log_v("Unexpected error in receiving UDP packet, errno " + errno);
     }
 
     return msg_size;
