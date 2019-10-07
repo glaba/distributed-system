@@ -194,7 +194,7 @@ char *heartbeater::construct_msg(std::vector<uint32_t> failed_nodes, std::vector
     }
 
     *length = size;
-    return buf;
+    return buf_start;
 }
 
 // Initiates an async request to join the group by sending a message to the introducer
