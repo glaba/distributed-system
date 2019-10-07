@@ -7,6 +7,7 @@ extern int errno;
 // Sends a UDP packet to the specified destination
 void udp_client_svc::send(string host, string port, char *msg, unsigned length) {
     udp_client_info conn = udp_client(host, port);
+    if (conn.client_socket == -1) return;
 
     // Send the message and close the connection
     sendto(conn.client_socket, msg, length, 0, &conn.addr, sizeof(conn.addr));
@@ -33,6 +34,8 @@ udp_client_info udp_client_svc::udp_client(string host, string port) {
     if (s != 0) {
         // get the error using gai
         std::cerr << "gai failed " << gai_strerror(s) << std::endl;
+        ret.client_socket = -1;
+        return ret;
     }
 
     // get a socket for the client
