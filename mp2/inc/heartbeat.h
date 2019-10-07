@@ -62,6 +62,8 @@ private:
     std::vector<std::tuple<uint32_t, int>> failed_nodes_counts;
     std::vector<std::tuple<uint32_t, int>> left_nodes_counts;
     std::vector<std::tuple<member, int>> joined_nodes_counts;
+    // Tuple of <membership table LLJ... message, message length, new node ID, TTL> for all new nodes if we are introducer
+    std::vector<std::tuple<char*, unsigned, uint32_t, int>> new_node_introduction_counts;
     bool is_introducer;
     uint16_t port;
     std::mutex member_list_mutex;
