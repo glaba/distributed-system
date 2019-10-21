@@ -1,6 +1,6 @@
 INC_DIR   := inc
 CXX       := clang++
-CXXFLAGS  := -I$(INC_DIR) -std=c++11 -Wall -DDEBUG -fno-omit-frame-pointer -fsanitize=undefined -fno-strict-aliasing -g
+CXXFLAGS  := -I$(INC_DIR) -std=c++11 -Wall -DDEBUG -g
 LDFLAGS   := -pthread
 
 OBJ_DIR   := obj

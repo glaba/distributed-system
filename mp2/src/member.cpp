@@ -1,9 +1,12 @@
 #include "member.h"
-#include "heartbeat.h"
+#include "heartbeater.h"
 #include "utils.h"
 #include "logging.h"
 #include "member_list.h"
 #include "test.h"
+
+#include <chrono>
+#include <thread>
 
 bool testing = false;
 
@@ -32,20 +35,21 @@ int main(int argc, char **argv) {
 
     udp_client_svc *udp_client = new udp_client_svc(lg);
     udp_server_svc *udp_server = new udp_server_svc(lg);
+    member_list *mem_list = new member_list(local_hostname, lg);
 
-    heartbeater *hb;
+    heartbeater_intf *hb;
     if (introducer == "none") {
-        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, port);
+        hb = new heartbeater<true>(mem_list, lg, udp_client, udp_server, local_hostname, port);
     } else {
-        hb = new heartbeater(member_list(local_hostname, lg), lg, udp_client, udp_server, local_hostname, is_introducer, introducer, port);
+        hb = new heartbeater<false>(mem_list, lg, udp_client, udp_server, local_hostname, port);
     }
 
     hb->start();
 
-    delete lg;
-    delete udp_client;
-    delete udp_server;
-    delete hb;
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
     return 0;
 }
 

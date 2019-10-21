@@ -2,12 +2,9 @@
 
 #include "logging.h"
 
-#include <cstdint>
 #include <string>
 #include <vector>
-#include <mutex>
 #include <list>
-
 #include <chrono>
 #include <ctime>
 
@@ -49,8 +46,6 @@ public:
     std::vector<member> get_members();
     // Gets the list of members (for testing)
     std::list<member> __get_internal_list();
-    // Prints the membership list
-    void print();
 private:
     std::string local_hostname = "";
     std::list<member> list;

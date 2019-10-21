@@ -13,8 +13,6 @@ member create_member(std::string hostname, uint32_t id) {
 
 // Adds a member to the membership list using hostname and ID
 uint32_t member_list::add_member(std::string hostname, uint32_t id) {
-    lg->log_v("Received message to add member at " + hostname + " with id " + std::to_string(id));
-
     member m = create_member(hostname, id);
 
     // First check if the member already exists
@@ -149,15 +147,6 @@ std::vector<member> member_list::get_members() {
 
 std::list<member> member_list::__get_internal_list() {
     return list;
-}
-
-// Prints the membership list
-void member_list::print() {
-    std::cout << "Hostname\t\tID\t\tLast heartbeat" << std::endl;
-    for (auto it = list.begin(); it != list.end(); it++) {
-        member &m = *it;
-        std::cout << m.hostname << "\t" << +m.id << "\t" << m.last_heartbeat << std::endl;
-    }
 }
 
 bool member::operator==(const member &m) {

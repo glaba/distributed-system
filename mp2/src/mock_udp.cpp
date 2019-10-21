@@ -1,5 +1,8 @@
 #include "mock_udp.h"
 
+#include <chrono>
+#include <thread>
+
 udp_client_svc *mock_udp_factory::get_mock_udp_client(string hostname) {
     return new mock_udp_client_svc(hostname, coordinator);
 }
@@ -100,7 +103,9 @@ int mock_udp_server_svc::recv(char *buf, unsigned length) {
     
     coordinator->notify_waiting(hostname, &flag);
     // Wait for a message to arrive while the server is still up
-    while (!flag && !stopped);
+    while (!flag && !stopped) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
     return coordinator->recv(hostname, buf, length);
 }

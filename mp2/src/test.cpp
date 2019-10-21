@@ -2,7 +2,7 @@
 #include "member.h"
 #include "member_list.h"
 #include "mock_udp.h"
-#include "heartbeat.h"
+#include "heartbeater.h"
 
 #include <algorithm>
 #include <cassert>
@@ -11,7 +11,7 @@
 #include <chrono>
 #include <memory>
 
-bool compare_hostnames(const member &m1, const member &m2) {
+bool compare_hostnames(member &m1, member &m2) {
     return (m1.hostname.compare(m2.hostname) < 0) ? true : false;
 }
 
@@ -151,7 +151,7 @@ int test_mock_udp(logger *lg) {
 
         while (true) {
             memset(buf, '\0', 1024);
-
+            
             // Listen for messages and send back 2 * the result
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
@@ -185,49 +185,66 @@ int test_mock_udp(logger *lg) {
     return 0;
 }
 
+#define NUM_NODES 2
+
 int test_joining(logger *lg) {
     std::cout << "=== TESTING JOINING ===" << std::endl;
     {
         mock_udp_factory *fac = new mock_udp_factory();
 
-        udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
-        udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
-        udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
-        udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+        udp_client_svc *clients[NUM_NODES];
+        udp_server_svc *servers[NUM_NODES];
+        logger *loggers[NUM_NODES];
+        member_list *mem_lists[NUM_NODES];
 
-        logger *lg1 = new logger("h1", true);
-        logger *lg2 = new logger("h2", true);
+        for (int i = 0; i < NUM_NODES; i++) {
+            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i));
+            servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
+            loggers[i] = new logger("h" + std::to_string(i), true);
+            mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
+        }
 
         // h1 is the introducer
-        heartbeater *hb1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
-        heartbeater *hb2 = new heartbeater(member_list("h2", lg2), lg2, h2_client, h2_server, "h2", false, "h1", 1234);
+        heartbeater_intf *hbs[NUM_NODES];
+        hbs[0] = new heartbeater<true>(mem_lists[0], loggers[0], clients[0], servers[0], "h0", 1234);
+        for (int i = 1; i < NUM_NODES; i++) {
+            hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], servers[i], "h" + std::to_string(i), 1234);
+        }
 
-        std::thread hb1_thread([=] {
-            hb1->start();
+        std::thread hb0_thread([=] {
+            hbs[0]->start();
         });
+        hb0_thread.detach();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-        hb2->start();
+        for (int i = 1; i < NUM_NODES; i++) {
+            hbs[i]->start();
+            hbs[i]->join_group("h0");
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        }
+        
+        while (true)
+            std::this_thread::sleep_for(std::chrono::milliseconds(4000));
     }
     return 0;
 }
 
 int test_join_msg(logger *lg) {
-    mock_udp_factory *fac = new mock_udp_factory();
+    // mock_udp_factory *fac = new mock_udp_factory();
 
-    udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
-    udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
-    udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
-    udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+    // udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
+    // udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
+    // udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
+    // udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
 
-    logger *lg1 = new logger("h1", false);
-    logger *lg2 = new logger("h2", false);
+    // logger *lg1 = new logger("h1", false);
+    // logger *lg2 = new logger("h2", false);
 
-    heartbeater *h1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
+    // heartbeater *h1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
 
-    // h1 processes a manufactured join msg
-    uint32_t num_joins = 1;
+    // // h1 processes a manufactured join msg
+    // uint32_t num_joins = 1;
     // h1->process_join_msg(join_msg);
 
     /*
@@ -242,7 +259,7 @@ int test_join_msg(logger *lg) {
 int run_tests(logger *lg) {
     // assert(test_member_list(lg) == 0);
     // assert(test_mock_udp(lg) == 0);
-    // test_joining(lg);
+    test_joining(lg);
     test_join_msg(lg);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;

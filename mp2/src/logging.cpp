@@ -9,7 +9,10 @@ void logger::log(std::string data) {
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 	time_t tt = std::chrono::system_clock::to_time_t(now);
 
-    (use_stdout ? std::cout : log_stream) << "[" << std::strtok(ctime(&tt), "\n") << "] " << prefix << ": " << data << std::endl;
+	std::string msg = std::string("[") + std::strtok(ctime(&tt), "\n") + std::string("] ") + 
+		prefix + std::string(": ") + data + std::string("\n");
+
+    (use_stdout ? std::cout : log_stream) << msg;
 }
 
 // Adds a verbose log line to the log file if verbose logging is enabled

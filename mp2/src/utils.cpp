@@ -33,7 +33,7 @@ udp_client_info udp_client_svc::udp_client(string host, string port) {
     int s = getaddrinfo(host.c_str(), port.c_str(), &info, &res);
     if (s != 0) {
         // get the error using gai
-        // std::cerr << "gai failed " << gai_strerror(s) << std::endl;
+        lg->log_v("getaddrinfo failed for host " + host + " on port " + port);
         ret.client_socket = -1;
         return ret;
     }
@@ -95,14 +95,3 @@ int udp_server_svc::udp_server(int port) {
 
     return server_fd;
 }
-
-/*
-
-    struct addrinfo info, *res;
-    memset(&info, 0, sizeof(info));
-
-    info.ai_family = AF_INET;
-    info.ai_socktype = SOCK_STREAM;
-
-    int s = getaddrinfo(host.c_str(), port.c_str(), &info, &res);
-*/
