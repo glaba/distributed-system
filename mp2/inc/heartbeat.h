@@ -31,27 +31,32 @@ public:
     bool has_joined();
     // Creates a message that represents the provided set of failed / left / joined nodes
     char *construct_msg(std::vector<uint32_t> failed_nodes, std::vector<uint32_t> left_nodes, std::vector<member> joined_nodes, unsigned *length);
+    // Checks for failed neighbors using current time
+    void check_for_failed_neighbors();
+    // Constructs vectors to be passed into construct_msg
+    void construct_vectors(std::vector<uint32_t> &failed_nodes, std::vector<uint32_t> &left_nodes,
+            std::vector<member> &joined_nodes);
+    // Sends message alerting other nodes that current node is introducer
+    void send_introducer_msg();
 
     /* Server side functions */
     // Server thread function
     void server();
     // Processes a fail message (L), updates the member table, and returns the number of bytes consumed
     unsigned process_fail_msg(char *buf);
-    // Processes a leave message (L), updates the member table, and returns the number of bytes consumed
+    // Processes a leave message (L), updates the member table, and returns the number of bytes consume);
     unsigned process_leave_msg(char *buf);
     // Processes a join message (J), updates the member table, and returns the number of bytes consumed
     unsigned process_join_msg(char *buf);
 
-    void add_fail_msg_to_list(uint32_t id);
-    void add_leave_msg_to_list(uint32_t id);
-    void add_join_msg_to_list(uint32_t id);
-
+    /* Variables regarding message delivery */
     // number of times to send each message
     static int message_redundancy;
     // time between sending heartbeats (in ms)
     static uint64_t heartbeat_interval_ms;
     // time interval between received heartbeats in which node is marked as failed (in ms)
     static uint64_t timeout_interval_ms;
+
 private:
     uint32_t our_id;
     member_list mem_list;
@@ -69,4 +74,9 @@ private:
     uint16_t port;
     std::mutex member_list_mutex;
     std::set<uint32_t> joined_ids; // Set containing all IDs that have joined before
+
+    /* Convenience functions for manipulation private variables */
+    void add_fail_msg_to_list(uint32_t id);
+    void add_leave_msg_to_list(uint32_t id);
+    void add_join_msg_to_list(uint32_t id);
 };

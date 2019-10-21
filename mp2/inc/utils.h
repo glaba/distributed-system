@@ -1,6 +1,7 @@
 #pragma once
 
 #include "logging.h"
+#include "member_list.h"
 
 #include <string>
 #include <iostream>
@@ -9,6 +10,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <netdb.h>
+#include <vector>
 #include <sys/types.h>
 #include <sys/socket.h>
 

@@ -11,7 +11,7 @@
 #include <chrono>
 #include <memory>
 
-bool compare_hostnames(member &m1, member &m2) {
+bool compare_hostnames(const member &m1, const member &m2) {
     return (m1.hostname.compare(m2.hostname) < 0) ? true : false;
 }
 
@@ -151,7 +151,7 @@ int test_mock_udp(logger *lg) {
 
         while (true) {
             memset(buf, '\0', 1024);
-            
+
             // Listen for messages and send back 2 * the result
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
@@ -193,8 +193,8 @@ int test_joining(logger *lg) {
         udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
         udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
         udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
-        udp_server_svc *h2_server = fac->get_mock_udp_server("h2");  
-        
+        udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+
         logger *lg1 = new logger("h1", true);
         logger *lg2 = new logger("h2", true);
 
@@ -213,10 +213,37 @@ int test_joining(logger *lg) {
     return 0;
 }
 
+int test_join_msg(logger *lg) {
+    mock_udp_factory *fac = new mock_udp_factory();
+
+    udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
+    udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
+    udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
+    udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+
+    logger *lg1 = new logger("h1", false);
+    logger *lg2 = new logger("h2", false);
+
+    heartbeater *h1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
+
+    // h1 processes a manufactured join msg
+    uint32_t num_joins = 1;
+    // h1->process_join_msg(join_msg);
+
+    /*
+    std::vector<uint32_t> failed_nodes;
+    std::vector<uint32_t> left_nodes;
+    std::vector<member> joined_nodes;
+    // h1->construct_vectors(failed_nodes, left_nodes, joined_nodes);
+    */
+    return 0;
+}
+
 int run_tests(logger *lg) {
     // assert(test_member_list(lg) == 0);
     // assert(test_mock_udp(lg) == 0);
-    test_joining(lg);
+    // test_joining(lg);
+    test_join_msg(lg);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;
