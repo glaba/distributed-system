@@ -24,6 +24,14 @@ public:
     member_list(std::string local_hostname_, logger *lg_) :
         local_hostname(local_hostname_), lg(lg_) {}
 
+    ~member_list() {
+        node *next;
+        for (node *cur = head; cur != nullptr; cur = next) {
+            next = cur->next;
+            delete cur;
+        }
+    }
+
     // Adds a member to the membership list using hostname and ID and returns the ID
     uint32_t add_member(std::string hostname, uint32_t id);
     // Gets a member from the membership list by ID

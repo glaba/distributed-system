@@ -1,6 +1,7 @@
 #include "member_list.h"
 
 #include <algorithm>
+#include <cassert>
 
 member create_member(std::string hostname, uint32_t id) {
     member cur;
@@ -12,6 +13,8 @@ member create_member(std::string hostname, uint32_t id) {
 
 // Adds a member to the membership list using hostname and ID and returns the ID
 uint32_t member_list::add_member(std::string hostname, uint32_t id) {
+    uint32_t original_size = num_members();
+
 	node *prev = nullptr;
 	node *cur = head;
 	// Find the insertion point
@@ -25,6 +28,7 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
 
 	// Create the new node
 	node *new_node = new node();
+    assert(new_node != nullptr);
 	new_node->next = cur;
 	new_node->m = create_member(hostname, id);
 
@@ -36,6 +40,8 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
 
 	lg->log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
         std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
+
+    assert(num_members() - original_size == 1);
 
 	return id;
 }
@@ -52,6 +58,8 @@ member member_list::get_member_by_id(uint32_t id) {
 
 // Removes a member from the membership list
 void member_list::remove_member(uint32_t id) {
+    uint32_t original_size = num_members();
+
 	std::vector<member> initial_neighbors = get_neighbors();
 
 	// First, just remove the member from the list
@@ -66,7 +74,7 @@ void member_list::remove_member(uint32_t id) {
 			}
 			delete cur;
 			lg->log("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
-			return;
+			break;
 		}
 
 		prev = cur;
@@ -84,6 +92,8 @@ void member_list::remove_member(uint32_t id) {
             update_heartbeat(m.id);
         }
     }
+
+    assert(original_size - num_members() == 1);
 }
 
 // Updates the heartbeat for a member to the current time
@@ -163,6 +173,13 @@ std::vector<member> member_list::get_neighbors() {
 
 		ret.push_back(cur->m);
 	}
+
+    assert(ret.size() == 4);
+    for (int i = 0; i < 4; i++) {
+        assert(ret[i].hostname != local_hostname);
+        assert(ret[i].hostname != "");
+        assert(ret[i].id != 0);
+    }
 
 	return ret;
 }

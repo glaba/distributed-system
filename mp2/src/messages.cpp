@@ -1,6 +1,7 @@
 #include "messages.h"
 
 #include <iostream>
+#include <cassert>
 
 inline uint32_t read_uint32_from_char_buf(char *buf) {
 	uint32_t retval = 0;

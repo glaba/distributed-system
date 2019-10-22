@@ -3,6 +3,7 @@
 #include <chrono>
 #include <thread>
 #include <iostream>
+#include <cassert>
 
 udp_client_svc *mock_udp_factory::get_mock_udp_client(string hostname) {
     return new mock_udp_client_svc(hostname, coordinator);
@@ -16,6 +17,7 @@ udp_server_svc *mock_udp_factory::get_mock_udp_server(string hostname) {
 // and will wake up when flag is set to true
 void mock_udp_coordinator::notify_waiting(string hostname, volatile bool *flag) {
     std::lock_guard<std::mutex> guard(msg_mutex);
+    assert(notify_flag[hostname] == nullptr);
     notify_flag[hostname] = flag;
 
     if (msg_queues[hostname].size() > 0) {
@@ -39,6 +41,8 @@ int mock_udp_coordinator::recv(string hostname, char *buf, unsigned length) {
     char *msg_buf = std::get<0>(msg);
     unsigned actual_length = std::get<1>(msg);
 
+    assert(msg_buf != nullptr);
+    
     unsigned i;
     for (i = 0; i < actual_length && i < length; i++) {
         buf[i] = msg_buf[i];
@@ -53,6 +57,8 @@ int mock_udp_coordinator::recv(string hostname, char *buf, unsigned length) {
 void mock_udp_coordinator::send(string dest, char *msg, unsigned length) {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
+    assert(msg != nullptr);
+
     char *msg_buf = new char[length];
     for (unsigned i = 0; i < length; i++) {
         msg_buf[i] = msg[i];
@@ -62,6 +68,7 @@ void mock_udp_coordinator::send(string dest, char *msg, unsigned length) {
 
     if (notify_flag[dest] != nullptr) {
         *notify_flag[dest] = true;
+        notify_flag[dest] = nullptr;
     }
 }
 
@@ -84,12 +91,6 @@ void mock_udp_coordinator::stop_server(string hostname) {
 }
 
 void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned length) {
-    // std::cout << "[Message] " << hostname << " -> " << dest << ": ";
-    // for (unsigned i = 0; i < length; i++) {
-    //     std::cout << std::to_string(+msg[i]) << " ";
-    // }
-    // std::cout << std::endl;
-
     coordinator->send(dest, msg, length);
 }
 

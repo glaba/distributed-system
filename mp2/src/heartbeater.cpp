@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <cassert>
 #include <iostream>
 
 using namespace std::chrono;
@@ -66,6 +67,8 @@ void heartbeater<is_introducer>::client() {
             msg.set_left_nodes(left_nodes);
             msg.set_joined_nodes(joined_nodes);
             msg_buf = msg.serialize(msg_buf_len);
+            assert(msg_buf != nullptr);
+            assert(msg_buf_len > 0);
 
             // Send the message out to all the neighbors
             for (auto mem : mem_list->get_neighbors()) {
@@ -92,7 +95,7 @@ void heartbeater<is_introducer>::check_for_failed_neighbors() {
     uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     std::vector<member> neighbors = mem_list->get_neighbors();
 
-    for (auto mem : neighbors) {
+    for (auto mem : neighbors) {        
         if (current_time - mem.last_heartbeat > timeout_interval_ms) {
             lg->log("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list->remove_member(mem.id);
@@ -117,6 +120,9 @@ void heartbeater<is_introducer>::send_introducer_msg() {
     message intro_msg(our_id);
     intro_msg.set_joined_nodes(all_members);
     msg_buf = intro_msg.serialize(msg_buf_len);
+
+    assert(msg_buf != nullptr);
+    assert(msg_buf_len > 0);
 
     for (auto node : new_nodes_queue.pop()) {
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
@@ -148,6 +154,9 @@ void heartbeater<is_introducer>::join_group(std::string introducer) {
     message join_req(our_id);
     join_req.set_joined_nodes(std::vector<member>{us});
     buf = join_req.serialize(buf_len);
+
+    assert(buf != nullptr);
+    assert(buf_len > 0);
 
     udp_client->send(introducer, std::to_string(port), buf, buf_len);
     
@@ -187,8 +196,11 @@ void heartbeater<is_introducer>::server() {
             if (!msg.is_well_formed()) {
                 lg->log("Received malformed message! Reason: " + msg.why_malformed());
             }
+            assert(msg.is_well_formed());
 
             for (member m : msg.get_joined_nodes()) {
+                assert(m.id != 0 && m.hostname != "");
+
                 // Only add and propagate information about this join if we've never seen this node
                 if (joined_ids.find(m.id) == joined_ids.end()) {
                     joined_ids.insert(m.id);
