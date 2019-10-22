@@ -19,7 +19,10 @@ inline void write_uint32_to_char_buf(uint32_t n, char *buf) {
 }
 
 // Creates a message from a buffer
-message::message(char *buf, unsigned length) {
+message::message(char *buf_, unsigned length_) {
+	char *buf = buf_;
+	unsigned length = length_;
+
 	// Reconstruct ID in little endian order
 	if (length < sizeof(id)) goto malformed_msg;
 	id = read_uint32_from_char_buf(buf);
@@ -98,6 +101,12 @@ message::message(char *buf, unsigned length) {
 	return;
 
 malformed_msg:
+	// List the entire message in the reason
+	malformed_reason += ", message was: ";
+	for (unsigned i = 0; i < length_; i++) {
+		malformed_reason += std::to_string(buf_[i]) + " ";
+	}
+
 	id = 0;
 	failed_nodes.clear();
 	left_nodes.clear();

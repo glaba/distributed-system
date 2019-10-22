@@ -71,9 +71,9 @@ void heartbeater<is_introducer>::client() {
             for (auto mem : mem_list->get_neighbors()) {
                 if (msg_buf != nullptr) {
                     udp_client->send(mem.hostname, std::to_string(port), msg_buf, msg_buf_len);
-                    delete[] msg_buf;
                 }
             }
+            delete[] msg_buf;
 
             // If we are the introducer, also send the introduction messages
             if (is_introducer && new_nodes_queue.size() > 0) {
@@ -118,8 +118,8 @@ void heartbeater<is_introducer>::send_introducer_msg() {
     msg_buf = intro_msg.serialize(msg_buf_len);
 
     for (auto node : new_nodes_queue.pop()) {
-        udp_client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
+        udp_client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
     }
 
     delete[] msg_buf;

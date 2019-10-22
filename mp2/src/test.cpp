@@ -185,7 +185,7 @@ int test_mock_udp(logger *lg) {
     return 0;
 }
 
-#define NUM_NODES 2
+#define NUM_NODES 3
 
 int test_joining(logger *lg) {
     std::cout << "=== TESTING JOINING ===" << std::endl;
