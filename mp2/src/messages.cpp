@@ -8,7 +8,7 @@ inline uint32_t read_uint32_from_char_buf(char *buf) {
 	retval += (buf[1] & 0xFF) << 8;
 	retval += (buf[2] & 0xFF) << 16;
 	retval += (buf[3] & 0xFF) << 24;
-	return retval;	
+	return retval;
 }
 
 inline void write_uint32_to_char_buf(uint32_t n, char *buf) {
@@ -51,7 +51,7 @@ message::message(char *buf_, unsigned length_) {
 		num_entries = read_uint32_from_char_buf(buf);
 		buf += sizeof(num_entries); length -= sizeof(num_entries);
 
-		for (int j = 0; j < num_entries; j++) {
+		for (unsigned j = 0; j < num_entries; j++) {
 			std::string hostname;
 			uint32_t id;
 
@@ -171,7 +171,7 @@ char *message::serialize(unsigned &length) {
 	unsigned ind = 0;
 
 	if (ind + sizeof(uint32_t) > length) goto fail;
-	write_uint32_to_char_buf(id, buf + ind); 
+	write_uint32_to_char_buf(id, buf + ind);
 	ind += sizeof(uint32_t);
 
 	// As in deserialization, 0 = failed nodes, 1 = left nodes, 2 = joined nodes

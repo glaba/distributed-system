@@ -94,11 +94,12 @@ void heartbeater<is_introducer>::check_for_failed_neighbors() {
 
     for (auto mem : neighbors) {
         if (current_time - mem.last_heartbeat > timeout_interval_ms) {
+            lg->log("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list->remove_member(mem.id);
 
             // Only tell neighbors about failure if we are still in the group
             // If we are not still in the group, all members will drop out eventually
-            if (joined_group) {
+            if (joined_group.load()) {
                 // Tell our neighbors about this failure
                 failed_nodes_queue.push(mem.id, message_redundancy);
             }
@@ -131,7 +132,7 @@ void heartbeater<is_introducer>::join_group(std::string introducer) {
     if (is_introducer)
         return;
 
-    lg->log("Requesting introducer to join group");
+    lg->log("Requesting introducer to join group");        
     joined_group = true;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -172,7 +173,7 @@ void heartbeater<is_introducer>::server() {
     // Code to listen for messages and handle them accordingly here
     while (true) {
         // If we are not in the group, do not listen for messages
-        if (!joined_group) {
+        if (!joined_group.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             continue;
         }

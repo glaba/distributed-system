@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 
 class logger {
 public:
@@ -21,11 +22,17 @@ public:
 	bool using_stdout() {
 		return use_stdout;
 	}
+
+	bool is_verbose() {
+		return verbose;
+	}
 private:
 	bool use_stdout;
 	std::string log_file_path;
 	std::string prefix;
 	bool verbose;
+
+	static std::mutex log_mutex;
 
 	std::ofstream log_stream;
 };

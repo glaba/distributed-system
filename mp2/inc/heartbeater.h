@@ -10,6 +10,7 @@
 #include <mutex>
 #include <tuple>
 #include <set>
+#include <atomic>
 
 class heartbeater_intf {
 public:
@@ -64,7 +65,7 @@ private:
     // Information about current host
     uint32_t our_id;
     std::string local_hostname;
-    bool joined_group = false;
+    std::atomic<bool> joined_group;
 
     // Externally provided services for heartbeater to use
     logger *lg;

@@ -124,7 +124,7 @@ int test_mock_udp(logger *lg) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             h1_client->send("h2", std::to_string(1234), const_cast<char*>(std::string(1, i).c_str()), 1);
-            std::cout << "->";
+            std::cout << "->" << std::flush;
         }
     });
 
@@ -137,7 +137,7 @@ int test_mock_udp(logger *lg) {
 
             if (h1_server->recv(buf, 1024) > 0) {
                 assert(buf[0] == counter * 2);
-                std::cout << "<- ";
+                std::cout << "<- " << std::flush;
             }
 
             counter++;
@@ -156,7 +156,7 @@ int test_mock_udp(logger *lg) {
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
                 h2_client->send("h1", std::to_string(1234), const_cast<char*>(std::string(1, val * 2).c_str()), 1);
-                std::cout << "=";
+                std::cout << "=" << std::flush;
             }
 
             if (end) break;
@@ -185,7 +185,7 @@ int test_mock_udp(logger *lg) {
     return 0;
 }
 
-#define NUM_NODES 3
+#define NUM_NODES 10
 
 int test_joining(logger *lg) {
     std::cout << "=== TESTING JOINING ===" << std::endl;
@@ -200,7 +200,7 @@ int test_joining(logger *lg) {
         for (int i = 0; i < NUM_NODES; i++) {
             clients[i] = fac->get_mock_udp_client("h" + std::to_string(i));
             servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-            loggers[i] = new logger("h" + std::to_string(i), true);
+            loggers[i] = new logger(/*"h" + std::to_string(i) + ".log",*/"h" + std::to_string(i), lg->is_verbose());
             mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
         }
 
@@ -211,10 +211,7 @@ int test_joining(logger *lg) {
             hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], servers[i], "h" + std::to_string(i), 1234);
         }
 
-        std::thread hb0_thread([=] {
-            hbs[0]->start();
-        });
-        hb0_thread.detach();
+        hbs[0]->start();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
@@ -260,7 +257,7 @@ int run_tests(logger *lg) {
     // assert(test_member_list(lg) == 0);
     // assert(test_mock_udp(lg) == 0);
     test_joining(lg);
-    test_join_msg(lg);
+    // test_join_msg(lg);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;

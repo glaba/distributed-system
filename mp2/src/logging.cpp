@@ -4,8 +4,12 @@
 #include <chrono>
 #include <cstring>
 
+std::mutex logger::log_mutex;
+
 // Adds a log line to the log file
 void logger::log(std::string data) {
+	std::lock_guard<std::mutex> guard(log_mutex);
+
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 	time_t tt = std::chrono::system_clock::to_time_t(now);
 

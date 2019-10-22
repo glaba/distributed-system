@@ -84,6 +84,12 @@ void mock_udp_coordinator::stop_server(string hostname) {
 }
 
 void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned length) {
+    // std::cout << "[Message] " << hostname << " -> " << dest << ": ";
+    // for (unsigned i = 0; i < length; i++) {
+    //     std::cout << std::to_string(+msg[i]) << " ";
+    // }
+    // std::cout << std::endl;
+
     coordinator->send(dest, msg, length);
 }
 
