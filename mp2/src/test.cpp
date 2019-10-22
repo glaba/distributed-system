@@ -11,7 +11,7 @@
 #include <chrono>
 #include <memory>
 
-bool compare_hostnames(member &m1, member &m2) {
+bool compare_hostnames(const member &m1, const member &m2) {
     return (m1.hostname.compare(m2.hostname) < 0) ? true : false;
 }
 
@@ -151,7 +151,7 @@ int test_mock_udp(logger *lg) {
 
         while (true) {
             memset(buf, '\0', 1024);
-            
+
             // Listen for messages and send back 2 * the result
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
@@ -223,7 +223,7 @@ int test_joining(logger *lg) {
             hbs[i]->join_group("h0");
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         }
-        
+
         while (true)
             std::this_thread::sleep_for(std::chrono::milliseconds(4000));
     }
