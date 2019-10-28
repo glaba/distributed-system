@@ -32,34 +32,23 @@ private:
     std::unordered_map<std::string, volatile bool*> notify_flag;
 };
 
-// Factory which produces mock UDP clients and servers
-// Only this class should be instantiated
-class mock_udp_factory {
-public:
-    mock_udp_factory() {
-        coordinator = new mock_udp_coordinator();
-    }
-
-    ~mock_udp_factory() {
-        delete coordinator;
-    }
-
-    udp_client_svc *get_mock_udp_client(string hostname);
-    udp_server_svc *get_mock_udp_server(string hostname);
-private:
-    mock_udp_coordinator *coordinator;
-};
-
 // Mock UDP client service, should not be instantiated but obtained from the factory
 class mock_udp_client_svc : public udp_client_svc {
 public:
-    mock_udp_client_svc(string hostname_, mock_udp_coordinator *coordinator_)
-        : udp_client_svc(nullptr), hostname(hostname_), coordinator(coordinator_) {}
+    mock_udp_client_svc(string hostname_, bool show_packets_, mock_udp_coordinator *coordinator_)
+        : udp_client_svc(nullptr), show_packets(show_packets_), drop_probability(0.0), hostname(hostname_), coordinator(coordinator_) {}
     ~mock_udp_client_svc() {}
 
     // Sends a UDP packet to the specified destination
     void send(string host, string port, char *msg, unsigned length);
+
+    // Set the probability that a message will be dropped
+    void set_drop_probability(double p) {
+        drop_probability = p;
+    }
 private:
+    bool show_packets;
+    double drop_probability;
     string hostname;
     mock_udp_coordinator *coordinator;
 };
@@ -81,4 +70,22 @@ private:
     string hostname;
     mock_udp_coordinator *coordinator;
     bool stopped;
+};
+
+// Factory which produces mock UDP clients and servers
+// Only this class should be instantiated
+class mock_udp_factory {
+public:
+    mock_udp_factory() {
+        coordinator = new mock_udp_coordinator();
+    }
+
+    ~mock_udp_factory() {
+        delete coordinator;
+    }
+
+    mock_udp_client_svc *get_mock_udp_client(string hostname, bool show_packets);
+    mock_udp_server_svc *get_mock_udp_server(string hostname);
+private:
+    mock_udp_coordinator *coordinator;
 };

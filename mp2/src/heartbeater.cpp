@@ -158,7 +158,8 @@ void heartbeater<is_introducer>::join_group(std::string introducer) {
     assert(buf != nullptr);
     assert(buf_len > 0);
 
-    udp_client->send(introducer, std::to_string(port), buf, buf_len);
+    for (int i = 0; i < message_redundancy; i++)
+        udp_client->send(introducer, std::to_string(port), buf, buf_len);
     
     delete[] buf;
 }

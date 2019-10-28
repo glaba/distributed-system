@@ -56,11 +56,11 @@ private:
     void send_introducer_msg();
 
     // Number of times to send each message
-    const int message_redundancy = 1;
+    const int message_redundancy = 4;
     // Time between sending heartbeats (in ms)
     const uint64_t heartbeat_interval_ms = 250;
     // Time interval between received heartbeats in which node is marked as failed (in ms)
-    const uint64_t timeout_interval_ms = 1000;
+    const uint64_t timeout_interval_ms = 2000;
 
     // Information about current host
     uint32_t our_id;

@@ -4,12 +4,13 @@
 #include <thread>
 #include <iostream>
 #include <cassert>
+#include <cstdlib>
 
-udp_client_svc *mock_udp_factory::get_mock_udp_client(string hostname) {
-    return new mock_udp_client_svc(hostname, coordinator);
+mock_udp_client_svc *mock_udp_factory::get_mock_udp_client(string hostname, bool show_packets) {
+    return new mock_udp_client_svc(hostname, show_packets, coordinator);
 }
 
-udp_server_svc *mock_udp_factory::get_mock_udp_server(string hostname) {
+mock_udp_server_svc *mock_udp_factory::get_mock_udp_server(string hostname) {
     return new mock_udp_server_svc(hostname, coordinator);
 }
 
@@ -91,7 +92,23 @@ void mock_udp_coordinator::stop_server(string hostname) {
 }
 
 void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned length) {
-    coordinator->send(dest, msg, length);
+    if (static_cast<double>(std::rand() % RAND_MAX) / RAND_MAX >= drop_probability) {
+        if (show_packets) {
+            std::cout << "[Delivered] " << hostname << " -> " << dest << ": ";
+            for (unsigned i = 0; i < length; i++) {
+                std::cout << std::to_string(msg[i]) << " ";
+            }
+            std::cout << std::endl;
+        }
+        coordinator->send(dest, msg, length);
+    }
+    else if (show_packets) {
+        std::cout << "[Dropped] " << hostname << " -> " << dest << ": ";
+        for (unsigned i = 0; i < length; i++) {
+            std::cout << std::to_string(msg[i]) << " ";
+        }
+        std::cout << std::endl;
+    }
 }
 
 // Starts the server on the machine with the given hostname on the given port

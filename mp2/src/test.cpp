@@ -110,9 +110,9 @@ int test_mock_udp(logger *lg) {
 
     mock_udp_factory *fac = new mock_udp_factory();
 
-    udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
+    udp_client_svc *h1_client = fac->get_mock_udp_client("h1", false);
     udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
-    udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
+    udp_client_svc *h2_client = fac->get_mock_udp_client("h2", false);
     udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
 
     volatile bool end = false;
@@ -185,29 +185,34 @@ int test_mock_udp(logger *lg) {
     return 0;
 }
 
-#define NUM_NODES 10
-
 int test_joining(logger *lg) {
     std::cout << "=== TESTING JOINING ===" << std::endl;
     {
+        double drop_probability = 0.3;
+
         mock_udp_factory *fac = new mock_udp_factory();
 
-        udp_client_svc *clients[NUM_NODES];
-        udp_server_svc *servers[NUM_NODES];
-        logger *loggers[NUM_NODES];
-        member_list *mem_lists[NUM_NODES];
+        mock_udp_client_svc *clients[10];
+        mock_udp_server_svc *servers[10];
+        logger *loggers[10];
+        member_list *mem_lists[10];
 
-        for (int i = 0; i < NUM_NODES; i++) {
-            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i));
+        for (int i = 0; i < 10; i++) {
+            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false);
+            clients[i]->set_drop_probability(drop_probability);
             servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-            loggers[i] = new logger(/*"h" + std::to_string(i) + ".log",*/"h" + std::to_string(i), lg->is_verbose());
+            if (lg->is_verbose()) {
+                loggers[i] = new logger("h" + std::to_string(i), true);
+            } else {
+                loggers[i] = new logger("", "h" + std::to_string(i), false);
+            }
             mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
         }
 
         // h1 is the introducer
-        heartbeater_intf *hbs[NUM_NODES];
+        heartbeater_intf *hbs[10];
         hbs[0] = new heartbeater<true>(mem_lists[0], loggers[0], clients[0], servers[0], "h0", 1234);
-        for (int i = 1; i < NUM_NODES; i++) {
+        for (int i = 1; i < 10; i++) {
             hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], servers[i], "h" + std::to_string(i), 1234);
         }
 
@@ -215,49 +220,53 @@ int test_joining(logger *lg) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-        for (int i = 1; i < NUM_NODES; i++) {
+        for (unsigned i = 1; i < 10; i++) {
+            // Ensure that all the membership lists of the previous nodes are correct
+            for (unsigned j = 0; j < i; j++) {
+                std::vector<member> members = hbs[j]->get_members();
+                // Ensure that the right number of members is there
+                assert(members.size() == i && "Change drop_probability to 0 to confirm test failure");
+                
+                // Ensure that the members that are there are correct
+                std::set<std::string> ids;
+                for (auto m : members) {
+                    ids.insert(m.hostname);
+                }
+                for (unsigned k = 0; k < i - 1; k++) {
+                    assert(ids.find("h" + std::to_string(k)) != ids.end());
+                }
+            }
+
             hbs[i]->start();
             hbs[i]->join_group("h0");
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         }
 
-        while (true)
-            std::this_thread::sleep_for(std::chrono::milliseconds(4000));
+        // Check that all the nodes stay connected for the next 10 seconds
+        for (unsigned i = 0; i < 10; i++) {
+            for (unsigned j = 0; j < 10; j++) {
+                std::vector<member> members = hbs[j]->get_members();
+
+                // Same checks as before
+                assert(members.size() == 10 && "Change drop_probability to 0 to confirm test failure");
+                std::set<std::string> ids;
+                for (auto m : members) {
+                    ids.insert(m.hostname);
+                }
+                for (unsigned k = 0; k < 10; k++) {
+                    assert(ids.find("h" + std::to_string(k)) != ids.end());
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
     }
     return 0;
 }
 
-int test_join_msg(logger *lg) {
-    // mock_udp_factory *fac = new mock_udp_factory();
-
-    // udp_client_svc *h1_client = fac->get_mock_udp_client("h1");
-    // udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
-    // udp_client_svc *h2_client = fac->get_mock_udp_client("h2");
-    // udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
-
-    // logger *lg1 = new logger("h1", false);
-    // logger *lg2 = new logger("h2", false);
-
-    // heartbeater *h1 = new heartbeater(member_list("h1", lg1), lg1, h1_client, h1_server, "h1", 1234);
-
-    // // h1 processes a manufactured join msg
-    // uint32_t num_joins = 1;
-    // h1->process_join_msg(join_msg);
-
-    /*
-    std::vector<uint32_t> failed_nodes;
-    std::vector<uint32_t> left_nodes;
-    std::vector<member> joined_nodes;
-    // h1->construct_vectors(failed_nodes, left_nodes, joined_nodes);
-    */
-    return 0;
-}
-
 int run_tests(logger *lg) {
-    // assert(test_member_list(lg) == 0);
-    // assert(test_mock_udp(lg) == 0);
-    test_joining(lg);
-    // test_join_msg(lg);
+    assert(test_member_list(lg) == 0);
+    assert(test_mock_udp(lg) == 0);
+    assert(test_joining(lg) == 0);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;
