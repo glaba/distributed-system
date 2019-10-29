@@ -2,7 +2,7 @@
 
 #include "member_list.h"
 #include "messages.h"
-#include "utils.h"
+#include "udp.h"
 #include "redundant_queue.h"
 
 #include <string>
@@ -16,10 +16,12 @@
 class heartbeater_intf {
 public:
     virtual void start() = 0;
+    virtual void stop() = 0;
     virtual std::vector<member> get_members() = 0;
     virtual void join_group(std::string introducer) = 0;
     virtual void leave_group() = 0;
     virtual uint32_t get_id() = 0;
+    virtual bool is_introducer() = 0;
 
     // Sets handlers that will be called when membership list changes
     virtual void on_fail(std::function<void(member)>) = 0;
@@ -27,13 +29,15 @@ public:
     virtual void on_join(std::function<void(member)>) = 0;
 };
 
-template <bool is_introducer>
+template <bool is_introducer_>
 class heartbeater : public heartbeater_intf {
 public:
     heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
         udp_server_svc *udp_server_, std::string local_hostname_, uint16_t port_);
 
     void start();
+
+    void stop();
 
     // Returns the list of members of the group that this node is aware of
     std::vector<member> get_members();
@@ -48,17 +52,13 @@ public:
         return our_id;
     }
 
-    void on_fail(std::function<void(member)> handler) {
-        on_fail_handler = handler;
+    bool is_introducer() {
+        return is_introducer_;
     }
 
-    void on_leave(std::function<void(member)> handler) {
-        on_leave_handler = handler;
-    }
-
-    void on_join(std::function<void(member)> handler) {
-        on_join_handler = handler;
-    }
+    void on_fail(std::function<void(member)>);
+    void on_leave(std::function<void(member)>);
+    void on_join(std::function<void(member)>);
 
 private:
     // Client thread function
@@ -108,7 +108,11 @@ private:
     uint16_t port;
 
     // Handlers that will be called when the membership list changes
-    std::function<void(member)> on_fail_handler;
-    std::function<void(member)> on_join_handler;
-    std::function<void(member)> on_leave_handler;
+    std::vector<std::function<void(member)>> on_fail_handlers;
+    std::vector<std::function<void(member)>> on_join_handlers;
+    std::vector<std::function<void(member)>> on_leave_handlers;
+
+    // The client and server threads and a boolean used to stop the threads
+    std::thread *server_thread, *client_thread;
+    std::atomic<bool> running;
 };

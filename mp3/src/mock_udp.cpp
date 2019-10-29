@@ -94,20 +94,24 @@ void mock_udp_coordinator::stop_server(string hostname) {
 void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned length) {
     if (static_cast<double>(std::rand() % RAND_MAX) / RAND_MAX >= drop_probability) {
         if (show_packets) {
-            std::cout << "[Delivered] " << hostname << " -> " << dest << ": ";
+            std::string log_msg = "[Delivered " + 
+                std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
+                hostname + " -> " + dest + " - ";
             for (unsigned i = 0; i < length; i++) {
-                std::cout << std::to_string(msg[i]) << " ";
+                log_msg += std::to_string(log_msg[i]) + " ";
             }
-            std::cout << std::endl;
+            lg->log_v(log_msg);
         }
         coordinator->send(dest, msg, length);
     }
     else if (show_packets) {
-        std::cout << "[Dropped] " << hostname << " -> " << dest << ": ";
+        std::string log_msg = "[Dropped " + 
+            std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
+            hostname + " -> " + dest + " - ";
         for (unsigned i = 0; i < length; i++) {
-            std::cout << std::to_string(msg[i]) << " ";
+            log_msg += std::to_string(log_msg[i]) + " ";
         }
-        std::cout << std::endl;
+        lg->log_v(log_msg);
     }
 }
 

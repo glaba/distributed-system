@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <cassert>
 
+// The amount of time a new member gets before we start to expect heartbeats from it
+const uint64_t new_member_heartbeat_slack = 2000;
+
 member create_member(std::string hostname, uint32_t id) {
     member cur;
     cur.id = id;
     cur.hostname = hostname;
-    cur.last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    cur.last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() + new_member_heartbeat_slack;
     return cur;
 }
 

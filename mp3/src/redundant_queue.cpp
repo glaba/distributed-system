@@ -30,6 +30,18 @@ std::vector<T> redundant_queue<T>::pop() {
     return ret;
 }
 
+// Returns a vector of all the items in the queue without decrementing the redundancy
+template <typename T>
+std::vector<T> redundant_queue<T>::peek() {
+    std::vector<T> ret;
+
+    for (auto k : data) {
+        ret.push_back(std::get<0>(k));
+    }
+
+    return ret;
+}
+
 // Force the compiler to compile the required templates
 template class redundant_queue<uint32_t>;
 template class redundant_queue<member>;

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "utils.h"
+#include "udp.h"
+#include "logging.h"
 
 #include <string>
 #include <unordered_map>
@@ -36,8 +37,11 @@ private:
 class mock_udp_client_svc : public udp_client_svc {
 public:
     mock_udp_client_svc(string hostname_, bool show_packets_, mock_udp_coordinator *coordinator_)
-        : udp_client_svc(nullptr), show_packets(show_packets_), drop_probability(0.0), hostname(hostname_), coordinator(coordinator_) {}
-    ~mock_udp_client_svc() {}
+        : udp_client_svc(nullptr), show_packets(show_packets_), drop_probability(0.0), 
+          hostname(hostname_), coordinator(coordinator_), lg(new logger("UDP", show_packets)) {}
+    ~mock_udp_client_svc() {
+        delete lg;
+    }
 
     // Sends a UDP packet to the specified destination
     void send(string host, string port, char *msg, unsigned length);
@@ -51,13 +55,15 @@ private:
     double drop_probability;
     string hostname;
     mock_udp_coordinator *coordinator;
+    logger *lg;
 };
 
 // Mock UDP server service, should not be instantiated but obtained from the factory
 class mock_udp_server_svc : public udp_server_svc {
 public:
     mock_udp_server_svc(string hostname_, mock_udp_coordinator *coordinator_) 
-        : udp_server_svc(nullptr), hostname(hostname_), coordinator(coordinator_), stopped(false) {}
+        : udp_server_svc(nullptr), hostname(hostname_), coordinator(coordinator_), 
+          stopped(false) {}
     ~mock_udp_server_svc() {}
 
     // Starts the server on the machine with the given hostname on the given port

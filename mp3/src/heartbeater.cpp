@@ -1,20 +1,20 @@
 #include "heartbeater.h"
-#include "utils.h"
 #include "logging.h"
 
 #include <chrono>
 #include <cstring>
 #include <cassert>
 #include <iostream>
+#include <algorithm>
 
 using namespace std::chrono;
 
-template <bool is_introducer>
-heartbeater<is_introducer>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
+template <bool is_introducer_>
+heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
         udp_server_svc *udp_server_, std::string local_hostname_, uint16_t port_)
     : local_hostname(local_hostname_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_), mem_list(mem_list_), port(port_) {
 
-    if (is_introducer) {
+    if (is_introducer_) {
         int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
 
@@ -24,29 +24,48 @@ heartbeater<is_introducer>::heartbeater(member_list *mem_list_, logger *lg_, udp
     }
 }
 
-template <bool is_introducer>
-void heartbeater<is_introducer>::start() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::start() {
     lg->log("Starting heartbeater");
 
-    std::thread server_thread([this] {server();});
-    server_thread.detach();
+    running = true;
 
-    std::thread client_thread([this] {client();});
-    client_thread.detach();
+    server_thread = new std::thread([this] {server();});
+    server_thread->detach();
+
+    client_thread = new std::thread([this] {client();});
+    client_thread->detach();
+}
+
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::stop() {
+    lg->log("Stopping heartbeater");
+
+    running = false;
+
+    // Sleep for enough time for the threads to stop and then delete them
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    delete server_thread;
+    delete client_thread;
 }
 
 // Returns the list of members of the group that this node is aware of
-template <bool is_introducer>
-std::vector<member> heartbeater<is_introducer>::get_members() {
+template <bool is_introducer_>
+std::vector<member> heartbeater<is_introducer_>::get_members() {
     std::lock_guard<std::mutex> guard(member_list_mutex);
 
     return mem_list->get_members();
 }
 
-template <bool is_introducer>
-void heartbeater<is_introducer>::client() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::client() {
     // Remaining client code here
     while (true) {
+        // Exit the loop and the thread if the heartbeater is stopped
+        if (!running.load()) {
+            break;
+        }
+
         { // Atomic block
             std::lock_guard<std::mutex> guard(member_list_mutex);
 
@@ -79,7 +98,7 @@ void heartbeater<is_introducer>::client() {
             delete[] msg_buf;
 
             // If we are the introducer, also send the introduction messages
-            if (is_introducer && new_nodes_queue.size() > 0) {
+            if (is_introducer_ && new_nodes_queue.size() > 0) {
                 send_introducer_msg();
             }
         }
@@ -90,13 +109,13 @@ void heartbeater<is_introducer>::client() {
 }
 
 // Scans through neighbors and marks those with a heartbeat past the timeout as failed
-template <bool is_introducer>
-void heartbeater<is_introducer>::check_for_failed_neighbors() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::check_for_failed_neighbors() {
     uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     std::vector<member> neighbors = mem_list->get_neighbors();
 
     for (auto mem : neighbors) {        
-        if (current_time - mem.last_heartbeat > timeout_interval_ms) {
+        if (current_time > mem.last_heartbeat + timeout_interval_ms) {
             lg->log("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list->remove_member(mem.id);
 
@@ -107,8 +126,8 @@ void heartbeater<is_introducer>::check_for_failed_neighbors() {
                 failed_nodes_queue.push(mem.id, message_redundancy);
 
                 // Call the on_fail handler if provided
-                if (on_fail_handler) {
-                    on_fail_handler(mem);
+                for (auto handler : on_fail_handlers) {
+                    handler(mem);
                 }
             }
         }
@@ -116,8 +135,8 @@ void heartbeater<is_introducer>::check_for_failed_neighbors() {
 }
 
 // (Should be called only by introducer) Sends pending messages to newly joined nodes
-template <bool is_introducer>
-void heartbeater<is_introducer>::send_introducer_msg() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::send_introducer_msg() {
     char *msg_buf;
     unsigned msg_buf_len;
 
@@ -129,18 +148,27 @@ void heartbeater<is_introducer>::send_introducer_msg() {
     assert(msg_buf != nullptr);
     assert(msg_buf_len > 0);
 
-    for (auto node : new_nodes_queue.pop()) {
+    auto new_nodes = new_nodes_queue.pop();
+    auto updated = new_nodes_queue.peek();
+
+    for (auto node : new_nodes) {
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
         udp_client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
+
+        // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
+        // so that it can be added to other nodes' membership lists
+        if (std::find_if(updated.begin(), updated.end(), [=](member m) {return m.id == node.id;}) == updated.end()) {
+            joined_nodes_queue.push(node, message_redundancy);
+        }
     }
 
     delete[] msg_buf;
 }
 
 // Initiates an async request to join the group by sending a message to the introducer
-template <bool is_introducer>
-void heartbeater<is_introducer>::join_group(std::string introducer) {
-    if (is_introducer)
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::join_group(std::string introducer) {
+    if (is_introducer_)
         return;
 
     lg->log("Requesting introducer to join group");        
@@ -170,16 +198,16 @@ void heartbeater<is_introducer>::join_group(std::string introducer) {
 }
 
 // Sends a message to peers stating that we are leaving
-template <bool is_introducer>
-void heartbeater<is_introducer>::leave_group() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::leave_group() {
     lg->log("Leaving the group");
 
     joined_group = false;
     left_nodes_queue.push(our_id, message_redundancy);
 }
 
-template <bool is_introducer>
-void heartbeater<is_introducer>::server() {
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::server() {
     udp_server->start_server(port);
 
     int size;
@@ -187,6 +215,11 @@ void heartbeater<is_introducer>::server() {
 
     // Code to listen for messages and handle them accordingly here
     while (true) {
+        // If the server is not running, stop everything and exit
+        if (!running.load()) {
+            break;
+        }
+
         // If we are not in the group, do not listen for messages
         if (!joined_group.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -204,24 +237,39 @@ void heartbeater<is_introducer>::server() {
             }
             assert(msg.is_well_formed());
 
+            // If we are in the group and the message is not from within the group, ignore it (with special case for introducer)
+            if (mem_list->get_member_by_id(our_id).id == our_id &&
+                mem_list->get_member_by_id(msg.get_id()).id != msg.get_id()) {
+
+                // Allow the message to be processed if we are the introducer and it's a join request
+                if (is_introducer_ && msg.get_joined_nodes().size() == 1 &&
+                                      msg.get_left_nodes().size() == 0 &&
+                                      msg.get_failed_nodes().size() == 0 &&
+                                      msg.get_joined_nodes()[0].id == msg.get_id()) {
+                    // Do nothing
+                } else {
+                    lg->log("Ignoring message from " + std::to_string(msg.get_id()) + " because they are not in the group");
+                    continue;
+                }
+            }
+
             for (member m : msg.get_joined_nodes()) {
                 assert(m.id != 0 && m.hostname != "");
 
                 // Only add and propagate information about this join if we've never seen this node
                 if (joined_ids.find(m.id) == joined_ids.end()) {
                     joined_ids.insert(m.id);
+                    mem_list->add_member(m.hostname, m.id);
 
-                    // If we are the introducer, mark this node to receive the full membership list
-                    if (is_introducer) {
+                    if (is_introducer_) {
                         lg->log("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
                         new_nodes_queue.push(m, message_redundancy);
+                    } else {
+                        joined_nodes_queue.push(m, message_redundancy);
                     }
 
-                    mem_list->add_member(m.hostname, m.id);
-                    joined_nodes_queue.push(m, message_redundancy);
-
-                    if (on_join_handler) {
-                        on_join_handler(m);
+                    for (auto handler : on_join_handlers) {
+                        handler(m);
                     }
                 }
             }
@@ -232,8 +280,8 @@ void heartbeater<is_introducer>::server() {
                     mem_list->remove_member(id);
                     left_nodes_queue.push(id, message_redundancy);
 
-                    if (on_leave_handler) {
-                        on_leave_handler(mem_list->get_member_by_id(id));
+                    for (auto handler : on_leave_handlers) {
+                        handler(mem_list->get_member_by_id(id));
                     }
                 }
             }
@@ -244,8 +292,8 @@ void heartbeater<is_introducer>::server() {
                     mem_list->remove_member(id);
                     failed_nodes_queue.push(id, message_redundancy);
 
-                    if (on_fail_handler) {
-                        on_fail_handler(mem_list->get_member_by_id(id));
+                    for (auto handler : on_fail_handlers) {
+                        handler(mem_list->get_member_by_id(id));
                     }
                 }
             }
@@ -255,6 +303,25 @@ void heartbeater<is_introducer>::server() {
     }
 
     udp_server->stop_server();
+}
+
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::on_fail(std::function<void(member)> handler) {
+    // Acquire mutex to prevent concurrent modification of vector
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+    on_fail_handlers.push_back(handler);
+}
+
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::on_leave(std::function<void(member)> handler) {
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+    on_leave_handlers.push_back(handler);
+}
+
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::on_join(std::function<void(member)> handler) {
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+    on_join_handlers.push_back(handler);
 }
 
 // Force the compiler to compile both templates
