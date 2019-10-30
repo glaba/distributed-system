@@ -12,7 +12,9 @@ using namespace std::chrono;
 template <bool is_introducer_>
 heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
         udp_server_svc *udp_server_, std::string local_hostname_, uint16_t port_)
-    : local_hostname(local_hostname_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_), mem_list(mem_list_), port(port_) {
+    : local_hostname(local_hostname_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_), nodes_can_join(true), mem_list(mem_list_), port(port_) {
+
+    our_id = 0;
 
     if (is_introducer_) {
         int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -57,6 +59,14 @@ std::vector<member> heartbeater<is_introducer_>::get_members() {
     return mem_list->get_members();
 }
 
+// Returns the list of members of the group that this node is aware of
+template <bool is_introducer_>
+member heartbeater<is_introducer_>::get_successor() {
+    std::lock_guard<std::mutex> guard(member_list_mutex);
+
+    return mem_list->get_successor(our_id);
+}
+
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::client() {
     // Remaining client code here
@@ -98,7 +108,7 @@ void heartbeater<is_introducer_>::client() {
             delete[] msg_buf;
 
             // If we are the introducer, also send the introduction messages
-            if (is_introducer_ && new_nodes_queue.size() > 0) {
+            if (is_introducer_ && nodes_can_join.load() && new_nodes_queue.size() > 0) {
                 send_introducer_msg();
             }
         }
@@ -246,7 +256,12 @@ void heartbeater<is_introducer_>::server() {
                                       msg.get_left_nodes().size() == 0 &&
                                       msg.get_failed_nodes().size() == 0 &&
                                       msg.get_joined_nodes()[0].id == msg.get_id()) {
-                    // Do nothing
+                    if (nodes_can_join.load()) {
+                        // Do nothing
+                    } else {
+                        lg->log("Nodes cannot join because leader election is occurring!");
+                        continue;
+                    }
                 } else {
                     lg->log("Ignoring message from " + std::to_string(msg.get_id()) + " because they are not in the group");
                     continue;

@@ -18,10 +18,13 @@ public:
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual std::vector<member> get_members() = 0;
+    virtual member get_successor() = 0;
     virtual void join_group(std::string introducer) = 0;
     virtual void leave_group() = 0;
     virtual uint32_t get_id() = 0;
     virtual bool is_introducer() = 0;
+    virtual void lock_new_joins() = 0;
+    virtual void unlock_new_joins() = 0;
 
     // Sets handlers that will be called when membership list changes
     virtual void on_fail(std::function<void(member)>) = 0;
@@ -42,6 +45,10 @@ public:
     // Returns the list of members of the group that this node is aware of
     std::vector<member> get_members();
 
+    // Returns the next node after this one in the membership list
+    // If we have not yet joined the group, returns an empty member
+    member get_successor();
+
     // Initiates an async request to join the group by sending a message to the introducer
     void join_group(std::string introducer);
 
@@ -54,6 +61,16 @@ public:
 
     bool is_introducer() {
         return is_introducer_;
+    }
+
+    // If we are the introducer, prevents any nodes from joining
+    void lock_new_joins() {
+        nodes_can_join = false;
+    }
+
+    // If we are the introducer, allows nodes to join again
+    void unlock_new_joins() {
+        nodes_can_join = true;
     }
 
     void on_fail(std::function<void(member)>);
@@ -96,6 +113,9 @@ private:
     redundant_queue<member> joined_nodes_queue;
     // (If we are the introducer), queue of new nodes that should be sent the membership list
     redundant_queue<member> new_nodes_queue;
+
+    // Boolean indicating whether or not new nodes can join (if we are the introducer)d
+    std::atomic<bool> nodes_can_join;
 
     // Set containing all IDs that have ever joined
     std::set<uint32_t> joined_ids;

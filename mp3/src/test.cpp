@@ -3,6 +3,7 @@
 #include "member_list.h"
 #include "mock_udp.h"
 #include "heartbeater.h"
+#include "election.h"
 
 #include <algorithm>
 #include <cassert>
@@ -275,10 +276,87 @@ int test_joining(logger *lg) {
     return 0;
 }
 
+int test_election(logger *lg) {
+    std::cout << "=== TESTING ELECTION ===" << std::endl;
+    {
+        const int NUM_NODES = 2;
+
+        double drop_probability = 0.2;
+
+        mock_udp_factory *fac = new mock_udp_factory();
+
+        mock_udp_client_svc *clients[NUM_NODES];
+        mock_udp_server_svc *servers[NUM_NODES];
+        logger *loggers[NUM_NODES];
+        member_list *mem_lists[NUM_NODES];
+        election *elections[NUM_NODES];
+
+        for (int i = 0; i < NUM_NODES; i++) {
+            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false);
+            clients[i]->set_drop_probability(drop_probability);
+            servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
+            if (lg->is_verbose()) {
+                loggers[i] = new logger("h" + std::to_string(i), true);
+            } else {
+                loggers[i] = new logger("", "h" + std::to_string(i), false);
+            }
+            mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
+        }
+
+        // h1 is the introducer
+        heartbeater_intf *hbs[NUM_NODES];
+        hbs[0] = new heartbeater<true>(mem_lists[0], loggers[0], clients[0], servers[0], "h0", 1234);
+        for (int i = 1; i < NUM_NODES; i++) {
+            hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], servers[i], "h" + std::to_string(i), 1234);
+        }
+
+        hbs[0]->start();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        for (unsigned i = 1; i < NUM_NODES; i++) {
+            hbs[i]->start();
+            hbs[i]->join_group("h0");
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+        member m1;
+        m1.id = hbs[1]->get_id();
+        m1.hostname = "h1";
+        elections[0] = new election(hbs[0], loggers[0], m1);
+        elections[0]->start();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+        // Stop h1 and see how election proceeds at h0
+        hbs[1]->stop();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(20000));
+
+        // Stop all heartbeaters
+        for (unsigned i = 0; i < NUM_NODES; i++) {
+            if (i == 1)
+                continue;
+
+            std::thread stop_thread([hbs, i] {
+                hbs[i]->stop();
+            });
+            stop_thread.detach();
+        }
+        // Wait for them all to stop
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    }
+
+    return 0;
+}
+
 int run_tests(logger *lg) {
-    assert(test_member_list(lg) == 0);
-    assert(test_mock_udp(lg) == 0);
-    assert(test_joining(lg) == 0);
+    // assert(test_member_list(lg) == 0);
+    // assert(test_mock_udp(lg) == 0);
+    // assert(test_joining(lg) == 0);
+    assert(test_election(lg) == 0);
 
 	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
 	return 0;

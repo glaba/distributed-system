@@ -214,6 +214,23 @@ std::vector<member> member_list::get_members() {
 	return list;
 }
 
+// Gets the successor to the node with the given ID
+// Returns a member with ID 0 if the given ID was not found
+member member_list::get_successor(uint32_t id) {
+	for (node *cur = head; cur != nullptr; cur = cur->next) {
+		if (cur->m.id == id) {
+			if (cur->next == nullptr) {
+				// Wrap around to the head for the successor
+				return head->m;
+			} else {
+				return cur->next->m;
+			}
+		}
+	}
+	// Node with given ID not found
+	return member();
+}
+
 // Gets the list of members (for testing)
 std::list<member> member_list::__get_internal_list() {
 	std::list<member> list;

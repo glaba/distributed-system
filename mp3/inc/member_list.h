@@ -11,6 +11,7 @@
 using namespace std::chrono;
 
 typedef struct member {
+    member() : id(0), hostname("") {}
     uint32_t id;
     std::string hostname;
     uint64_t last_heartbeat;
@@ -48,6 +49,9 @@ public:
     bool joined_list();
     // Gets a list of all the members (to be used by introducer)
     std::vector<member> get_members();
+    // Gets the successor to the node with the given ID
+    // Returns a member with ID 0 if the given ID was not found
+    member get_successor(uint32_t id);
     // Gets the list of members (for testing)
     std::list<member> __get_internal_list();
 private:
