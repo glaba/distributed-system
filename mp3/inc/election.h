@@ -47,12 +47,11 @@ private:
 	};
 	election_state state;
 	std::atomic<election_state> next_state; // The next state to transition to
-	std::mutex state_mutex;	
+	std::recursive_mutex state_mutex;
 
-	// Transitions the current state to the given state
-	// Assumes that state_mutex will be locked before calling for the pre-transition action
-	//  and leaves state_mutex locked for the post-transition action
-	void transition(election_state s);
+	// Transitions the current state to the given state and returns true if the transition succeeded
+	// Performs additional checks to make sure that there are no race conditions (which is why origin is needed)
+	bool transition(election_state origin_state, election_state dest_state);
 	// Variable that indicates that a transition has occurred
 	std::atomic<bool> state_changed;
 
@@ -71,7 +70,7 @@ private:
 	std::mutex timer_mutex; // Mutex that protects the timer variables
 
 	// Debugging function to print a string value for the enum
-	std::string print_state();
+	std::string print_state(election_state s);
 
 	// The heartbeater whose member list we will use to determine the master node
 	heartbeater_intf *hb;
