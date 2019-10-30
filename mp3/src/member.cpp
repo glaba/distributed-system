@@ -33,15 +33,15 @@ int main(int argc, char **argv) {
         return retval;
     }
 
-    udp_client_svc *udp_client = new udp_client_svc(lg);
-    udp_server_svc *udp_server = new udp_server_svc(lg);
+    udp_client_intf *udp_client_inst = new udp_client(lg);
+    udp_server_intf *udp_server_inst = new udp_server(lg);
     member_list *mem_list = new member_list(local_hostname, lg);
 
     heartbeater_intf *hb;
     if (introducer == "none") {
-        hb = new heartbeater<true>(mem_list, lg, udp_client, udp_server, local_hostname, port);
+        hb = new heartbeater<true>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
     } else {
-        hb = new heartbeater<false>(mem_list, lg, udp_client, udp_server, local_hostname, port);
+        hb = new heartbeater<false>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
     }
 
     hb->start();

@@ -6,12 +6,12 @@
 #include <cassert>
 #include <cstdlib>
 
-mock_udp_client_svc *mock_udp_factory::get_mock_udp_client(string hostname, bool show_packets) {
-    return new mock_udp_client_svc(hostname, show_packets, coordinator);
+mock_udp_client *mock_udp_factory::get_mock_udp_client(string hostname, bool show_packets) {
+    return new mock_udp_client(hostname, show_packets, coordinator);
 }
 
-mock_udp_server_svc *mock_udp_factory::get_mock_udp_server(string hostname) {
-    return new mock_udp_server_svc(hostname, coordinator);
+mock_udp_server *mock_udp_factory::get_mock_udp_server(string hostname) {
+    return new mock_udp_server(hostname, coordinator);
 }
 
 // Notify the coordinator that this thread is waiting for messages
@@ -43,7 +43,7 @@ int mock_udp_coordinator::recv(string hostname, char *buf, unsigned length) {
     unsigned actual_length = std::get<1>(msg);
 
     assert(msg_buf != nullptr);
-    
+
     unsigned i;
     for (i = 0; i < actual_length && i < length; i++) {
         buf[i] = msg_buf[i];
@@ -91,10 +91,11 @@ void mock_udp_coordinator::stop_server(string hostname) {
     }
 }
 
-void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned length) {
+// Sends a UDP packet to the specified destination
+void mock_udp_client::send(string dest, string port, char *msg, unsigned length) {
     if (static_cast<double>(std::rand() % RAND_MAX) / RAND_MAX >= drop_probability) {
         if (show_packets) {
-            std::string log_msg = "[Delivered " + 
+            std::string log_msg = "[Delivered " +
                 std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
                 hostname + " -> " + dest + " - ";
             for (unsigned i = 0; i < length; i++) {
@@ -105,7 +106,7 @@ void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned len
         coordinator->send(dest, msg, length);
     }
     else if (show_packets) {
-        std::string log_msg = "[Dropped " + 
+        std::string log_msg = "[Dropped " +
             std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
             hostname + " -> " + dest + " - ";
         for (unsigned i = 0; i < length; i++) {
@@ -116,20 +117,20 @@ void mock_udp_client_svc::send(string dest, string port, char *msg, unsigned len
 }
 
 // Starts the server on the machine with the given hostname on the given port
-void mock_udp_server_svc::start_server(int port) {
+void mock_udp_server::start_server(int port) {
     // Do nothing, we ignore ports for the mocked UDP service
 }
 
 // Stops the server
-void mock_udp_server_svc::stop_server() {
+void mock_udp_server::stop_server() {
     stopped = false;
     coordinator->stop_server(hostname);
 }
 
 // Wrapper function around recvfrom that handles errors
-int mock_udp_server_svc::recv(char *buf, unsigned length) {
+int mock_udp_server::recv(char *buf, unsigned length) {
     volatile bool flag = false;
-    
+
     coordinator->notify_waiting(hostname, &flag);
     // Wait for a message to arrive while the server is still up
     while (!flag && !stopped) {

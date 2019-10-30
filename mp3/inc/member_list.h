@@ -52,8 +52,6 @@ public:
     // Gets the successor to the node with the given ID
     // Returns a member with ID 0 if the given ID was not found
     member get_successor(uint32_t id);
-    // Gets the list of members (for testing)
-    std::list<member> __get_internal_list();
 private:
     typedef struct node {
         member m;
@@ -63,6 +61,5 @@ private:
     node *head = nullptr;
 
     std::string local_hostname = "";
-    // std::list<member> list;
     logger *lg;
 };

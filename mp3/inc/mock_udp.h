@@ -20,10 +20,10 @@ public:
     void notify_waiting(string hostname, volatile bool *flag);
     // Reads a packet (non-blocking) after notify_waiting was called and flag was set to true
     int recv(string hostname, char *buf, unsigned length);
-    // Clears the message queue for this host and notifies with no message if recv is being called
-    void stop_server(string hostname);
     // Sends a packet to the specified destination
     void send(string dest, char *msg, unsigned length);
+    // Clears the message queue for this host and notifies with no message if recv is being called
+    void stop_server(string hostname);
 private:
     // Lock access to both maps
     std::mutex msg_mutex;
@@ -33,13 +33,13 @@ private:
     std::unordered_map<std::string, volatile bool*> notify_flag;
 };
 
-// Mock UDP client service, should not be instantiated but obtained from the factory
-class mock_udp_client_svc : public udp_client_svc {
+// Mock UDP client, should not be instantiated but obtained from the factory
+class mock_udp_client : public udp_client_intf {
 public:
-    mock_udp_client_svc(string hostname_, bool show_packets_, mock_udp_coordinator *coordinator_)
-        : udp_client_svc(nullptr), show_packets(show_packets_), drop_probability(0.0), 
-          hostname(hostname_), coordinator(coordinator_), lg(new logger("UDP", show_packets)) {}
-    ~mock_udp_client_svc() {
+    mock_udp_client(string hostname_, bool show_packets_, mock_udp_coordinator *coordinator_)
+        : show_packets(show_packets_), drop_probability(0.0), hostname(hostname_),
+          coordinator(coordinator_), lg(new logger("UDP", show_packets)) {}
+    ~mock_udp_client() {
         delete lg;
     }
 
@@ -58,13 +58,12 @@ private:
     logger *lg;
 };
 
-// Mock UDP server service, should not be instantiated but obtained from the factory
-class mock_udp_server_svc : public udp_server_svc {
+// Mock UDP server, should not be instantiated but obtained from the factory
+class mock_udp_server : public udp_server_intf {
 public:
-    mock_udp_server_svc(string hostname_, mock_udp_coordinator *coordinator_) 
-        : udp_server_svc(nullptr), hostname(hostname_), coordinator(coordinator_), 
-          stopped(false) {}
-    ~mock_udp_server_svc() {}
+    mock_udp_server(string hostname_, mock_udp_coordinator *coordinator_)
+        : hostname(hostname_), coordinator(coordinator_), stopped(false) {}
+    ~mock_udp_server() {}
 
     // Starts the server on the machine with the given hostname on the given port
     void start_server(int port);
@@ -90,8 +89,8 @@ public:
         delete coordinator;
     }
 
-    mock_udp_client_svc *get_mock_udp_client(string hostname, bool show_packets);
-    mock_udp_server_svc *get_mock_udp_server(string hostname);
+    mock_udp_client *get_mock_udp_client(string hostname, bool show_packets);
+    mock_udp_server *get_mock_udp_server(string hostname);
 private:
     mock_udp_coordinator *coordinator;
 };

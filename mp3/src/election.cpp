@@ -7,212 +7,223 @@
 #include <string>
 
 election::election(heartbeater_intf *hb_, logger *lg_, member master_node_) : hb(hb_), lg(lg_), master_node(master_node_) {
-	// master_node.id = 0;
-	state = election_state::normal;
-	next_state = election_state::normal;
-	state_changed = false;
+    // master_node.id = 0;
+    state = election_state::normal;
+    next_state = election_state::normal;
+    state_changed = false;
 }
 
+// Starts keeping track of the master node and running elections
 void election::start() {
-	running = true;
-	timer_on = false;
-	election_thread = new std::thread([this] {
-		run_election();
-	});
-	election_thread->detach();
+    running = true;
+    timer_on = false;
 
-	timer_thread = new std::thread([this] {
-		update_timer();
-	});
-	timer_thread->detach();
+    election_thread = new std::thread([this] {
+        run_election();
+    });
+    election_thread->detach();
 
-	std::function<void(member)> callback = [this](member m) {
-		{ // Atomic block for accessing the state
-			std::lock_guard<std::recursive_mutex> guard(state_mutex);
+    timer_thread = new std::thread([this] {
+        update_timer();
+    });
+    timer_thread->detach();
 
-			if (state != election_state::normal) {
-				return;
-			}
+    std::function<void(member)> callback = [this](member m) {
+        { // Atomic block for accessing the state
+            std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-			if (m.id == master_node.id) {
-				lg->log("Master node failed!");
-				if (transition(election_state::normal, election_state::election_wait)) {
-					lg->log("Beginning election process");
-				} else {
-					assert(false && "No thread should be able to modify the election state before master node failure detected");
-				}
-			}
-		}
-	};
+            if (state != election_state::normal) {
+                return;
+            }
 
-	hb->on_fail(callback);
-	hb->on_leave(callback);
+            if (m.id == master_node.id) {
+                lg->log("Master node failed!");
+                if (transition(election_state::normal, election_state::election_wait)) {
+                    lg->log("Beginning election process");
+                } else {
+                    assert(false && "No thread should be able to modify the election state before master node failure detected");
+                }
+            }
+        }
+    };
+
+    hb->on_fail(callback);
+    hb->on_leave(callback);
 }
 
+// Debugging function to print a string value for the enum
 std::string election::print_state(election_state s) {
-	switch (s) {
-		case normal: return "NORMAL";
-		case election_wait: return "ELECTION_WAIT";
-		case election_init: return "ELECTION_INIT";
-		case electing: return "ELECTING";
-		case elected: return "ELECTED";
-		case failure: return "FAILURE";
-		default: return "";
-	}
+    switch (s) {
+        case normal: return "NORMAL";
+        case election_wait: return "ELECTION_WAIT";
+        case election_init: return "ELECTION_INIT";
+        case electing: return "ELECTING";
+        case elected: return "ELECTED";
+        case failure: return "FAILURE";
+        default: return "";
+    }
 }
 
+// Transitions the current state to the given state and returns true if the transition succeeded
+// Performs additional checks to make sure that there are no race conditions (which is why origin is needed)
 bool election::transition(election_state origin_state, election_state dest_state) {
-	std::lock_guard<std::recursive_mutex> guard(state_mutex);
+    std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-	if (state != next_state || state != origin_state) {
-		lg->log("state: " + print_state(state) + ", next_state: " + print_state(next_state));
-		return false;
-	}
+    if (state != next_state || state != origin_state) {
+        lg->log("state: " + print_state(state) + ", next_state: " + print_state(next_state));
+        return false;
+    }
 
-	next_state = dest_state;
-	state_changed = true;
-	return true;
+    next_state = dest_state;
+    state_changed = true;
+    return true;
 }
 
+// Thread function that performs the election logic by implementing the election state machine
 void election::run_election() {
-	while (running.load()) {
-		// Perform the post-transition operation for the state we transitioned into
-		if (state_changed.load()) {
-			std::lock_guard<std::recursive_mutex> guard(state_mutex);
+    while (running.load()) {
+        // Perform the post-transition operation for the state we transitioned into
+        if (state_changed.load()) {
+            std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-			state = next_state;
-			state_changed = false;
-			lg->log("State changed to " + print_state(state));
+            state = next_state;
+            state_changed = false;
+            lg->log("State changed to " + print_state(state));
 
-			// We should already have the state_mutex, so we can safely use state
-			switch (state) {
-				case election_wait: {
-					hb->lock_new_joins();
+            // We should already have the state_mutex, so we can safely use state
+            switch (state) {
+                case election_wait: {
+                    hb->lock_new_joins();
 
-					// Start timer with a range so that not all nodes send initiation messages
-					start_timer(MEMBER_LIST_STABILIZATION_TIME + (std::rand() % MEMBER_LIST_STABILIZATION_RANGE));
-					lg->log("Waiting for membership list to stabilize or for an election to be initiated");
-					break;
-				}
-				case election_init: {
-					if (transition(election_state::election_init, election_state::electing)) {
-						std::string successor = hb->get_successor().hostname;
+                    // Start timer with a range so that not all nodes send initiation messages
+                    start_timer(MEMBER_LIST_STABILIZATION_TIME + (std::rand() % MEMBER_LIST_STABILIZATION_RANGE));
+                    lg->log("Waiting for membership list to stabilize or for an election to be initiated");
+                    break;
+                }
+                case election_init: {
+                    if (transition(election_state::election_init, election_state::electing)) {
+                        std::string successor = hb->get_successor().hostname;
 
-						// TODO: implement message serialization and TCP
-						// send(successor, {type: ELECTION, initiator ID: hb->get_id(), vote ID: hb->get_id()});
-						lg->log("Sent election initiation message to successor at " + successor);
-					} else {
-						assert(false && "This transition should always succeed");
-					}
-					break;
-				}
-				case electing: {
-					// Set timer at which point the election times out and we restart the election
-					start_timer(hb->get_members().size() * ELECTION_TIMEOUT_TIME);
-					lg->log("Election has begun, timer waiting for election to time out");
-					break;
-				}
-				case elected: {
-					std::string successor = hb->get_successor().hostname;
+                        // TODO: implement message serialization and TCP
+                        // send(successor, {type: ELECTION, initiator ID: hb->get_id(), vote ID: hb->get_id()});
+                        lg->log("Sent election initiation message to successor at " + successor);
+                    } else {
+                        assert(false && "This transition should always succeed");
+                    }
+                    break;
+                }
+                case electing: {
+                    // Set timer at which point the election times out and we restart the election
+                    start_timer(hb->get_members().size() * ELECTION_TIMEOUT_TIME);
+                    lg->log("Election has begun, timer waiting for election to time out");
+                    break;
+                }
+                case elected: {
+                    std::string successor = hb->get_successor().hostname;
 
-					// TODO: implement message serializaiton and TCP
-					// send(successor, {type: ELECTED, master ID: our ID})
-					lg->log("We have been selected as the new master node. Sending elected message to successor at " + successor);
-					break;
-				}
-				case failure: {
-					assert(false && "Either election algorithm is flawed or severe network partition has occurred!");
-					break;
-				}
-				case normal:
-				default:
-					break;
-			}
-		}
+                    // TODO: implement message serializaiton and TCP
+                    // send(successor, {type: ELECTED, master ID: our ID})
+                    lg->log("We have been selected as the new master node. Sending elected message to successor at " + successor);
+                    break;
+                }
+                case failure: {
+                    assert(false && "Either election algorithm is flawed or severe network partition has occurred!");
+                    break;
+                }
+                case normal:
+                default:
+                    break;
+            }
+        }
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	}
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
+// Starts the timer to run for the given number of milliseconds
 void election::start_timer(uint32_t time) {
-	std::lock_guard<std::mutex> guard(timer_mutex);
+    std::lock_guard<std::mutex> guard(timer_mutex);
 
-	timer_on = true;
-	timer = time;
-	prev_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    timer_on = true;
+    timer = time;
+    prev_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+// Updates the timer and performs the appropriate action in the state machine if the timer reaches 0
 void election::update_timer() {
-	for (; running.load(); std::this_thread::sleep_for(std::chrono::milliseconds(100))) {
-		{ // Atomic block for updating timer variables
-			std::lock_guard<std::mutex> guard(timer_mutex);
+    for (; running.load(); std::this_thread::sleep_for(std::chrono::milliseconds(100))) {
+        { // Atomic block for updating timer variables
+            std::lock_guard<std::mutex> guard(timer_mutex);
 
-			if (timer_on) {
-				// Update timer without letting it overflow (since it is unsigned)
-				uint32_t cur_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-				uint32_t diff = cur_time - prev_time;
-				prev_time = cur_time;
-				timer = (timer > diff) ? (timer - diff) : 0;
+            if (timer_on) {
+                // Update timer without letting it overflow (since it is unsigned)
+                uint32_t cur_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                uint32_t diff = cur_time - prev_time;
+                prev_time = cur_time;
+                timer = (timer > diff) ? (timer - diff) : 0;
 
-				if (timer != 0) {
-					continue;
-				} else {
-					// Now that the timer has expired, turn the timer off before we perform the associated action
-					timer_on = false;
-				}
-			} else {
-				continue;
-			}
-		}
+                if (timer != 0) {
+                    continue;
+                } else {
+                    // Now that the timer has expired, turn the timer off before we perform the associated action
+                    timer_on = false;
+                }
+            } else {
+                continue;
+            }
+        }
 
-		{ // Atomic block for accessing the state
-			std::lock_guard<std::recursive_mutex> guard(state_mutex);
+        { // Atomic block for accessing the state
+            std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-			switch (state) {
-				case election_wait: {
-					if (transition(election_state::election_wait, election_state::election_init)) {
-						lg->log("Membership list has stabilized, sending election initiation message");
-					} else {
-						// Another thread called transition already but the transition and corresponding action have not yet occurred
-						// In this case, the only way for that to happen is if we received an ELECTION message
-						//  and transitioned to state ELECTING
-						assert(next_state == election_state::electing);
-					}
-					break;
-				}
-				case electing: {
-					if (transition(election_state::electing, election_state::election_wait)) {
-						lg->log("Election has timed out, restarting election");
-					} else {
-						// Another thread called transition already but the transition and corresponding action have not yet occurred
-						// In this case, the only way for that to happen is if we received an ELECTION message or an ELECTED message
-						//  and transitioned to states ELECTING / ELECTED or NORMAL / ELECTION_WAIT respectively
-						assert(next_state == election_state::electing || next_state == election_state::elected ||
-							   next_state == election_state::normal || next_state == election_state::election_wait);
-					}
-					break;
-				}
-				case normal:
-				case election_init:
-				case elected:
-				case failure:
-				default:
-					break;
-			}
-		}
-	}
+            switch (state) {
+                case election_wait: {
+                    if (transition(election_state::election_wait, election_state::election_init)) {
+                        lg->log("Membership list has stabilized, sending election initiation message");
+                    } else {
+                        // Another thread called transition already but the transition and corresponding action have not yet occurred
+                        // In this case, the only way for that to happen is if we received an ELECTION message
+                        //  and transitioned to state ELECTING
+                        assert(next_state == election_state::electing);
+                    }
+                    break;
+                }
+                case electing: {
+                    if (transition(election_state::electing, election_state::election_wait)) {
+                        lg->log("Election has timed out, restarting election");
+                    } else {
+                        // Another thread called transition already but the transition and corresponding action have not yet occurred
+                        // In this case, the only way for that to happen is if we received an ELECTION message or an ELECTED message
+                        //  and transitioned to states ELECTING / ELECTED or NORMAL / ELECTION_WAIT respectively
+                        assert(next_state == election_state::electing || next_state == election_state::elected ||
+                               next_state == election_state::normal || next_state == election_state::election_wait);
+                    }
+                    break;
+                }
+                case normal:
+                case election_init:
+                case elected:
+                case failure:
+                default:
+                    break;
+            }
+        }
+    }
 }
 
 election::~election() {
-	running = false;
-	std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-	delete election_thread;
-	delete timer_thread;
+    running = false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    delete election_thread;
+    delete timer_thread;
 }
 
+// Returns the master node, and sets succeeded to true if an election is not going on
+// If an election is going on, sets succeeded to false and returns potentially garbage data
+// If succeeded is set to false, no I/O should occur!
 member election::get_master_node(bool *succeeded) {
-	std::lock_guard<std::recursive_mutex> guard(state_mutex);
+    std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-	*succeeded = (state == normal);
-	return master_node;
+    *succeeded = (state == normal);
+    return master_node;
 }

@@ -10,9 +10,10 @@
 using namespace std::chrono;
 
 template <bool is_introducer_>
-heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
-        udp_server_svc *udp_server_, std::string local_hostname_, uint16_t port_)
-    : local_hostname(local_hostname_), lg(lg_), udp_client(udp_client_), udp_server(udp_server_), nodes_can_join(true), mem_list(mem_list_), port(port_) {
+heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_intf *client_,
+        udp_server_intf *server_, std::string local_hostname_, uint16_t port_)
+    : local_hostname(local_hostname_), lg(lg_), client(client_), server(server_),
+      nodes_can_join(true), mem_list(mem_list_), port(port_) {
 
     our_id = 0;
 
@@ -26,19 +27,21 @@ heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, ud
     }
 }
 
+// Starts the heartbeater
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::start() {
     lg->log("Starting heartbeater");
 
     running = true;
 
-    server_thread = new std::thread([this] {server();});
+    server_thread = new std::thread([this] {server_thread_function();});
     server_thread->detach();
 
-    client_thread = new std::thread([this] {client();});
+    client_thread = new std::thread([this] {client_thread_function();});
     client_thread->detach();
 }
 
+// Stops the heartbeater synchronously
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::stop() {
     lg->log("Stopping heartbeater");
@@ -67,8 +70,9 @@ member heartbeater<is_introducer_>::get_successor() {
     return mem_list->get_successor(our_id);
 }
 
+// Client thread function
 template <bool is_introducer_>
-void heartbeater<is_introducer_>::client() {
+void heartbeater<is_introducer_>::client_thread_function() {
     // Remaining client code here
     while (true) {
         // Exit the loop and the thread if the heartbeater is stopped
@@ -102,7 +106,7 @@ void heartbeater<is_introducer_>::client() {
             // Send the message out to all the neighbors
             for (auto mem : mem_list->get_neighbors()) {
                 if (msg_buf != nullptr) {
-                    udp_client->send(mem.hostname, std::to_string(port), msg_buf, msg_buf_len);
+                    client->send(mem.hostname, std::to_string(port), msg_buf, msg_buf_len);
                 }
             }
             delete[] msg_buf;
@@ -124,7 +128,7 @@ void heartbeater<is_introducer_>::check_for_failed_neighbors() {
     uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     std::vector<member> neighbors = mem_list->get_neighbors();
 
-    for (auto mem : neighbors) {        
+    for (auto mem : neighbors) {
         if (current_time > mem.last_heartbeat + timeout_interval_ms) {
             lg->log("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list->remove_member(mem.id);
@@ -163,7 +167,7 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
 
     for (auto node : new_nodes) {
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
-        udp_client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
+        client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
 
         // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
         // so that it can be added to other nodes' membership lists
@@ -181,7 +185,7 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     if (is_introducer_)
         return;
 
-    lg->log("Requesting introducer to join group");        
+    lg->log("Requesting introducer to join group");
     joined_group = true;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -202,8 +206,8 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     assert(buf_len > 0);
 
     for (int i = 0; i < message_redundancy; i++)
-        udp_client->send(introducer, std::to_string(port), buf, buf_len);
-    
+        client->send(introducer, std::to_string(port), buf, buf_len);
+
     delete[] buf;
 }
 
@@ -216,9 +220,10 @@ void heartbeater<is_introducer_>::leave_group() {
     left_nodes_queue.push(our_id, message_redundancy);
 }
 
+// Server thread function
 template <bool is_introducer_>
-void heartbeater<is_introducer_>::server() {
-    udp_server->start_server(port);
+void heartbeater<is_introducer_>::server_thread_function() {
+    server->start_server(port);
 
     int size;
     char buf[1024];
@@ -237,7 +242,7 @@ void heartbeater<is_introducer_>::server() {
         }
 
         // Listen for messages and process each one
-        if ((size = udp_server->recv(buf, 1024)) > 0) {
+        if ((size = server->recv(buf, 1024)) > 0) {
             std::lock_guard<std::mutex> guard(member_list_mutex);
 
             message msg(buf, size);
@@ -317,9 +322,10 @@ void heartbeater<is_introducer_>::server() {
         }
     }
 
-    udp_server->stop_server();
+    server->stop_server();
 }
 
+// Adds a handler to the list of handlers that will be called when a node fails
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_fail(std::function<void(member)> handler) {
     // Acquire mutex to prevent concurrent modification of vector
@@ -327,12 +333,14 @@ void heartbeater<is_introducer_>::on_fail(std::function<void(member)> handler) {
     on_fail_handlers.push_back(handler);
 }
 
+// Adds a handler to the list of handlers that will be called when a node leaves
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_leave(std::function<void(member)> handler) {
     std::lock_guard<std::mutex> guard(member_list_mutex);
     on_leave_handlers.push_back(handler);
 }
 
+// Adds a handler to the list of handlers that will be called when a node joins
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_join(std::function<void(member)> handler) {
     std::lock_guard<std::mutex> guard(member_list_mutex);

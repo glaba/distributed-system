@@ -54,8 +54,8 @@ int test_member_list(logger *lg) {
         assert(std::unique(neighbors.begin(), neighbors.end()) == neighbors.end());
         assert(std::find_if(neighbors.begin(), neighbors.end(), [](member m) {return m.hostname == "local";}) == neighbors.end());
 
-        // Check that the internal list representation is correct
-        std::list<member> list = ml.__get_internal_list();
+        // Check that the list of members is correct
+        std::vector<member> list = ml.get_members();
         assert(list.size() == 11);
 
         // Check for sortedness
@@ -81,7 +81,7 @@ int test_member_list(logger *lg) {
         }
         // ml: 2, 4, 6, 8
 
-        std::list<member> list = ml.__get_internal_list();
+        std::vector<member> list = ml.get_members();
         assert(list.size() == 4);
 
         // Check for sortedness
@@ -91,7 +91,7 @@ int test_member_list(logger *lg) {
             prev_id = m.id;
         }
         // Check that all the members that should be there are there
-        list.sort(compare_hostnames);
+        std::sort(list.begin(), list.end(), compare_hostnames);
         int i = 2;
         for (auto it = list.begin(); it != list.end(); it++) {
             assert(it->hostname == std::to_string(i));
@@ -111,10 +111,10 @@ int test_mock_udp(logger *lg) {
 
     mock_udp_factory *fac = new mock_udp_factory();
 
-    udp_client_svc *h1_client = fac->get_mock_udp_client("h1", false);
-    udp_server_svc *h1_server = fac->get_mock_udp_server("h1");
-    udp_client_svc *h2_client = fac->get_mock_udp_client("h2", false);
-    udp_server_svc *h2_server = fac->get_mock_udp_server("h2");
+    udp_client_intf *h1_client = fac->get_mock_udp_client("h1", false);
+    udp_server_intf *h1_server = fac->get_mock_udp_server("h1");
+    udp_client_intf *h2_client = fac->get_mock_udp_client("h2", false);
+    udp_server_intf *h2_server = fac->get_mock_udp_server("h2");
 
     volatile bool end = false;
 
@@ -195,8 +195,8 @@ int test_joining(logger *lg) {
 
         mock_udp_factory *fac = new mock_udp_factory();
 
-        mock_udp_client_svc *clients[NUM_NODES];
-        mock_udp_server_svc *servers[NUM_NODES];
+        mock_udp_client *clients[NUM_NODES];
+        mock_udp_server *servers[NUM_NODES];
         logger *loggers[NUM_NODES];
         member_list *mem_lists[NUM_NODES];
 
@@ -229,7 +229,7 @@ int test_joining(logger *lg) {
                 std::vector<member> members = hbs[j]->get_members();
                 // Ensure that the right number of members is there
                 assert(members.size() == i && "Change drop_probability to 0 to confirm test failure");
-                
+
                 // Ensure that the members that are there are correct
                 std::set<std::string> ids;
                 for (auto m : members) {
@@ -285,8 +285,8 @@ int test_election(logger *lg) {
 
         mock_udp_factory *fac = new mock_udp_factory();
 
-        mock_udp_client_svc *clients[NUM_NODES];
-        mock_udp_server_svc *servers[NUM_NODES];
+        mock_udp_client *clients[NUM_NODES];
+        mock_udp_server *servers[NUM_NODES];
         logger *loggers[NUM_NODES];
         member_list *mem_lists[NUM_NODES];
         election *elections[NUM_NODES];
@@ -353,11 +353,11 @@ int test_election(logger *lg) {
 }
 
 int run_tests(logger *lg) {
-    // assert(test_member_list(lg) == 0);
-    // assert(test_mock_udp(lg) == 0);
-    // assert(test_joining(lg) == 0);
+    assert(test_member_list(lg) == 0);
+    assert(test_mock_udp(lg) == 0);
+    assert(test_joining(lg) == 0);
     assert(test_election(lg) == 0);
 
-	std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
-	return 0;
+    std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;
+    return 0;
 }

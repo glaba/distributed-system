@@ -15,18 +15,29 @@
 
 class heartbeater_intf {
 public:
+    // Starts the heartbeater
     virtual void start() = 0;
+    // Stops the heartbeater synchronously
     virtual void stop() = 0;
+    // Returns the list of members of the group that this node is aware of
     virtual std::vector<member> get_members() = 0;
+    // Returns the next node after this one in the membership list
+    // If we have not yet joined the group, returns an empty member
     virtual member get_successor() = 0;
+    // Initiates an async request to join the group by sending a message to the introducer
     virtual void join_group(std::string introducer) = 0;
+    // Sends a message to peers stating that we are leaving
     virtual void leave_group() = 0;
+    // Returns the ID of the current node, which will be 0 if we have not joined the group
     virtual uint32_t get_id() = 0;
+    // Returns whether or not this node is the introducer
     virtual bool is_introducer() = 0;
+    // If we are the introducer, prevents any nodes from joining
     virtual void lock_new_joins() = 0;
+    // If we are the introducer, allows nodes to join again
     virtual void unlock_new_joins() = 0;
 
-    // Sets handlers that will be called when membership list changes
+    // Adds to a list of handlers that will be called when membership list changes
     virtual void on_fail(std::function<void(member)>) = 0;
     virtual void on_leave(std::function<void(member)>) = 0;
     virtual void on_join(std::function<void(member)>) = 0;
@@ -35,24 +46,14 @@ public:
 template <bool is_introducer_>
 class heartbeater : public heartbeater_intf {
 public:
-    heartbeater(member_list *mem_list_, logger *lg_, udp_client_svc *udp_client_, 
-        udp_server_svc *udp_server_, std::string local_hostname_, uint16_t port_);
+    heartbeater(member_list *mem_list_, logger *lg_, udp_client_intf *client_,
+        udp_server_intf *server_, std::string local_hostname_, uint16_t port_);
 
     void start();
-
     void stop();
-
-    // Returns the list of members of the group that this node is aware of
     std::vector<member> get_members();
-
-    // Returns the next node after this one in the membership list
-    // If we have not yet joined the group, returns an empty member
     member get_successor();
-
-    // Initiates an async request to join the group by sending a message to the introducer
     void join_group(std::string introducer);
-
-    // Sends a message to peers stating that we are leaving
     void leave_group();
 
     uint32_t get_id() {
@@ -63,12 +64,10 @@ public:
         return is_introducer_;
     }
 
-    // If we are the introducer, prevents any nodes from joining
     void lock_new_joins() {
         nodes_can_join = false;
     }
 
-    // If we are the introducer, allows nodes to join again
     void unlock_new_joins() {
         nodes_can_join = true;
     }
@@ -78,11 +77,11 @@ public:
     void on_join(std::function<void(member)>);
 
 private:
-    // Client thread function
-    void client();
+    // Fuction that runs the client side code in its own thread
+    void client_thread_function();
 
-    // Server thread function
-    void server();
+    // Function that runs the server side code in its own thread
+    void server_thread_function();
 
     // Scans through neighbors and marks those with a heartbeat past the timeout as failed
     void check_for_failed_neighbors();
@@ -104,8 +103,8 @@ private:
 
     // Externally provided services for heartbeater to use
     logger *lg;
-    udp_client_svc *udp_client;
-    udp_server_svc *udp_server;
+    udp_client_intf *client;
+    udp_server_intf *server;
 
     // Lists of nodes that have failed / left / joined that we will tell our neighbors
     redundant_queue<uint32_t> failed_nodes_queue;
