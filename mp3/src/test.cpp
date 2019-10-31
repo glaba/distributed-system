@@ -111,9 +111,9 @@ int test_mock_udp(logger *lg) {
 
     mock_udp_factory *fac = new mock_udp_factory();
 
-    udp_client_intf *h1_client = fac->get_mock_udp_client("h1", false);
+    udp_client_intf *h1_client = fac->get_mock_udp_client("h1", false, 0.0);
     udp_server_intf *h1_server = fac->get_mock_udp_server("h1");
-    udp_client_intf *h2_client = fac->get_mock_udp_client("h2", false);
+    udp_client_intf *h2_client = fac->get_mock_udp_client("h2", false, 0.0);
     udp_server_intf *h2_server = fac->get_mock_udp_server("h2");
 
     volatile bool end = false;
@@ -121,10 +121,12 @@ int test_mock_udp(logger *lg) {
     std::cout << "[ ";
 
     std::thread h1c([h1_client] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
         for (char i = 0; i < 20; i++) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-            h1_client->send("h2", std::to_string(1234), const_cast<char*>(std::string(1, i).c_str()), 1);
+            h1_client->send("h2", 1234, const_cast<char*>(std::string(1, i).c_str()), 1);
             std::cout << "->" << std::flush;
         }
     });
@@ -133,6 +135,7 @@ int test_mock_udp(logger *lg) {
         char buf[1024];
         int counter = 0;
 
+        h1_server->start_server(1234);
         while (true) {
             memset(buf, '\0', 1024);
 
@@ -150,13 +153,14 @@ int test_mock_udp(logger *lg) {
     std::thread h2s([&end, h2_server, h2_client] {
         char buf[1024];
 
+        h2_server->start_server(1234);
         while (true) {
             memset(buf, '\0', 1024);
 
             // Listen for messages and send back 2 * the result
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
-                h2_client->send("h1", std::to_string(1234), const_cast<char*>(std::string(1, val * 2).c_str()), 1);
+                h2_client->send("h1", 1234, const_cast<char*>(std::string(1, val * 2).c_str()), 1);
                 std::cout << "=" << std::flush;
             }
 
@@ -168,7 +172,7 @@ int test_mock_udp(logger *lg) {
     h1s.detach();
     h2s.detach();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2100));
 
     end = true;
     h1_server->stop_server();
@@ -195,14 +199,13 @@ int test_joining(logger *lg) {
 
         mock_udp_factory *fac = new mock_udp_factory();
 
-        mock_udp_client *clients[NUM_NODES];
-        mock_udp_server *servers[NUM_NODES];
+        udp_client_intf *clients[NUM_NODES];
+        udp_server_intf *servers[NUM_NODES];
         logger *loggers[NUM_NODES];
         member_list *mem_lists[NUM_NODES];
 
         for (int i = 0; i < NUM_NODES; i++) {
-            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false);
-            clients[i]->set_drop_probability(drop_probability);
+            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
             servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
             if (lg->is_verbose()) {
                 loggers[i] = new logger("h" + std::to_string(i), true);
@@ -285,15 +288,14 @@ int test_election(logger *lg) {
 
         mock_udp_factory *fac = new mock_udp_factory();
 
-        mock_udp_client *clients[NUM_NODES];
-        mock_udp_server *servers[NUM_NODES];
+        udp_client_intf *clients[NUM_NODES];
+        udp_server_intf *servers[NUM_NODES];
         logger *loggers[NUM_NODES];
         member_list *mem_lists[NUM_NODES];
         election *elections[NUM_NODES];
 
         for (int i = 0; i < NUM_NODES; i++) {
-            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false);
-            clients[i]->set_drop_probability(drop_probability);
+            clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
             servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
             if (lg->is_verbose()) {
                 loggers[i] = new logger("h" + std::to_string(i), true);

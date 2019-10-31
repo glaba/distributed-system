@@ -98,7 +98,6 @@ void member_list::remove_member(uint32_t id) {
 void member_list::update_heartbeat(uint32_t id) {
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         if (cur->m.id == id) {
-            lg->log_v("Detected heartbeat from node at " + cur->m.hostname + " with id " + std::to_string(id));
             cur->m.last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
             return;
         }

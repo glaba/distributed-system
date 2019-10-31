@@ -4,13 +4,13 @@
 
 #include <vector>
 
-class message {
+class hb_message {
 public:
     // Creates a message from a buffer (safe)
-    message(char *buf, unsigned length);
+    hb_message(char *buf, unsigned length);
 
     // Creates an message that will be empty by default
-    message(uint32_t id_) : id(id_) {}
+    hb_message(uint32_t id_) : id(id_) {}
 
     // Sets the list of failed nodes to the given list of nodes
     void set_failed_nodes(std::vector<uint32_t> nodes);

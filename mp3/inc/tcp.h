@@ -41,8 +41,8 @@ public:
 class tcp_server_intf : public tcp_utils {
 public:
     // Sets up server to receive connections on the given port
-    virtual void setup_server(std::string port) = 0;
-    // Tears down to server
+    virtual void setup_server(int port) = 0;
+    // Tears down the server
     virtual void tear_down_server() = 0;
     // Accepts a connection on the server fd
     // Returns the socket to the accepted connection
@@ -59,7 +59,7 @@ public:
 
 class tcp_server : public tcp_server_intf {
 public:
-    tcp_server(std::string port);
+    tcp_server(int port);
     void setup_server(std::string port);
     void tear_down_server();
     int accept_connection();
