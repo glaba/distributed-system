@@ -1,7 +1,7 @@
 #pragma once
 
 #include "member_list.h"
-#include "messages.h"
+#include "hb_messages.h"
 #include "udp.h"
 #include "redundant_queue.h"
 

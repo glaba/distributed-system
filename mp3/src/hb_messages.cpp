@@ -1,4 +1,4 @@
-#include "messages.h"
+#include "hb_messages.h"
 
 #include <iostream>
 #include <cassert>
@@ -20,7 +20,7 @@ inline void write_uint32_to_char_buf(uint32_t n, char *buf) {
 }
 
 // Creates a message from a buffer
-message::message(char *buf_, unsigned length_) {
+hb_message::hb_message(char *buf_, unsigned length_) {
     char *buf = buf_;
     unsigned length = length_;
 
@@ -116,47 +116,47 @@ malformed_msg:
 }
 
 // Sets the list of failed nodes to the given list of nodes
-void message::set_failed_nodes(std::vector<uint32_t> nodes) {
+void hb_message::set_failed_nodes(std::vector<uint32_t> nodes) {
     failed_nodes = nodes;
 }
 
 // Sets the list of joined nodes to the given list of nodes
-void message::set_joined_nodes(std::vector<member> nodes) {
+void hb_message::set_joined_nodes(std::vector<member> nodes) {
     joined_nodes = nodes;
 }
 
 // Sets the list of left nodes to the given list of nodes
-void message::set_left_nodes(std::vector<uint32_t> nodes) {
+void hb_message::set_left_nodes(std::vector<uint32_t> nodes) {
     left_nodes = nodes;
 }
 
 // Returns true if the deserialized message is not malformed
-bool message::is_well_formed() {
+bool hb_message::is_well_formed() {
     return id != 0;
 }
 
 // Gets the ID of the node that produced the message
-uint32_t message::get_id() {
+uint32_t hb_message::get_id() {
     return id;
 }
 
 // Gets the list of nodes that failed
-std::vector<uint32_t> message::get_failed_nodes() {
+std::vector<uint32_t> hb_message::get_failed_nodes() {
     return failed_nodes;
 }
 
 // Gets the list of nodes that left
-std::vector<uint32_t> message::get_left_nodes() {
+std::vector<uint32_t> hb_message::get_left_nodes() {
     return left_nodes;
 }
 
 // Gets the list of nodes that joined
-std::vector<member> message::get_joined_nodes() {
+std::vector<member> hb_message::get_joined_nodes() {
     return joined_nodes;
 }
 
 // Serializes the message and returns a buffer containing the message, along with the length
-char *message::serialize(unsigned &length) {
+char *hb_message::serialize(unsigned &length) {
     length = sizeof(uint32_t) + // Node ID
               sizeof(char) + sizeof(uint32_t) + failed_nodes.size() * sizeof(uint32_t) + // Failed nodes
               sizeof(char) + sizeof(uint32_t) + left_nodes.size() * sizeof(uint32_t) + // Left nodes

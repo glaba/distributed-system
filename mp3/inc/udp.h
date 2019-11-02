@@ -54,7 +54,7 @@ class udp_client_intf {
 public:
     virtual ~udp_client_intf() {}
     // Sends a UDP packet to the specified destination
-    virtual void send(string host, string port, char *msg, unsigned length) = 0;
+    virtual void send(string host, int port, char *msg, unsigned length) = 0;
 };
 
 class udp_client : public udp_client_intf {
@@ -62,7 +62,7 @@ public:
     udp_client(logger *lg_) : lg(lg_) {}
     ~udp_client() {}
 
-    void send(string host, string port, char *msg, unsigned length);
+    void send(string host, int port, char *msg, unsigned length);
 private:
     // Creates a UDP connection to a given host and port.
     // Returns a socket fd to the host, otherwise -1 on failure.

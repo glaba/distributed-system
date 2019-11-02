@@ -95,7 +95,7 @@ void heartbeater<is_introducer_>::client_thread_function() {
             unsigned msg_buf_len;
 
             // Create the message to send out
-            message msg(our_id);
+            hb_message msg(our_id);
             msg.set_failed_nodes(failed_nodes);
             msg.set_left_nodes(left_nodes);
             msg.set_joined_nodes(joined_nodes);
@@ -106,7 +106,7 @@ void heartbeater<is_introducer_>::client_thread_function() {
             // Send the message out to all the neighbors
             for (auto mem : mem_list->get_neighbors()) {
                 if (msg_buf != nullptr) {
-                    client->send(mem.hostname, std::to_string(port), msg_buf, msg_buf_len);
+                    client->send(mem.hostname, port, msg_buf, msg_buf_len);
                 }
             }
             delete[] msg_buf;
@@ -155,7 +155,7 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
     unsigned msg_buf_len;
 
     std::vector<member> all_members = mem_list->get_members();
-    message intro_msg(our_id);
+    hb_message intro_msg(our_id);
     intro_msg.set_joined_nodes(all_members);
     msg_buf = intro_msg.serialize(msg_buf_len);
 
@@ -167,7 +167,7 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
 
     for (auto node : new_nodes) {
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
-        client->send(node.hostname, std::to_string(port), msg_buf, msg_buf_len);
+        client->send(node.hostname, port, msg_buf, msg_buf_len);
 
         // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
         // so that it can be added to other nodes' membership lists
@@ -198,7 +198,7 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     char *buf;
     unsigned buf_len;
 
-    message join_req(our_id);
+    hb_message join_req(our_id);
     join_req.set_joined_nodes(std::vector<member>{us});
     buf = join_req.serialize(buf_len);
 
@@ -206,7 +206,7 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     assert(buf_len > 0);
 
     for (int i = 0; i < message_redundancy; i++)
-        client->send(introducer, std::to_string(port), buf, buf_len);
+        client->send(introducer, port, buf, buf_len);
 
     delete[] buf;
 }
@@ -245,7 +245,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
         if ((size = server->recv(buf, 1024)) > 0) {
             std::lock_guard<std::mutex> guard(member_list_mutex);
 
-            message msg(buf, size);
+            hb_message msg(buf, size);
 
             if (!msg.is_well_formed()) {
                 lg->log("Received malformed message! Reason: " + msg.why_malformed());

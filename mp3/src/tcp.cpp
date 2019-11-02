@@ -52,12 +52,12 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     return total;
 }
 
-tcp_server::tcp_server(std::string port) {
+tcp_server::tcp_server(int port) {
     // set up the messages_queue
     messages = std::queue<std::string>();
 
     // set up server fd
-    setup_server(port);
+    setup_server(std::to_string(port));
 }
 
 void tcp_server::setup_server(std::string port) {

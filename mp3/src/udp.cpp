@@ -52,8 +52,8 @@ int udp_server::create_udp_server(int port) {
 }
 
 // Sends a UDP packet to the specified destination
-void udp_client::send(string host, string port, char *msg, unsigned length) {
-    udp_client_info conn = create_udp_client(host, port);
+void udp_client::send(string host, int port, char *msg, unsigned length) {
+    udp_client_info conn = create_udp_client(host, std::to_string(port));
     if (conn.client_socket == -1) return;
 
     // Send the message and close the connection
