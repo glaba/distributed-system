@@ -1,17 +1,20 @@
 #include "redundant_queue.h"
 #include "member_list.h"
+#include "election_messages.h"
 
 #include <tuple>
 
 // Adds an item to the queue with a certain redundancy
 template <typename T>
 void redundant_queue<T>::push(T item, int redundancy) {
+    std::lock_guard<std::mutex> guard(data_mutex);
     data.push_back(std::make_tuple(item, redundancy));
 }
 
 // Returns a vector of all the items in the queue and decrements the redundancy for them
 template <typename T>
 std::vector<T> redundant_queue<T>::pop() {
+    std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
     // Pop all the items off, decrement redundancy and remove those with redundancy 0
@@ -33,6 +36,7 @@ std::vector<T> redundant_queue<T>::pop() {
 // Returns a vector of all the items in the queue without decrementing the redundancy
 template <typename T>
 std::vector<T> redundant_queue<T>::peek() {
+    std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
     for (auto k : data) {
@@ -45,3 +49,5 @@ std::vector<T> redundant_queue<T>::peek() {
 // Force the compiler to compile the required templates
 template class redundant_queue<uint32_t>;
 template class redundant_queue<member>;
+template class redundant_queue<std::tuple<std::string, election_message>>;
+template class redundant_queue<std::tuple<char*, unsigned>>;

@@ -3,6 +3,9 @@
 #include "member_list.h"
 #include "heartbeater.h"
 #include "logging.h"
+#include "redundant_queue.h"
+#include "udp.h"
+#include "election_messages.h"
 
 #include <atomic>
 #include <mutex>
@@ -16,15 +19,14 @@
 // the range (STABILIZATION_TIME, STABILIZATION_TIME + STABILIZATION_RANGE), so that elections
 // are not all initiated at roughly the same time
 #define MEMBER_LIST_STABILIZATION_RANGE 6000
-// The amount of time per node we will wait before the election times out
-// This is very rough logic, but in the worst case (assuming no failures), it will take 3 cycles
-// around the ring for the election to complete, and assuming each message takes 500ms, we get 1500ms per node
-#define ELECTION_TIMEOUT_TIME 1500
+// The amount of time we will wait before the election times out
+#define ELECTION_TIMEOUT_TIME 15000
+// The amount of time a node that has been elected will wait before the ELECTED message goes around the ring
+#define ELECTED_TIMEOUT_TIME 5000
 
 class election {
 public:
-    election(heartbeater_intf *hb_, logger *lg_, member master_node_);
-    ~election();
+    election(heartbeater_intf *hb_, logger *lg_, udp_client_intf *client_, udp_server_intf *server_, uint16_t port_);
 
     // Returns the master node, and sets succeeded to true if an election is not going on
     // If an election is going on, sets succeeded to false and returns potentially garbage data
@@ -35,31 +37,31 @@ public:
     void start();
 
     // Stops all election logic, which may leave the master_node permanently undefined
-    void stop() {
-        running = false;
-    }
+    void stop();
 private:
     // The state of the state machine for the election
     // The state machine essentially works in the following way:
     //  When events occur, two things atomically occur: transition, post-transition action
     //  These 2 things occur atomically thanks to the mutex state_mutex
     enum election_state {
-        normal, election_wait, election_init, electing, elected, failure
+        no_master, normal, election_wait, election_init, electing, elected
     };
     election_state state;
-    std::atomic<election_state> next_state; // The next state to transition to
     std::recursive_mutex state_mutex;
 
-    // Transitions the current state to the given state and returns true if the transition succeeded
-    // Performs additional checks to make sure that there are no race conditions (which is why origin is needed)
-    bool transition(election_state origin_state, election_state dest_state);
+    // Transitions the current state to the given state
+    void transition(election_state origin_state, election_state dest_state);
     // Variable that indicates that a transition has occurred
     std::atomic<bool> state_changed;
 
-    // A function and associated thread that performs the election logic, and an indicator variable for it to stop
-    void run_election();
-    std::thread *election_thread;
+    // Indicates whether or not the election is running
     std::atomic<bool> running;
+
+    // Keeps track of the highest initiator ID seen for ELECTION messages so far
+    uint32_t highest_initiator_id;
+    void add_to_cache(election_message msg);
+    // Passes on an ELECTION message as defined by the protocol
+    void propagate(election_message msg);
 
     // Sets and updates the timer, and when the timer reaches 0, performs the appropriate action depending on the state
     bool timer_on;
@@ -79,6 +81,24 @@ private:
     // The logger provided to us
     logger *lg;
 
+    // Number of times to send each message
+    const int message_redundancy = 4;
+    // Time between sending pending messages (in ms)
+    const uint64_t message_interval_ms = 250;
+
+    // UDP client and server interfaces for communication with other nodes
+    udp_client_intf *client;
+    udp_server_intf *server;
+    // Thread for the server / client as well as the corresponding functions
+    std::thread *server_thread, *client_thread;
+    void server_thread_function();
+    void client_thread_function();
+    // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
+    redundant_queue<std::tuple<std::string, election_message>> message_queue;
+
     // The current master node (an ID of 0 means there is no master node)
     member master_node;
+
+    // The port that will be used for elections
+    uint16_t port;
 };
