@@ -14,6 +14,8 @@ void sdfs_server::process_client(int client) {
         get_operation(client, tokens[1]);
     } else if (cmd == "delete") {
         delete_operation(client, tokens[1]);
+    } else if (cmd == "ls") {
+        ls_operation(client, tokens[1]);
     }
 
     return;
@@ -54,6 +56,20 @@ int sdfs_server::delete_operation(int client, std::string filename) {
     // send success reponse
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) != 0) return -1;
 
+    return 0;
+}
+
+int sdfs_server::ls_operation(int client, std::string filename) {
+    // check if the specified file exists
+    struct stat buffer;
+    bool exists = (stat(filename.c_str(), &buffer) == 0);
+    if (exists) {
+        // send success response if the file exists
+        if (server.write_to_client(client, SDFS_SUCCESS_MSG) != 0) return -1;
+    } else {
+        // send failure response if the file doesn't exist
+        if (server.write_to_client(client, SDFS_FAILURE_MSG) != 0) return -1;
+    }
     return 0;
 }
 

@@ -1,5 +1,7 @@
 #include "tcp.h"
 
+#include <sys/stat.h>
+
 #include <fstream>
 #include <sstream>
 #include <iterator>
@@ -17,21 +19,24 @@ public:
 private:
     /*
      * handles put request
-     * returns SDFS_SUCCESS_MSG on success, SDFS_FAILURE_MSG on failure
+     * returns 0 on success
      **/
     int put_operation(int client, std::string filename);
     /*
      * handles get request
-     * returns SDFS_SUCCESS_MSG on success, SDFS_FAILURE_MSG on failure
+     * returns 0 on success
      **/
     int get_operation(int client, std::string filename);
     /*
      * handles delete request
-     * returns SDFS_SUCCESS_MSG on success, SDFS_FAILURE_MSG on failure
+     * returns 0 on success
      **/
     int delete_operation(int client, std::string filename);
-
-    /* ls operation will be handled by the master node, naturally */
+    /*
+     * handles ls request
+     * returns 0 on success
+     **/
+    int ls_operation(int client, std::string filename);
 
     int send_file_over_socket(int socket, std::string filename);
     int recv_file_over_socket(int socket, std::string filename);

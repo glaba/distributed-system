@@ -10,10 +10,14 @@ SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 MEMBER    := member
+ELECTION  := election
 
-all: $(MEMBER)
+all: $(MEMBER) $(ELECTION)
 
 $(MEMBER): $(OBJ_FILES)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(ELECTION): $(filter-out obj/member.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
