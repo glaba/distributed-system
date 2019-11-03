@@ -1,8 +1,8 @@
 #include "sdfs.h"
 
-int main(int argc, char **argv) {
-    std::cout << "hi" << std::endl;
-}
+// int main(int argc, char **argv) {
+//     std::cout << "hi" << std::endl;
+// }
 
 /*
 int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
