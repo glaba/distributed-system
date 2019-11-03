@@ -47,11 +47,11 @@ std::string sdfs_client::delete_operation(std::string sdfs_filename) {
     if ((socket = client.setup_connection(master_hostname, fs_port)) == -1) return SDFS_FAILURE_MSG;
     if (client.write_to_server(socket, del_msg) == -1) return SDFS_FAILURE_MSG;
 
-    // read server response - proceed if server responded "OK"
+    // read server response - proceed if server responded SDFS_SUCCESS_MSG
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_SUCCESS_MSG) return SDFS_FAILURE_MSG;
 
-    return read_ret;
+    return SDFS_SUCCESS_MSG;
 }
 
 std::string sdfs_client::ls_operation(std::string sdfs_filename) {
@@ -78,8 +78,8 @@ std::string sdfs_client::store_operation() {
 
 int sdfs_client::send_file_over_socket(int socket, std::string filename) {
     // https://stackoverflow.com/questions/2602013/read-whole-ascii-file-into-c-stdstring
-    std::ifstream t(filename);
-    std::string file_str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+    std::ifstream file(filename);
+    std::string file_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     return client.write_to_server(socket, file_str);
 }

@@ -60,7 +60,7 @@ public:
 class tcp_server : public tcp_server_intf {
 public:
     tcp_server(int port);
-    void setup_server(std::string port);
+    void setup_server(int port);
     void tear_down_server();
     int accept_connection();
     void close_connection(int client_socket);
