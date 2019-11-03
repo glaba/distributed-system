@@ -10,7 +10,7 @@ std::string sdfs_client::put_operation(std::string local_filename, std::string s
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != "OK") return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
 
     // if server responded "OK", send the file over the socket
     if (send_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
@@ -31,7 +31,7 @@ std::string sdfs_client::get_operation(std::string local_filename, std::string s
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != "OK") return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
 
     // if server responded "OK", recv the file over the socket
     if (recv_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
@@ -49,7 +49,7 @@ std::string sdfs_client::delete_operation(std::string sdfs_filename) {
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != "OK") return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
 
     return read_ret;
 }
@@ -64,7 +64,7 @@ std::string sdfs_client::ls_operation(std::string sdfs_filename) {
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != "OK") return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
 
     // if server responded "OK", read the ls results over the socket
     if ((read_ret = client.read_from_server(socket)) == "") return SDFS_FAILURE_MSG;

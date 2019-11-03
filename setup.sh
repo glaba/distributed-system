@@ -13,6 +13,9 @@ SCRIPTS_DEST=$HOME"/.scripts"
 [ -d ~/.ssh ] || mkdir ~/.ssh
 cp authorized_keys ~/.ssh
 
+# make .files dir if not already, then cp authorized_keys
+[ -d ~/.sdfs ] || mkdir ~/.sdfs
+
 # create machine.i.log
 echo -n '' >> ~/machine.i.log
 

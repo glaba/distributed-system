@@ -5,7 +5,7 @@
 #define SDFS_SUCCESS_MSG "SUCCESS"
 #define SDFS_FAILURE_MSG "FAILURE"
 
-class sdfs_client : public tcp_client {
+class sdfs_client {
 public:
     sdfs_client(std::string master_hostname, std::string fs_port, tcp_client client) :
         master_hostname(master_hostname), fs_port(fs_port), client(client) {}
