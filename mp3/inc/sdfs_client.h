@@ -72,7 +72,7 @@ public:
      * handles the relay put operation with the given argument
      * returns 0 on success, -1 on failure
      **/
-    std::string relay_operation(std::string hostname, std::string relay_hostname, std::string operation);
+    std::string relay_operation(std::string hostname, std::string filename);
     /*
      * handles the store operation
      * returns 0 on success, -1 on failure

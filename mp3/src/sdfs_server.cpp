@@ -47,6 +47,8 @@ void sdfs_server::process_client(int client) {
         }
     } else if (tokens[0] == "r") {
         // relay request
+        relay_operation(tokens[1]);
+        /*
         tokens.erase(tokens.begin());
         std::string hostname = tokens[0];
         tokens.erase(tokens.begin());
@@ -61,6 +63,7 @@ void sdfs_server::process_client(int client) {
         } else if (cmd == "ls") {
             // ls_operation_mn(client, tokens[1]);
         }
+        */
     } else {
         std::string cmd = tokens[0];
         if (cmd == "put") {
@@ -178,12 +181,15 @@ int sdfs_server::put_operation_mn(int client, std::string filename, bool force) 
     std::string response = server.read_from_client(client);
     if (response != SDFS_SUCCESS_MSG) return -1;
 
+    sdfsc->relay_operation(destinations[0].hostname, filename);
+    /*
     for (unsigned i = 1; i < destinations.size(); i++) {
         // relay put for each destination
-        // std::string local = std::string(SDFS_DIR) + filename;
-        // std::string operation = "put " + local + filename;
-        // sdfsc->relay_operation(destinations[0].hostname, destinations[i].hostname, operation);
+        std::string local = std::string(SDFS_DIR) + filename;
+        std::string operation = std::string("put ") + local + " " + filename;
+        sdfsc->relay_operation(destinations[0].hostname, destinations[i].hostname, operation);
     }
+    */
 
     return 0;
 }
@@ -230,6 +236,15 @@ int sdfs_server::ls_operation_mn(int client, std::string filename) {
 
     // this should be all for now - should be revised later
     return 0;
+}
+
+int sdfs_server::relay_operation(std::string filename) {
+    std::string local_filename = std::string(SDFS_DIR) + filename;
+    std::vector<member> destinations = get_file_destinations(filename);
+    for (auto dest : destinations) {
+        std::cout << "destination " << dest.hostname << std::endl;
+        sdfsc->put_operation(dest.hostname, local_filename, filename);
+    }
 }
 
 void fix_replicas(member failed_member) {

@@ -20,8 +20,8 @@
 
 class sdfs_server {
 public:
-    sdfs_server(std::string hostname, tcp_client client, tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :
-        hostname(hostname), client(client), server(server), lg(lg), hb(hb), el(el) {}
+    sdfs_server(std::string hostname, tcp_client client, tcp_server server, sdfs_client *sdfsc, logger *lg, heartbeater_intf *hb, election *el) :
+        hostname(hostname), client(client), server(server), sdfsc(sdfsc), lg(lg), hb(hb), el(el) {}
     void start();
     void process_client(int client);
     void process_loop();
@@ -48,6 +48,7 @@ private:
      **/
     int ls_operation(int client, std::string filename);
 
+    int relay_operation(std::string filename);
 
     /*
      * handles put request as master node

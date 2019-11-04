@@ -125,6 +125,14 @@ std::string sdfs_client::put_operation_wr(std::string hostname, std::string loca
     // put the file
     put_operation(destination, local_filename, sdfs_filename);
 
+    /*
+    std::vector<member> mems = get_file_destinations(sdfs_filename);
+    for (auto mem : mems) {
+        std::cout << mem.hostname << std::endl;
+        put_operation(mem.hostname, local_filename, sdfs_filename);
+    }
+    */
+
     // do the puts to the other nodes as well
 
     // send success message after the put occurs
@@ -297,10 +305,8 @@ std::string sdfs_client::store_operation() {
     return "";
 }
 
-std::string sdfs_client::relay_operation(std::string hostname, std::string relay_hostname, std::string operation) {
-    std::string relay_msg = "relay " + relay_hostname + " " + operation;
-
-    // connect and write relay request to server
+std::string sdfs_client::relay_operation(std::string hostname, std::string filename) {
+    std::string relay_msg = std::string("r ") + filename;
     int socket;
     if ((socket = client.setup_connection(hostname, protocol_port)) == -1) return SDFS_FAILURE_MSG;
     if (client.write_to_server(socket, relay_msg) == -1) return SDFS_FAILURE_MSG;

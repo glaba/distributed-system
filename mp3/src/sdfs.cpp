@@ -42,8 +42,6 @@ int main(int argc, char **argv) {
     logger *lg_el = new logger("", "", verbose);
     udp_server_intf *election_udp_server_inst = new udp_server(lg_el);
     election *el = new election(hb, lg_el, udp_client_inst, election_udp_server_inst, el_port);
-    el->start();
-    hb->start();
 
     el->start();
     hb->start();
@@ -57,7 +55,7 @@ int main(int argc, char **argv) {
     sdfs_client *sdfsc = new sdfs_client("1237", client, lg_c, el, hb);
 
     logger *lg_s = new logger("sdfs_server.log", "", verbose);
-    sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, lg_s, hb, el);
+    sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, sdfsc, lg_s, hb, el);
 
     if (introducer != "none")
         hb->join_group(introducer);
