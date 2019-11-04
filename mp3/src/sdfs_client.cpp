@@ -37,7 +37,6 @@ void sdfs_client::input_loop() {
                           \n\t store \
                           \n\t mem_list \
                           \n\t our_id \
-                          \n\t join_group <introducer> \
                           \n\t leave_group \
                           \n\t exit" << std::endl;
         } else if (tokens[0] == "put") {
@@ -81,9 +80,6 @@ void sdfs_client::input_loop() {
             }
         } else if (tokens[0] == "our_id") {
             std::cout << hb->get_id();
-        } else if (tokens[0] == "join_group") {
-            std::cout << "Joining group..." << std::endl;
-            hb->join_group(tokens[1]);
         } else if (tokens[0] == "leave_group") {
             hb->leave_group();
         } else if (tokens[0] == "exit") {
