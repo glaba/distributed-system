@@ -1,7 +1,7 @@
 #include "sdfs_server.h"
 void sdfs_server::start() {
-    std::thread *client_thread = new std::thread([this] {process_loop();});
-    client_thread->detach();
+    std::thread *server_thread = new std::thread([this] {process_loop();});
+    server_thread->detach();
 }
 
 void sdfs_server::process_loop() {
@@ -23,7 +23,8 @@ void sdfs_server::process_client() {
     bool succeeded;
     member master = el->get_master_node(&succeeded);
 
-    if (succeeded && master.hostname == hostname) {
+    if (tokens[0] == "mn" && succeeded && master.hostname == hostname) {
+        tokens.erase(tokens.begin());
         std::string cmd = tokens[0];
         if (cmd == "put") {
             put_operation_mn(client, tokens[1]);
@@ -47,6 +48,7 @@ void sdfs_server::process_client() {
         }
     }
 
+    // std::cout << "finished processing request " << request << std::endl;
     server.close_connection(client);
     return;
 }
@@ -96,7 +98,8 @@ int sdfs_server::delete_operation(int client, std::string filename) {
 int sdfs_server::ls_operation(int client, std::string filename) {
     // check if the specified file exists
     struct stat buffer;
-    bool exists = (stat(filename.c_str(), &buffer) == -1);
+    std::string full_path = std::string(SDFS_DIR) + filename;
+    bool exists = (stat(full_path.c_str(), &buffer) == 0);
     if (exists) {
         // send success response if the file exists
         if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
@@ -198,16 +201,17 @@ std::vector<member> sdfs_server::get_file_destinations(std::string filename) {
     // a bit cheeky but i'm going to hash with the mod value of 10 and just check the result
     // this is so that files don't need to be moved around on node failure to match new hashing
 
-    int curr_hash = std::hash<std::string>()(filename) % 10;
-    for (int i = 0; i < num_required_replicas; i++) {
-        if (curr_hash < num_members) {
-            if (std::count(results.begin(), results.end(), members[curr_hash]) == 0) {
-                // hashed element isn't already a candidate for replication
-                results.push_back(members[curr_hash]);
-            }
-        }
+    // std::cout << "number of members : " << num_members << std::endl;
+    // std::cout << "number of required replicas : " << num_required_replicas << std::endl;
 
-        curr_hash = std::hash<int>()(curr_hash) % 10;
+    std::hash<std::string> hasher;
+    int curr_hash = hasher(filename) % 10;
+    for (int i = 0; i < num_required_replicas; i++) {
+        while (true) {
+            if (curr_hash < num_members && std::find(results.begin(), results.end(), members[curr_hash]) == results.end()) break;
+            curr_hash = (curr_hash + 1) % 10;
+        }
+        results.push_back(members[curr_hash]);
     }
 
     return results;

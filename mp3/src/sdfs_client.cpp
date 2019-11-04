@@ -6,6 +6,7 @@ void sdfs_client::start() {
 void sdfs_client::input_loop() {
     std::string request;
     while (true) {
+        std::cout << "enter an sdfs command (e.g. \"help\"): ";
         std::getline(std::cin, request);
         std::istringstream req_stream(request);
         std::vector<std::string> tokens{std::istream_iterator<std::string>{req_stream},
@@ -20,38 +21,55 @@ void sdfs_client::input_loop() {
 
         std::string m_hostname = master.hostname;
 
+        if (tokens.empty()) {
+            std::cout << "invalid command" << std::endl;
+            continue;
+        }
+
         if (tokens[0] == "help") {
             std::cout << "AVAILABLE COMMANDS : \n\t put <local_filename> <sdfs_filename> \
                           \n\t get <local_filename> <sdfs_filename> \
                           \n\t delete <sdfs_filename> \
                           \n\t ls <sdfs_filename> \
-                          \n\t store" << std::endl;
+                          \n\t store \
+                          \n\t exit" << std::endl;
         } else if (tokens[0] == "put") {
             if (tokens.size() == 3) {
-                put_operation_wr(m_hostname, protocol_port, tokens[1], tokens[2]);
+                std::string ret = put_operation_wr(m_hostname, protocol_port, tokens[1], tokens[2]);
+                if (ret == SDFS_SUCCESS_MSG) std::cout << "put was a success" << std::endl;
+                else std::cout << "put failed" << std::endl;
             } else {
                 std::cout << "invalid options for put request" << std::endl;
             }
         } else if (tokens[0] == "get") {
             if (tokens.size() == 3) {
-                get_operation(m_hostname, protocol_port, tokens[1], tokens[2]);
+                std::string ret = get_operation_wr(m_hostname, protocol_port, tokens[1], tokens[2]);
+                if (ret == SDFS_SUCCESS_MSG) std::cout << "get was a success" << std::endl;
+                else std::cout << "get failed" << std::endl;
             } else {
                 std::cout << "invalid options for get request" << std::endl;
             }
         } else if (tokens[0] == "delete") {
             if (tokens.size() == 2) {
-                delete_operation(m_hostname, protocol_port, tokens[1]);
+                std::string ret = delete_operation_wr(m_hostname, protocol_port, tokens[1]);
+                if (ret == SDFS_SUCCESS_MSG) std::cout << "delete was a success" << std::endl;
+                else std::cout << "delete failed" << std::endl;
             } else {
                 std::cout << "invalid options for delete request" << std::endl;
             }
         } else if (tokens[0] == "ls") {
             if (tokens.size() == 2) {
-                ls_operation(m_hostname, protocol_port, tokens[1]);
+                std::string ret = ls_operation_wr(m_hostname, protocol_port, tokens[1]);
+                if (ret == SDFS_FAILURE_MSG) std::cout << "ls failed" << std::endl;
             } else {
                 std::cout << "invalid options for ls request" << std::endl;
             }
         } else if (tokens[0] == "store") {
             store_operation();
+        } else if (tokens[0] == "exit") {
+            return;
+        } else {
+            std::cout << "invalid command" << std::endl;
         }
     }
     return;
@@ -64,32 +82,81 @@ std::string sdfs_client::put_operation_wr(std::string hostname, std::string port
     // and call the put operation on all the destinations
     int socket;
     if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
+    std::string put_mn_msg = "mn put " + sdfs_filename;
+    if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
 
+    // get the mems and close the mn socket
     std::vector<std::string> destinations = recv_mems_over_socket(socket);
+    client.close_connection(socket);
+
     for (auto dest : destinations) {
-        std::cout << dest << std::endl;
-        // put_operation(dest, protocol_port, local_filename, sdfs_filename);
+        // std::cout << "destination is " << dest << std::endl;
+        put_operation(dest, protocol_port, local_filename, sdfs_filename);
     }
 
     return SDFS_SUCCESS_MSG;
 }
 
-std::string get_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename) {
+std::string sdfs_client::get_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename) {
     // hostname refers to master hostname
 
     // get the list of member from the master node
     // and hash and ls until the file is found
+
+    int socket;
+    if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
+    std::string put_mn_msg = "mn get " + sdfs_filename;
+    if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
+
+    // get the mems and close the mn socket
+    std::vector<std::string> members = recv_mems_over_socket(socket);
+    client.close_connection(socket);
+
+    std::string ret = get_file_location(members, sdfs_filename);
+    if (ret == SDFS_FAILURE_MSG) return SDFS_FAILURE_MSG;
+
+    get_operation(ret, port, local_filename, sdfs_filename);
+
     return SDFS_SUCCESS_MSG;
 }
 
-std::string delete_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
+std::string sdfs_client::delete_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
     // hostname refers to master hostname
+    int socket;
+    if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
+    std::string put_mn_msg = "mn delete " + sdfs_filename;
+    if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
+
+    // get the mems and close the mn socket
+    std::vector<std::string> members = recv_mems_over_socket(socket);
+    client.close_connection(socket);
+
+    for (auto mem : members) {
+        delete_operation(mem, protocol_port, sdfs_filename);
+    }
 
     return SDFS_SUCCESS_MSG;
 }
 
-std::string ls_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
+std::string sdfs_client::ls_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
     // hostname refers to master hostname
+    int socket;
+    if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
+    std::string put_mn_msg = "mn delete " + sdfs_filename;
+    if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
+
+    // get the mems and close the mn socket
+    std::vector<std::string> members = recv_mems_over_socket(socket);
+    client.close_connection(socket);
+
+    std::vector<std::string> results;
+    for (auto mem : members) {
+        if (ls_operation(mem, protocol_port, sdfs_filename) == SDFS_SUCCESS_MSG) results.push_back(mem);
+    }
+
+    if (results.size() == 0) std::cout << sdfs_filename << " was not found on any machines" << std::endl;
+    else std::cout << sdfs_filename << " was found on the following machines:" << std::endl;
+    for (auto res : results) {std::cout << res << std::endl;}
 
     return SDFS_SUCCESS_MSG;
 }
@@ -99,19 +166,19 @@ std::string sdfs_client::put_operation(std::string hostname, std::string port, s
 
     // connect and write put request to server
     int socket;
-    if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
-    if (client.write_to_server(socket, put_msg) == -1) return SDFS_FAILURE_MSG;
+    if ((socket = client.setup_connection(hostname, port)) == -1) {return SDFS_FAILURE_MSG;}
+    if (client.write_to_server(socket, put_msg) == -1) {client.close_connection(socket); return SDFS_FAILURE_MSG;}
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
-    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
+    if (read_ret != SDFS_ACK_MSG) {client.close_connection(socket); return SDFS_FAILURE_MSG;}
 
     // if server responded "OK", send the file over the socket
-    if (send_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
+    if (send_file_over_socket(socket, local_filename) == -1) {client.close_connection(socket); return SDFS_FAILURE_MSG;}
 
     // read the server response and return (hopefully the response is SDFS_SUCCESS_MSG)
     read_ret = client.read_from_server(socket);
-    if (read_ret == "") return SDFS_FAILURE_MSG;
+    if (read_ret == "") {client.close_connection(socket); return SDFS_FAILURE_MSG;}
 
     client.close_connection(socket);
     return read_ret;
@@ -159,10 +226,7 @@ std::string sdfs_client::ls_operation(std::string hostname, std::string port, st
     if (client.write_to_server(socket, ls_msg) == -1) return SDFS_FAILURE_MSG;
 
     // read server response - proceed if server responded "OK"
-    std::string read_ret = client.read_from_server(socket);
-    if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
-
-    // if server responded "OK", read the ls results over the socket
+    std::string read_ret;
     if ((read_ret = client.read_from_server(socket)) == "") return SDFS_FAILURE_MSG;
     return read_ret;
 }
@@ -172,20 +236,31 @@ std::string sdfs_client::store_operation() {
     DIR *dirp = opendir(std::string(SDFS_DIR).c_str());
     struct dirent *dp;
 
-    std::cout << "=== BEGIN SDFS LISTING ===" << std::endl;
     while ((dp = readdir(dirp)) != NULL) {
         std::cout << dp->d_name << std::endl;;
     }
-    std::cout << "=== END SDFS LISTING ===" << std::endl;
 
     closedir(dirp);
     return "";
 }
 
+std::string sdfs_client::get_file_location(std::vector<std::string> members, std::string filename) {
+    int num_members = members.size();
+
+    std::hash<std::string> hasher;
+    int i = 0;
+    int curr_hash = hasher(filename) % 10;
+    while (i < 10) {
+        if (curr_hash < num_members && ls_operation(members[curr_hash], protocol_port, filename) == SDFS_SUCCESS_MSG) return members[curr_hash];
+        curr_hash = (curr_hash + 1) % 10; i++;
+    }
+
+    return SDFS_FAILURE_MSG;
+}
+
 std::vector<std::string> sdfs_client::recv_mems_over_socket(int socket) {
     std::string::size_type sz;
     int num_mems = std::stoi(client.read_from_server(socket), &sz);
-    std::cout << "CLIENT RECEIVED " << num_mems << "MEMS" << std::endl;
     std::vector<std::string> hosts;
 
     for (int i = 0; i < num_mems; i++) {

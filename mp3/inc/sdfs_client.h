@@ -78,6 +78,7 @@ private:
     std::vector<std::string> recv_mems_over_socket(int socket);
     int send_file_over_socket(int socket, std::string filename);
     int recv_file_over_socket(int socket, std::string filename);
+    std::string get_file_location(std::vector<std::string> members, std::string filename);
 
     std::string protocol_port;
 

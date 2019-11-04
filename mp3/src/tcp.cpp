@@ -109,7 +109,7 @@ void tcp_server::tear_down_server() {
 int tcp_server::accept_connection() {
     int client_fd = accept(server_fd, NULL, NULL);
     if (client_fd < 0) {
-        perror("accept failed");
+        // perror("accept failed");
         return -1;
     }
 
@@ -118,7 +118,7 @@ int tcp_server::accept_connection() {
 
 void tcp_server::close_connection(int client_socket) {
     // close socket
-    close(server_fd);
+    close(client_socket);
 }
 
 std::string tcp_server::read_from_client(int client) {

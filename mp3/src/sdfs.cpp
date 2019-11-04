@@ -57,9 +57,11 @@ int main(int argc, char **argv) {
     sdfss->start();
     sdfsc->start();
 
+    /*
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
+    */
     return 0;
 }
 
