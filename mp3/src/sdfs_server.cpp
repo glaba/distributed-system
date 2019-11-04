@@ -1,4 +1,8 @@
 #include "sdfs_server.h"
+
+#include <chrono>
+#include <string>
+
 void sdfs_server::start() {
     std::thread *server_thread = new std::thread([this] {process_loop();});
     server_thread->detach();
@@ -29,7 +33,11 @@ void sdfs_server::process_client(int client) {
         tokens.erase(tokens.begin());
         std::string cmd = tokens[0];
         if (cmd == "put") {
-            put_operation_mn(client, tokens[1]);
+            if (tokens[2] == "force") {
+                put_operation_mn(client, tokens[1], true);
+            } else if (tokens[2] == "noforce") {
+                put_operation_mn(client, tokens[1], false);
+            }
         } else if (cmd == "get") {
             get_operation_mn(client, tokens[1]);
         } else if (cmd == "delete") {
@@ -130,7 +138,7 @@ int sdfs_server::ls_operation(int client, std::string filename) {
     return 0;
 }
 
-int sdfs_server::put_operation_mn(int client, std::string filename) {
+int sdfs_server::put_operation_mn(int client, std::string filename, bool force) {
     // the put operation as master node needs to send the client
     // back the hostname and the port that the filename hashes to
 
@@ -142,14 +150,35 @@ int sdfs_server::put_operation_mn(int client, std::string filename) {
     // get list of destinations
     std::vector<member> destinations = get_file_destinations(filename);
 
+    if (!force) {
+        // Check the 1 minute timeout
+        uint64_t now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        if (now - update_times[filename] < 60000) {
+            server.write_to_client(client, "!");
+            now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+
+            std::string response = server.read_from_client(client);
+            if (response == "Y") {
+                uint64_t new_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                // Check that 30 seconds haven't passed
+                if (new_time - now >= 30000) {
+                    server.write_to_client(client, "F");
+                }
+            } else {
+                return 0;
+            }
+        }
+    }
+
     // write the initial host to client
-    server.write_to_client(client, destinations[0].hostname);
+    server.write_to_client(client, "Y" + destinations[0].hostname);
+    update_times[filename] = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
     // receive the response from the client (how did the file transfer go?)
     std::string response = server.read_from_client(client);
     if (response != SDFS_SUCCESS_MSG) return -1;
 
-    for (int i = 1; i < destinations.size(); i++) {
+    for (unsigned i = 1; i < destinations.size(); i++) {
         // relay put for each destination
         std::string local = std::string(SDFS_DIR) + filename;
         std::string operation = "put " + local + filename;
