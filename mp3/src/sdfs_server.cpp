@@ -151,9 +151,9 @@ int sdfs_server::put_operation_mn(int client, std::string filename) {
 
     for (int i = 1; i < destinations.size(); i++) {
         // relay put for each destination
-        std::string local = std::string(SDFS_DIR) + filename;
-        std::string operation = "put " + local + filename;
-        sdfsc->relay_operation(destinations[0].hostname, destinations[i].hostname, operation);
+        // std::string local = std::string(SDFS_DIR) + filename;
+        // std::string operation = "put " + local + filename;
+        // sdfsc->relay_operation(destinations[0].hostname, destinations[i].hostname, operation);
     }
 
     return 0;
