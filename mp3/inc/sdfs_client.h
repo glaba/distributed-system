@@ -1,5 +1,7 @@
 #include "tcp.h"
+#include "election.h"
 #include <fstream>
+#include <sstream>
 
 #define SDFS_ACK_MSG "OK"
 #define SDFS_SUCCESS_MSG "SUCCESS"
@@ -7,8 +9,8 @@
 
 class sdfs_client {
 public:
-    sdfs_client(std::string master_hostname, std::string fs_port, tcp_client client) :
-        master_hostname(master_hostname), fs_port(fs_port), client(client) {}
+    sdfs_client(std::string master_hostname, std::string fs_port, tcp_client client, logger *lg, election *el) :
+        master_hostname(master_hostname), fs_port(fs_port), client(client), lg(lg), el(el) {}
     /*
      * handles the put operation with the given arguments
      * returns 0 on success, -1 on failure
@@ -40,5 +42,8 @@ private:
 
     std::string master_hostname;
     std::string fs_port;
+
     tcp_client client;
+    logger *lg;
+    election *el;
 };

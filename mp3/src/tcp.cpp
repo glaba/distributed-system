@@ -52,18 +52,21 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     return total;
 }
 
-tcp_server::tcp_server(int port) {
+tcp_server::tcp_server(std::string port) {
     // set up the messages_queue
     messages = std::queue<std::string>();
 
     // set up server fd
-    setup_server(std::to_string(port));
+    setup_server(port);
 }
 
 void tcp_server::setup_server(std::string port) {
     // set up the server_fd
     struct addrinfo info, *res;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    int optval = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
     memset(&info, 0, sizeof(info));
 
@@ -132,8 +135,7 @@ std::string tcp_server::read_from_client(int client) {
 
 ssize_t tcp_server::write_to_client(int client, std::string data) {
     size_t size = (size_t) data.length();
-    if (write_message_size(size, client) == -1)
-        return -1;
+    if (write_message_size(size, client) == -1) return -1;
 
     return write_all_to_socket(client, data.c_str(), data.length());
 }

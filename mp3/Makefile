@@ -14,7 +14,7 @@ ELECTION  := election
 
 all: $(MEMBER) $(ELECTION)
 
-$(MEMBER): $(OBJ_FILES)
+$(MEMBER): $(filter-out obj/sdfs.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(ELECTION): $(filter-out obj/member.o, $(OBJ_FILES))

@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
     // t2.join();
 
     uint16_t port = 1237;
+    uint16_t el_port = 1238;
 
     logger *lg1 = new logger("", false);
     member_list *mem_list1 = new member_list("127.0.0.1", lg1);
@@ -72,7 +73,7 @@ int main(int argc, char **argv) {
     udp_server_intf *udp_server_inst1 = new udp_server(lg1);
 
     heartbeater_intf *hb1 = new heartbeater<true>(mem_list1, lg1, udp_client_inst1, udp_server_inst1, "127.0.0.1", port);
-    election *el1 = new election(hb1, lg1, member());
+    election *el1 = new election(hb1, lg1, udp_client_inst1, udp_server_inst1, el_port);
     sdfs_server sdfss = sdfs_server(server, lg1, hb1, el1);
 
     // hb = new heartbeater<false>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
@@ -86,7 +87,7 @@ int main(int argc, char **argv) {
     udp_server_intf *udp_server_inst2 = new udp_server(lg2);
 
     heartbeater_intf *hb2 = new heartbeater<false>(mem_list2, lg2, udp_client_inst2, udp_server_inst2, "127.0.0.1", port);
-    election *el2 = new election(hb2, lg2, member());
+    election *el2 = new election(hb2, lg2, udp_client_inst2, udp_server_inst2, el_port);
     sdfs_client sdfsc = sdfs_client("127.0.0.1", "1235", client, lg2, el2);
 
     // sdfs_server(tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :

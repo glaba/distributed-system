@@ -7,17 +7,23 @@ std::string sdfs_client::put_operation(std::string local_filename, std::string s
     int socket;
     if ((socket = client.setup_connection(master_hostname, fs_port)) == -1) return SDFS_FAILURE_MSG;
     if (client.write_to_server(socket, put_msg) == -1) return SDFS_FAILURE_MSG;
+    std::cout << "client set up connection and sent put" << std::endl;
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
     if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
+    std::cout << "client recvd ack" << std::endl;
 
     // if server responded "OK", send the file over the socket
     if (send_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
+    std::cout << "client sent file" << std::endl;
 
     // read the server response and return (hopefully the response is SDFS_SUCCESS_MSG)
     read_ret = client.read_from_server(socket);
     if (read_ret == "") return SDFS_FAILURE_MSG;
+    std::cout << "client recvd server response" << std::endl;
+
+    client.close_connection(socket);
     return read_ret;
 }
 
@@ -79,9 +85,10 @@ std::string sdfs_client::store_operation() {
 int sdfs_client::send_file_over_socket(int socket, std::string filename) {
     // https://stackoverflow.com/questions/2602013/read-whole-ascii-file-into-c-stdstring
     std::ifstream file(filename);
-    std::string file_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::stringstream file_buffer;
+    file_buffer << file.rdbuf();
 
-    return client.write_to_server(socket, file_str);
+    return client.write_to_server(socket, file_buffer.str());
 }
 
 int sdfs_client::recv_file_over_socket(int socket, std::string filename) {
@@ -90,6 +97,6 @@ int sdfs_client::recv_file_over_socket(int socket, std::string filename) {
     std::string read_ret = client.read_from_server(socket);
     if (read_ret == "") return -1;
 
-    file << read_ret;
+    file << read_ret << std::endl;
     return 0;
 }
