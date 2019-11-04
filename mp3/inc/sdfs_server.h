@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tcp.h"
+#include "sdfs_client.h"
 #include "election.h"
 
 #include <sys/stat.h>
@@ -90,6 +91,7 @@ private:
     tcp_client client;
     tcp_server server;
 
+    sdfs_client *sdfsc;
     logger *lg;
     heartbeater_intf *hb;
     election *el;
