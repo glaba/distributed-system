@@ -121,7 +121,7 @@ int sdfs_server::put_operation_mn(int client, std::string filename) {
         ids_to_files[dest.id].push_back(filename);
     }
 
-
+    send_client_mem_vector(client, destinations);
     return 0;
 }
 

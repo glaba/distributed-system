@@ -25,6 +25,30 @@ public:
      */
     void input_loop();
     /*
+     * wrapper around the put operation with the given arguments
+     * returns 0 on success, -1 on failure
+     **/
+    std::string put_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    /*
+     * wrapper around the get operation with the given arguments
+     * returns 0 on success, -1 on failure
+     **/
+    std::string get_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    /*
+     * wrapper around the delete operation with the given arguments
+     * returns 0 on success, -1 on failure
+     **/
+    std::string delete_operation_wr(std::string hostname, std::string port, std::string sdfs_filename);
+    /*
+     * wrapper around the ls operation with the given arguments
+     * returns 0 on success, -1 on failure
+     **/
+    std::string ls_operation_wr(std::string hostname, std::string port, std::string sdfs_filename);
+
+
+
+
+    /*
      * handles the put operation with the given arguments
      * returns 0 on success, -1 on failure
      **/

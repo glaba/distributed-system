@@ -25,7 +25,7 @@ void sdfs_client::input_loop() {
                           \n\t store" << std::endl;
         } else if (tokens[0] == "put") {
             if (tokens.size() == 3) {
-                put_operation(m_hostname, protocol_port, tokens[1], tokens[2]);
+                put_operation_wr(m_hostname, protocol_port, tokens[1], tokens[2]);
             } else {
                 std::cout << "invalid options for put request" << std::endl;
             }
@@ -54,6 +54,43 @@ void sdfs_client::input_loop() {
     return;
 }
 
+std::string sdfs_client::put_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename) {
+    // hostname refers to master hostname
+
+    // get the list of destinations from the master node
+    // and call the put operation on all the destinations
+    int socket;
+    if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
+
+    std::vector<std::string> destinations = recv_mems_over_socket(socket);
+    for (auto dest : destinations) {
+        std::cout << dest << std::endl;
+        // put_operation(dest, protocol_port, local_filename, sdfs_filename);
+    }
+
+    return SDFS_SUCCESS_MSG;
+}
+
+std::string get_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename) {
+    // hostname refers to master hostname
+
+    // get the list of member from the master node
+    // and hash and ls until the file is found
+    return SDFS_SUCCESS_MSG;
+}
+
+std::string delete_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
+    // hostname refers to master hostname
+
+    return SDFS_SUCCESS_MSG;
+}
+
+std::string ls_operation_wr(std::string hostname, std::string port, std::string sdfs_filename) {
+    // hostname refers to master hostname
+
+    return SDFS_SUCCESS_MSG;
+}
+
 std::string sdfs_client::put_operation(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename) {
     std::string put_msg = "put " + sdfs_filename;
 
@@ -61,21 +98,17 @@ std::string sdfs_client::put_operation(std::string hostname, std::string port, s
     int socket;
     if ((socket = client.setup_connection(hostname, port)) == -1) return SDFS_FAILURE_MSG;
     if (client.write_to_server(socket, put_msg) == -1) return SDFS_FAILURE_MSG;
-    std::cout << "client set up connection and sent put" << std::endl;
 
     // read server response - proceed if server responded "OK"
     std::string read_ret = client.read_from_server(socket);
     if (read_ret != SDFS_ACK_MSG) return SDFS_FAILURE_MSG;
-    std::cout << "client recvd ack" << std::endl;
 
     // if server responded "OK", send the file over the socket
     if (send_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
-    std::cout << "client sent file" << std::endl;
 
     // read the server response and return (hopefully the response is SDFS_SUCCESS_MSG)
     read_ret = client.read_from_server(socket);
     if (read_ret == "") return SDFS_FAILURE_MSG;
-    std::cout << "client recvd server response" << std::endl;
 
     client.close_connection(socket);
     return read_ret;
