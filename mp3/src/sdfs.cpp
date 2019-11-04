@@ -39,12 +39,10 @@ int main(int argc, char **argv) {
         hb = new heartbeater<false>(mem_list, lg_hb, udp_client_inst, udp_server_inst, local_hostname, port);
     }
 
-    hb->start();
-
-    if (introducer != "none") hb->join_group(introducer);
-
     logger *lg_el = new logger("", "", verbose);
     election *el = new election(hb, lg_el, udp_client_inst, udp_server_inst, el_port);
+    el->start();
+    hb->start();
 
     // tcp client and server
     // server is going to run on port 1237
@@ -56,6 +54,9 @@ int main(int argc, char **argv) {
 
     logger *lg_s = new logger("sdfs_server.log", "", verbose);
     sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, lg_s, hb, el);
+
+    if (introducer != "none")
+        hb->join_group(introducer);
 
     sdfss->start();
     sdfsc->start();
