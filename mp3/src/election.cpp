@@ -354,6 +354,7 @@ void election::server_thread_function() {
                     case elected: {
                         if (msg.get_master_id() == hb->get_id()) {
                             lg->log("We have been elected as the master node");
+                            master_node = hb->get_member_by_id(msg.get_master_id());
                             transition(elected, normal);
                         } else {
                             lg->log(std::to_string(msg.get_master_id()) + ", " + std::to_string(hb->get_id()));

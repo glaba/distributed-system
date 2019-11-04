@@ -70,8 +70,8 @@ void member_list::remove_member(uint32_t id) {
             } else {
                 prev->next = cur->next;
             }
-            delete cur;
             lg->log("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
+            delete cur;
             break;
         }
 
