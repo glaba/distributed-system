@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
     tcp_server server = tcp_server("1237");
 
     logger *lg_c = new logger("", verbose);
-    sdfs_client *sdfsc = new sdfs_client("1237", client, lg_c, el);
+    sdfs_client *sdfsc = new sdfs_client("1237", client, lg_c, el, hb);
 
     logger *lg_s = new logger("sdfs_server.log", "", verbose);
     sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, lg_s, hb, el);

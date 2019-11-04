@@ -2,6 +2,7 @@
 
 #include "tcp.h"
 #include "election.h"
+#include "heartbeater.h"
 
 #include <sys/types.h>
 #include <dirent.h>
@@ -18,8 +19,8 @@
 
 class sdfs_client {
 public:
-    sdfs_client(std::string protocol_port, tcp_client client, logger *lg, election *el) :
-        protocol_port(protocol_port), client(client), lg(lg), el(el) {}
+    sdfs_client(std::string protocol_port, tcp_client client, logger *lg, election *el, heartbeater_intf *hb) :
+        protocol_port(protocol_port), client(client), lg(lg), el(el), hb(hb) {}
 
     void start();
     /*
@@ -87,4 +88,5 @@ private:
     tcp_client client;
     logger *lg;
     election *el;
+    heartbeater_intf *hb;
 };

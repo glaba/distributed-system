@@ -32,6 +32,10 @@ void sdfs_client::input_loop() {
                           \n\t delete <sdfs_filename> \
                           \n\t ls <sdfs_filename> \
                           \n\t store \
+                          \n\t mem_list \
+                          \n\t our_id \
+                          \n\t join_group <introducer> \
+                          \n\t leave_group \
                           \n\t exit" << std::endl;
         } else if (tokens[0] == "put") {
             if (tokens.size() == 3) {
@@ -66,6 +70,19 @@ void sdfs_client::input_loop() {
             }
         } else if (tokens[0] == "store") {
             store_operation();
+        } else if (tokens[0] == "mem_list") {
+            std::vector<member> members = hb->get_members();
+            std::cout << "Hostname\t\tID" << std::endl;
+            for (auto m : members) {
+                std::cout << m.hostname << "\t\t" << m.id << std::endl;
+            }
+        } else if (tokens[0] == "our_id") {
+            std::cout << hb->get_id();
+        } else if (tokens[0] == "join_group") {
+            std::cout << "Joining group..." << std::endl;
+            hb->join_group(tokens[1]);
+        } else if (tokens[0] == "leave_group") {
+            hb->leave_group();
         } else if (tokens[0] == "exit") {
             return;
         } else {
