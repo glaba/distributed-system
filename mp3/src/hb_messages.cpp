@@ -1,23 +1,8 @@
 #include "hb_messages.h"
+#include "serialization.h"
 
 #include <iostream>
 #include <cassert>
-
-inline uint32_t read_uint32_from_char_buf(char *buf) {
-    uint32_t retval = 0;
-    retval += (buf[0] & 0xFF);
-    retval += (buf[1] & 0xFF) << 8;
-    retval += (buf[2] & 0xFF) << 16;
-    retval += (buf[3] & 0xFF) << 24;
-    return retval;
-}
-
-inline void write_uint32_to_char_buf(uint32_t n, char *buf) {
-    buf[0] = (n & (0xFF << 0)) >> 0;
-    buf[1] = (n & (0xFF << 8)) >> 8;
-    buf[2] = (n & (0xFF << 16)) >> 16;
-    buf[3] = (n & (0xFF << 24)) >> 24;
-}
 
 // Creates a message from a buffer
 hb_message::hb_message(char *buf_, unsigned length_) {
@@ -26,7 +11,7 @@ hb_message::hb_message(char *buf_, unsigned length_) {
 
     // Reconstruct ID in little endian order
     if (length < sizeof(id)) goto malformed_msg;
-    id = read_uint32_from_char_buf(buf);
+    id = serialization::read_uint32_from_char_buf(buf);
     buf += sizeof(id); length -= sizeof(id);
 
     // Loop through the three fields: L, L, J (loss/fail, leave, join)
@@ -49,7 +34,7 @@ hb_message::hb_message(char *buf_, unsigned length_) {
         uint32_t num_entries;
 
         if (length < sizeof(num_entries)) {malformed_reason = "Message ends before number of entries"; goto malformed_msg;}
-        num_entries = read_uint32_from_char_buf(buf);
+        num_entries = serialization::read_uint32_from_char_buf(buf);
         buf += sizeof(num_entries); length -= sizeof(num_entries);
 
         for (unsigned j = 0; j < num_entries; j++) {
@@ -74,7 +59,7 @@ hb_message::hb_message(char *buf_, unsigned length_) {
 
             // Then, there is an id for all the message types
             if (length < sizeof(id)) {malformed_reason = "Message ends before ID"; goto malformed_msg;}
-            id = read_uint32_from_char_buf(buf);
+            id = serialization::read_uint32_from_char_buf(buf);
             buf += sizeof(id); length -= sizeof(id);
 
             // Add the entry to one of the lists
@@ -172,7 +157,7 @@ char *hb_message::serialize(unsigned &length) {
     unsigned ind = 0;
 
     if (ind + sizeof(uint32_t) > length) goto fail;
-    write_uint32_to_char_buf(id, buf + ind);
+    serialization::write_uint32_to_char_buf(id, buf + ind);
     ind += sizeof(uint32_t);
 
     // As in deserialization, 0 = failed nodes, 1 = left nodes, 2 = joined nodes
@@ -195,7 +180,7 @@ char *hb_message::serialize(unsigned &length) {
             default: num_entries = 0; break;
         }
         if (ind + sizeof(uint32_t) > length) goto fail;
-        write_uint32_to_char_buf(num_entries, buf + ind);
+        serialization::write_uint32_to_char_buf(num_entries, buf + ind);
         ind += sizeof(uint32_t);
 
         // For a fail or leave message, just spit out the list of IDs
@@ -204,7 +189,7 @@ char *hb_message::serialize(unsigned &length) {
 
             for (unsigned i = 0; i < id_vec->size(); i++) {
                 if (ind + sizeof(uint32_t) > length) goto fail;
-                write_uint32_to_char_buf((*id_vec)[i], buf + ind);
+                serialization::write_uint32_to_char_buf((*id_vec)[i], buf + ind);
                 ind += sizeof(uint32_t);
             }
         }
@@ -226,7 +211,7 @@ char *hb_message::serialize(unsigned &length) {
 
                 // Write the ID of the host
                 if (ind + sizeof(uint32_t) > length) goto fail;
-                write_uint32_to_char_buf(joined_nodes[i].id, buf + ind);
+                serialization::write_uint32_to_char_buf(joined_nodes[i].id, buf + ind);
                 ind += sizeof(uint32_t);
             }
         }

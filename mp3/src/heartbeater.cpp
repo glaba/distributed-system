@@ -57,15 +57,23 @@ void heartbeater<is_introducer_>::stop() {
 // Returns the list of members of the group that this node is aware of
 template <bool is_introducer_>
 std::vector<member> heartbeater<is_introducer_>::get_members() {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
 
     return mem_list->get_members();
+}
+
+// Gets the member object corresponding to the provided ID
+template <bool is_introducer_>
+member heartbeater<is_introducer_>::get_member_by_id(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
+
+    return mem_list->get_member_by_id(id);
 }
 
 // Returns the list of members of the group that this node is aware of
 template <bool is_introducer_>
 member heartbeater<is_introducer_>::get_successor() {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
 
     return mem_list->get_successor(our_id);
 }
@@ -81,7 +89,7 @@ void heartbeater<is_introducer_>::client_thread_function() {
         }
 
         { // Atomic block
-            std::lock_guard<std::mutex> guard(member_list_mutex);
+            std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
 
             // Check neighbors list for failures
             check_for_failed_neighbors();
@@ -179,6 +187,13 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
     delete[] msg_buf;
 }
 
+// Runs the provided function atomically with any functions that read or write to the membership list
+template <bool is_introducer_>
+void heartbeater<is_introducer_>::run_atomically_with_mem_list(std::function<void()> fn) {
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
+    fn();
+}
+
 // Initiates an async request to join the group by sending a message to the introducer
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::join_group(std::string introducer) {
@@ -243,14 +258,14 @@ void heartbeater<is_introducer_>::server_thread_function() {
 
         // Listen for messages and process each one
         if ((size = server->recv(buf, 1024)) > 0) {
-            std::lock_guard<std::mutex> guard(member_list_mutex);
+            std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
 
             hb_message msg(buf, size);
 
             if (!msg.is_well_formed()) {
-                lg->log("Received malformed message! Reason: " + msg.why_malformed());
+                lg->log("Received malformed heartbeat message! Reason: " + msg.why_malformed());
+                continue;
             }
-            assert(msg.is_well_formed());
 
             // If we are in the group and the message is not from within the group, ignore it (with special case for introducer)
             if (mem_list->get_member_by_id(our_id).id == our_id &&
@@ -268,7 +283,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
                         continue;
                     }
                 } else {
-                    lg->log("Ignoring message from " + std::to_string(msg.get_id()) + " because they are not in the group");
+                    lg->log("Ignoring heartbeat message from " + std::to_string(msg.get_id()) + " because they are not in the group");
                     continue;
                 }
             }
@@ -296,24 +311,26 @@ void heartbeater<is_introducer_>::server_thread_function() {
 
             for (uint32_t id : msg.get_left_nodes()) {
                 // Only propagate this message if the member has not yet been removed
-                if (mem_list->get_member_by_id(id).id == id) {
+                member mem = mem_list->get_member_by_id(id);
+                if (mem.id == id) {
                     mem_list->remove_member(id);
                     left_nodes_queue.push(id, message_redundancy);
 
                     for (auto handler : on_leave_handlers) {
-                        handler(mem_list->get_member_by_id(id));
+                        handler(mem);
                     }
                 }
             }
 
             for (uint32_t id : msg.get_failed_nodes()) {
                 // Only propagate this message if the member has not yet been removed
-                if (mem_list->get_member_by_id(id).id == id) {
+                member mem = mem_list->get_member_by_id(id);
+                if (mem.id == id) {
                     mem_list->remove_member(id);
                     failed_nodes_queue.push(id, message_redundancy);
 
                     for (auto handler : on_fail_handlers) {
-                        handler(mem_list->get_member_by_id(id));
+                        handler(mem);
                     }
                 }
             }
@@ -329,21 +346,21 @@ void heartbeater<is_introducer_>::server_thread_function() {
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_fail(std::function<void(member)> handler) {
     // Acquire mutex to prevent concurrent modification of vector
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_fail_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node leaves
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_leave(std::function<void(member)> handler) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_leave_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node joins
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::on_join(std::function<void(member)> handler) {
-    std::lock_guard<std::mutex> guard(member_list_mutex);
+    std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_join_handlers.push_back(handler);
 }
 

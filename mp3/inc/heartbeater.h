@@ -21,9 +21,13 @@ public:
     virtual void stop() = 0;
     // Returns the list of members of the group that this node is aware of
     virtual std::vector<member> get_members() = 0;
+    // Gets the member object corresponding to the provided ID
+    virtual member get_member_by_id(uint32_t id) = 0;
     // Returns the next node after this one in the membership list
     // If we have not yet joined the group, returns an empty member
     virtual member get_successor() = 0;
+    // Runs the provided function atomically with any functions that read or write to the membership list
+    virtual void run_atomically_with_mem_list(std::function<void()> fn) = 0;
     // Initiates an async request to join the group by sending a message to the introducer
     virtual void join_group(std::string introducer) = 0;
     // Sends a message to peers stating that we are leaving
@@ -38,6 +42,7 @@ public:
     virtual void unlock_new_joins() = 0;
 
     // Adds to a list of handlers that will be called when membership list changes
+    // The membership list will not be modified while the handlers are running
     virtual void on_fail(std::function<void(member)>) = 0;
     virtual void on_leave(std::function<void(member)>) = 0;
     virtual void on_join(std::function<void(member)>) = 0;
@@ -52,7 +57,9 @@ public:
     void start();
     void stop();
     std::vector<member> get_members();
+    member get_member_by_id(uint32_t id);
     member get_successor();
+    void run_atomically_with_mem_list(std::function<void()>);
     void join_group(std::string introducer);
     void leave_group();
 
@@ -121,7 +128,7 @@ private:
 
     // Membership list and mutex protecting membership list access
     member_list *mem_list;
-    std::mutex member_list_mutex;
+    std::recursive_mutex member_list_mutex;
 
     // Port used for communication with other hosts
     uint16_t port;
