@@ -1,4 +1,7 @@
 #include "sdfs_client.h"
+
+#include <string>
+
 void sdfs_client::start() {
     input_loop();
 }
@@ -99,11 +102,29 @@ std::string sdfs_client::put_operation_wr(std::string hostname, std::string loca
     // and call the put operation on all the destinations
     int socket;
     if ((socket = client.setup_connection(hostname, protocol_port)) == -1) return SDFS_FAILURE_MSG;
-    std::string put_mn_msg = "mn put " + sdfs_filename;
+    std::string put_mn_msg = "mn put " + sdfs_filename + " noforce";
     if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
 
     // get destination host for file sending
-    std::string destination = client.read_from_server(socket);
+    std::string response = client.read_from_server(socket);
+    if (response == "!") {
+        std::string request;
+        std::cout << "Are you sure (Y/N): " << std::flush;
+        std::getline(std::cin, request);
+        if (request == "Y") {
+            client.write_to_server(socket, "Y");
+        } else {
+            client.write_to_server(socket, "N");
+            return SDFS_FAILURE_MSG;
+        }
+        response = client.read_from_server(socket);
+        if (response == "F") {
+            std::cout << "Confirmation timed out" << std::endl;
+            return SDFS_FAILURE_MSG;
+        }
+    }
+
+    std::string destination = response.substr(1, std::string::npos);
 
     // put the file
     put_operation(destination, local_filename, sdfs_filename);

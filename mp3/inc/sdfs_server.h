@@ -53,7 +53,7 @@ private:
      * handles put request as master node
      * returns 0 on success
      **/
-    int put_operation_mn(int client, std::string filename);
+    int put_operation_mn(int client, std::string filename, bool force);
     /*
      * handles get request as master node
      * returns 0 on success
@@ -98,4 +98,7 @@ private:
 
     // map of node ids to vector of names
     std::map<uint32_t, std::vector<std::string>> ids_to_files;
+
+    // map of filename to last update time
+    std::map<std::string, uint64_t> update_times;
 };
