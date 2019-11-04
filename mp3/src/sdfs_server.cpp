@@ -1,4 +1,15 @@
 #include "sdfs_server.h"
+void sdfs_server::start() {
+    std::thread *client_thread = new std::thread([this] {process_loop();});
+    client_thread->detach();
+}
+
+void sdfs_server::process_loop() {
+    while (true) {
+        process_client();
+    }
+}
+
 void sdfs_server::process_client() {
     // accept the connection on the server
     int client = server.accept_connection();

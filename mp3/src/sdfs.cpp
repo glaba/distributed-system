@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
     bool is_introducer = false;
     std::string local_hostname = "";
     uint16_t port = 1235; // 1235 will be port for heartbeater
+    uint16_t el_port = 1236; // 1236 will be port for election protocol
     bool verbose = false;
 
     if (process_params(argc, argv, &introducer, &local_hostname, &verbose, &is_introducer)) {
@@ -42,10 +43,19 @@ int main(int argc, char **argv) {
 
     if (introducer != "none") hb->join_group(introducer);
 
+    election *el = new election(hb, lg, udp_client_inst, udp_server_inst, el_port);
+
     // tcp client and server
     // server is going to run on port 1237
     tcp_client client = tcp_client();
     tcp_server server = tcp_server("1237");
+
+    sdfs_client *sdfsc = new sdfs_client("1237", client, lg, el);
+
+    sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, lg, hb, el);
+
+    sdfss->start();
+    sdfsc->start();
 
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));

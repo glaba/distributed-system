@@ -20,6 +20,7 @@ public:
     sdfs_client(std::string protocol_port, tcp_client client, logger *lg, election *el) :
         protocol_port(protocol_port), client(client), lg(lg), el(el) {}
 
+    void start();
     /*
      * main input loop for the sdfs client
      */

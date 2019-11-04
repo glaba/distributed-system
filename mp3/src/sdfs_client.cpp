@@ -1,4 +1,7 @@
 #include "sdfs_client.h"
+void sdfs_client::start() {
+    input_loop();
+}
 
 void sdfs_client::input_loop() {
     std::string request;

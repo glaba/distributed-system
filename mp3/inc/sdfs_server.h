@@ -21,9 +21,11 @@ class sdfs_server {
 public:
     sdfs_server(std::string hostname, tcp_client client, tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :
         hostname(hostname), client(client), server(server), lg(lg), hb(hb), el(el) {}
+    void start();
     void process_client();
 
 private:
+    void process_loop();
     /*
      * handles put request
      * returns 0 on success
