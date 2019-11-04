@@ -40,7 +40,8 @@ int main(int argc, char **argv) {
     }
 
     logger *lg_el = new logger("", "", verbose);
-    election *el = new election(hb, lg_el, udp_client_inst, udp_server_inst, el_port);
+    udp_server_intf *election_udp_server_inst = new udp_server(lg_el);
+    election *el = new election(hb, lg_el, udp_client_inst, election_udp_server_inst, el_port);
     el->start();
     hb->start();
 
