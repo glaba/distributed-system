@@ -46,8 +46,6 @@ int main(int argc, char **argv) {
 
     hb->start();
 
-    if (introducer != "none") hb->join_group(introducer);
-
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }

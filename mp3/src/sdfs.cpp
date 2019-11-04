@@ -40,6 +40,8 @@ int main(int argc, char **argv) {
 
     hb->start();
 
+    if (introducer != "none") hb->join_group(introducer);
+
     // tcp client and server
     // server is going to run on port 1237
     tcp_client client = tcp_client();
