@@ -1,7 +1,0 @@
-flow is this:
-
-main server loop will execute functions differently based on whether or not its the master
-client loop will be executed in the main thread and will await user input
-    on valid command, client will execute command accordingly
-
-have to figure out how to bootstrap replication via the failure detector

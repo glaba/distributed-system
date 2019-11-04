@@ -11,6 +11,7 @@
 #include <sstream>
 #include <iterator>
 #include <chrono>
+#include <algorithm>
 
 #define SDFS_DIR "/home/lawsonp2/.sdfs/"
 #define SDFS_ACK_MSG "OK"
@@ -82,6 +83,7 @@ private:
     int send_file_over_socket(int socket, std::string filename);
     int recv_file_over_socket(int socket, std::string filename);
     std::string get_file_location(std::vector<std::string> members, std::string filename);
+    std::vector<member> get_file_destinations(std::string filename);
 
     std::string protocol_port;
 

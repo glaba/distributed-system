@@ -108,6 +108,8 @@ std::string sdfs_client::put_operation_wr(std::string hostname, std::string loca
     // put the file
     put_operation(destination, local_filename, sdfs_filename);
 
+    // do the puts to the other nodes as well
+
     // send success message after the put occurs
     client.write_to_server(socket, SDFS_SUCCESS_MSG);
 
@@ -199,7 +201,7 @@ std::string sdfs_client::put_operation(std::string hostname, std::string local_f
         client.close_connection(socket); return SDFS_FAILURE_MSG;
     }
     */
-    ret = system((std::string("scp " + local_filename + " lawsonp2@" + hostname + ":~/.sdfs/" + sdfs_filename).c_str()));
+    ret = system((std::string("scp -q " + local_filename + " lawsonp2@" + hostname + ":~/.sdfs/" + sdfs_filename).c_str()));
 
     // read the server response and return (hopefully the response is SDFS_SUCCESS_MSG)
     read_ret = client.read_from_server(socket);
@@ -208,11 +210,12 @@ std::string sdfs_client::put_operation(std::string hostname, std::string local_f
     client.close_connection(socket);
     int end_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     int total_time = (end_time - start_time);
-    std::cout << "total time taken was " <<  total_time << " ms" << std::endl;
+    // std::cout << "total time taken was " <<  total_time << " ms" << std::endl;
     return read_ret;
 }
 
 std::string sdfs_client::get_operation(std::string hostname, std::string local_filename, std::string sdfs_filename) {
+    int start_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     std::string get_msg = "get " + sdfs_filename;
 
     // connect and write get request to server
@@ -227,8 +230,11 @@ std::string sdfs_client::get_operation(std::string hostname, std::string local_f
 
     // if server responded "OK", recv the file over the socket
     // if (recv_file_over_socket(socket, local_filename) == -1) return SDFS_FAILURE_MSG;
-    int ret = system((std::string("scp ") + "lawsonp2@" + hostname + ":~/.sdfs/" + sdfs_filename + " " + local_filename).c_str());
+    int ret = system((std::string("scp -q ") + "lawsonp2@" + hostname + ":~/.sdfs/" + sdfs_filename + " " + local_filename).c_str());
 
+    int end_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    int total_time = (end_time - start_time);
+    // std::cout << "total time taken was " <<  total_time << " ms" << std::endl;
     return SDFS_SUCCESS_MSG;
 }
 
@@ -309,6 +315,34 @@ std::vector<std::string> sdfs_client::recv_mems_over_socket(int socket) {
     }
 
     return hosts;
+}
+
+std::vector<member> sdfs_client::get_file_destinations(std::string filename) {
+    std::vector<member> results;
+
+    std::vector<member> members = hb->get_members();
+    int num_members = members.size();
+
+    // replica count is 4, unless there are fewer than 4 nodes in the network
+    int num_required_replicas = num_members < 4 ? num_members : 3;
+
+    // a bit cheeky but i'm going to hash with the mod value of 10 and just check the result
+    // this is so that files don't need to be moved around on node failure to match new hashing
+
+    // std::cout << "number of members : " << num_members << std::endl;
+    // std::cout << "number of required replicas : " << num_required_replicas << std::endl;
+
+    std::hash<std::string> hasher;
+    int curr_hash = hasher(filename) % 10;
+    for (int i = 0; i < num_required_replicas; i++) {
+        while (true) {
+            if (curr_hash < num_members && std::find(results.begin(), results.end(), members[curr_hash]) == results.end()) break;
+            curr_hash = (curr_hash + 1) % 10;
+        }
+        results.push_back(members[curr_hash]);
+    }
+
+    return results;
 }
 
 int sdfs_client::send_file_over_socket(int socket, std::string filename) {

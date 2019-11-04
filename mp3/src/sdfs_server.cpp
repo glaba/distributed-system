@@ -215,14 +215,11 @@ std::vector<member> sdfs_server::get_file_destinations(std::string filename) {
     std::vector<member> members = hb->get_members();
     int num_members = members.size();
 
-    // replica count is 3, unless there are less than 3 nodes in the network
-    int num_required_replicas = num_members < 3 ? num_members : 3;
+    // replica count is 4, unless there are fewer than 4 nodes in the network
+    int num_required_replicas = num_members < 4 ? num_members : 3;
 
     // a bit cheeky but i'm going to hash with the mod value of 10 and just check the result
     // this is so that files don't need to be moved around on node failure to match new hashing
-
-    // std::cout << "number of members : " << num_members << std::endl;
-    // std::cout << "number of required replicas : " << num_required_replicas << std::endl;
 
     std::hash<std::string> hasher;
     int curr_hash = hasher(filename) % 10;
