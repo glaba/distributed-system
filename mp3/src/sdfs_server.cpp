@@ -9,19 +9,33 @@ void sdfs_server::process_client() {
     std::vector<std::string> tokens{std::istream_iterator<std::string>{req_stream},
                                     std::istream_iterator<std::string>{}};
 
-    std::cout << "server recvd request " << request << std::endl;
-    std::string cmd = tokens[0];
-    if (cmd == "put") {
-        put_operation(client, tokens[1]);
-    } else if (cmd == "get") {
-        get_operation(client, tokens[1]);
-    } else if (cmd == "delete") {
-        delete_operation(client, tokens[1]);
-    } else if (cmd == "ls") {
-        ls_operation(client, tokens[1]);
+    bool succeeded;
+    member master = el->get_master_node(&succeeded);
+
+    if (succeeded && master.hostname == hostname) {
+        std::string cmd = tokens[0];
+        if (cmd == "put") {
+            put_operation_mn(client, tokens[1]);
+        } else if (cmd == "get") {
+            get_operation_mn(client, tokens[1]);
+        } else if (cmd == "delete") {
+            delete_operation_mn(client, tokens[1]);
+        } else if (cmd == "ls") {
+            ls_operation_mn(client, tokens[1]);
+        }
+    } else {
+        std::string cmd = tokens[0];
+        if (cmd == "put") {
+            put_operation(client, tokens[1]);
+        } else if (cmd == "get") {
+            get_operation(client, tokens[1]);
+        } else if (cmd == "delete") {
+            delete_operation(client, tokens[1]);
+        } else if (cmd == "ls") {
+            ls_operation(client, tokens[1]);
+        }
     }
 
-    std::cout << "server finished processing request " << request << std::endl;
     server.close_connection(client);
     return;
 }
@@ -29,16 +43,14 @@ void sdfs_server::process_client() {
 int sdfs_server::put_operation(int client, std::string filename) {
     // send the OK ack to the client
     if (server.write_to_client(client, SDFS_ACK_MSG) == -1) return -1;
-    std::cout << "server sent ACK" << std::endl;
 
     // recv the file from the client
     if (recv_file_over_socket(client, filename) == -1) return -1;
-    std::cout << "server recvd file" << std::endl;
 
     // send the client the success message
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
-    std::cout << "server sent success" << std::endl;
 
+    lg->log("successful completion of put request for file " + filename);
     return 0;
 }
 
@@ -48,15 +60,17 @@ int sdfs_server::get_operation(int client, std::string filename) {
 
     // send the file to the client
     // #define SDFS_DIR "~/.sdfs"
-    if (sdfs_server::send_file_over_socket(client, std::string(SDFS_DIR) + "/" + filename) == -1) return -1;
+    if (sdfs_server::send_file_over_socket(client, filename) == -1) return -1;
 
+    lg->log("successful completion of get request for file " + filename);
     return 0;
 }
 
 int sdfs_server::delete_operation(int client, std::string filename) {
     // remove the file
     // #define SDFS_DIR "~/.sdfs"
-    if (remove((std::string(SDFS_DIR) + "/" + filename).c_str()) == -1) {
+    std::string full_path = std::string(SDFS_DIR) + filename;
+    if (remove(full_path.c_str()) == -1) {
         server.write_to_client(client, SDFS_FAILURE_MSG);
         return -1;
     }
@@ -64,6 +78,7 @@ int sdfs_server::delete_operation(int client, std::string filename) {
     // send success reponse
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
 
+    lg->log("successful completion of delete request for file " + filename);
     return 0;
 }
 
@@ -78,6 +93,8 @@ int sdfs_server::ls_operation(int client, std::string filename) {
         // send failure response if the file doesn't exist
         if (server.write_to_client(client, SDFS_FAILURE_MSG) == -1) return -1;
     }
+
+    lg->log("successful completion of ls request for file " + filename);
     return 0;
 }
 
@@ -88,7 +105,23 @@ int sdfs_server::put_operation_mn(int client, std::string filename) {
     // the master node should also be responsible for orchestrating the
     // replication of this file, presumably by ordering the receiving node
     // to send it to two other nodes (might need to add a spin of the put command for this)
-    // e.g. a prefix command that simply means run this command locallyA
+    // e.g. a prefix command that simply means run this command locally
+
+    std::vector<member> destinations = get_file_destinations(filename);
+
+    // at this point the master node should respond with the list of destinations
+
+
+    // @TODO: after the client lets the master node know its finished, the master node should issue clone requests
+    //        instead of forcing the client to make replicas
+
+    // insert the pair of <id, filename> for all the newly replicated files
+    // this will be used to replicated files stored on failed nodes
+    for (auto dest : destinations) {
+        ids_to_files[dest.id].push_back(filename);
+    }
+
+
     return 0;
 }
 
@@ -98,6 +131,12 @@ int sdfs_server::get_operation_mn(int client, std::string filename) {
     // this can easily be acheived by calling ls on the nodes returned
     // by repeated hashing (to simplify hashing, always mod 10 then just
     // check if the result is within the boundaries of mem_list size)
+
+    // @TODO: move hashing and ls logic to the server
+    std::vector<member> mems = hb->get_members();
+    send_client_mem_vector(client, mems);
+
+    // get_operation(client, filename);
     return 0;
 }
 
@@ -105,6 +144,15 @@ int sdfs_server::delete_operation_mn(int client, std::string filename) {
     // this operation should presumably just call delete
     // on every node in the membership list - not scalable ordinarily,
     // but simple and effective for a size 10 max membership list
+
+    // @TODO: write a clone request for the mn that will
+    // send requests to be carried out by the recv node
+    // for now : simple solution - the same as ls.
+
+    std::vector<member> mems = hb->get_members();
+    send_client_mem_vector(client, mems);
+
+    // this should be all for now - should be revised later
     return 0;
 }
 
@@ -112,12 +160,63 @@ int sdfs_server::ls_operation_mn(int client, std::string filename) {
     // similar to delete, this should simply call ls on all nodes
     // in the membership list - again, not scalable but a decent
     // enough solution for a max size of 10 members
+
+    std::vector<member> mems = hb->get_members();
+
+    send_client_mem_vector(client, mems);
+
+    // this should be all for now - should be revised later
     return 0;
+}
+
+void fix_replicas(member failed_member) {
+    // should only be done if the current node is the master node
+    // @TODO: write this code - loop through list of files stored by failed node
+    // and add them appropriately
+}
+
+std::vector<member> sdfs_server::get_file_destinations(std::string filename) {
+    std::vector<member> results;
+
+    std::vector<member> members = hb->get_members();
+    int num_members = members.size();
+
+    // replica count is 3, unless there are less than 3 nodes in the network
+    int num_required_replicas = num_members < 3 ? num_members : 3;
+
+    // a bit cheeky but i'm going to hash with the mod value of 10 and just check the result
+    // this is so that files don't need to be moved around on node failure to match new hashing
+
+    int curr_hash = std::hash<std::string>()(filename) % 10;
+    for (int i = 0; i < num_required_replicas; i++) {
+        if (curr_hash < num_members) {
+            if (std::count(results.begin(), results.end(), members[curr_hash]) == 0) {
+                // hashed element isn't already a candidate for replication
+                results.push_back(members[curr_hash]);
+            }
+        }
+
+        curr_hash = std::hash<int>()(curr_hash) % 10;
+    }
+
+    return results;
+}
+
+void sdfs_server::send_client_mem_vector(int client, std::vector<member> vec) {
+    // first write to the client the number of members that will be sent
+    server.write_to_client(client, std::to_string(vec.size()).c_str());
+
+    // now send over the information of each member
+    // for the client to send an ls request to
+    for (auto mem : vec) {
+        server.write_to_client(client, mem.hostname.c_str());
+    }
 }
 
 int sdfs_server::send_file_over_socket(int socket, std::string filename) {
     // https://stackoverflow.com/questions/2602013/read-whole-ascii-file-into-c-stdstring
-    std::ifstream file(string(SDFS_DIR) + filename);
+    std::string full_path = std::string(SDFS_DIR) + filename;
+    std::ifstream file(full_path);
     std::stringstream file_buffer;
     file_buffer << file.rdbuf();
 
@@ -129,10 +228,7 @@ int sdfs_server::recv_file_over_socket(int socket, std::string filename) {
     std::string full_path = std::string(SDFS_DIR) + filename;
     std::ofstream file(full_path);
     std::string read_ret = server.read_from_client(socket);
-    if (read_ret == "") return -1;
 
-    std::cout << "server received contents " << read_ret << std::endl;
-    std::cout << "server is writing to " << full_path << std::endl;
     file << read_ret;
     return 0;
 }

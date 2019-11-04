@@ -1,3 +1,5 @@
+#pragma once
+
 #include "tcp.h"
 #include "election.h"
 
@@ -6,6 +8,9 @@
 #include <fstream>
 #include <sstream>
 #include <iterator>
+#include <algorithm>
+#include <functional>
+#include <map>
 
 #define SDFS_DIR "/home/lawsonp2/.sdfs/"
 #define SDFS_ACK_MSG "OK"
@@ -14,8 +19,8 @@
 
 class sdfs_server {
 public:
-    sdfs_server(tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :
-        server(server), lg(lg), hb(hb), el(el) {}
+    sdfs_server(std::string hostname, tcp_client client, tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :
+        hostname(hostname), client(client), server(server), lg(lg), hb(hb), el(el) {}
     void process_client();
 
 private:
@@ -61,12 +66,32 @@ private:
      * returns 0 on success
      **/
     int ls_operation_mn(int client, std::string filename);
+    /*
+     * fixes replication scheme on member fail
+     **/
+    void fix_replicas(member failed_member);
+    /*
+     * sends a vector to the client
+     **/
+    void send_client_mem_vector(int client, std::vector<member> vec);
+    /*
+     * hashes a given filename to get min(3, members.size) members to store the file)
+     * returns vector of members
+     **/
+    std::vector<member> get_file_destinations(std::string filename);
 
     int send_file_over_socket(int socket, std::string filename);
     int recv_file_over_socket(int socket, std::string filename);
 
+    std::string hostname;
+
+    tcp_client client;
     tcp_server server;
+
     logger *lg;
     heartbeater_intf *hb;
     election *el;
+
+    // map of node ids to vector of names
+    std::map<uint32_t, std::vector<std::string>> ids_to_files;
 };

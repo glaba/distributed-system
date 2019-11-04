@@ -39,7 +39,8 @@ void server_start(tcp_server server) {
 }
 
 void sdfs_client_start(sdfs_client client) {
-    client.put_operation("test.txt", "test2.txt");
+    // client.put_operation("test.txt", "test2.txt");
+    client.input_loop();
     return;
 }
 
@@ -74,7 +75,7 @@ int main(int argc, char **argv) {
 
     heartbeater_intf *hb1 = new heartbeater<true>(mem_list1, lg1, udp_client_inst1, udp_server_inst1, "127.0.0.1", port);
     election *el1 = new election(hb1, lg1, udp_client_inst1, udp_server_inst1, el_port);
-    sdfs_server sdfss = sdfs_server(server, lg1, hb1, el1);
+    sdfs_server sdfss = sdfs_server("127.0.0.1", client, server, lg1, hb1, el1);
 
     // hb = new heartbeater<false>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
     // sdfs_client(std::string master_hostname, std::string fs_port, tcp_client client, logger *lg, election *el) :
@@ -88,64 +89,16 @@ int main(int argc, char **argv) {
 
     heartbeater_intf *hb2 = new heartbeater<false>(mem_list2, lg2, udp_client_inst2, udp_server_inst2, "127.0.0.1", port);
     election *el2 = new election(hb2, lg2, udp_client_inst2, udp_server_inst2, el_port);
-    sdfs_client sdfsc = sdfs_client("127.0.0.1", "1235", client, lg2, el2);
+    sdfs_client sdfsc = sdfs_client("1235", client, lg2, el2);
 
     // sdfs_server(tcp_server server, logger *lg, heartbeater_intf *hb, election *el) :
         // server(server), lg(lg), hb(hb), el(el) {}
 
     std::thread t3(sdfs_server_start, sdfss);
-    std::thread t4(sdfs_client_start, sdfsc);
-
+    // std::thread t4(sdfs_client_start, sdfsc);
+    sdfs_client_start(sdfsc);
     t3.join();
-    t4.join();
+    // t4.join();
 
     return 0;
 }
-
-/*
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
-        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer) {
-    if (argc == 1)
-        return print_invalid();
-
-    if (std::string(argv[1]) == "test") {
-        *testing = true;
-
-        if (argc >= 3 && std::string(argv[2]) == "-v")
-            *verbose = true;
-
-        return 0;
-    }
-
-    for (int i = 1; i < argc; i++) {
-        // The introducer
-        if (std::string(argv[i]) == "-i") {
-            if (i + 1 < argc) {
-                *introducer = std::string(argv[i + 1]);
-            } else return print_invalid();
-            i++;
-        // The port to use
-        } else if (std::string(argv[i]) == "-p") {
-            // Parse the port number from the next argument and fail if it's bad
-            if (i + 1 < argc) {
-                try {
-                    *port = std::stoi(argv[i + 1]);
-                } catch (...) {
-                    std::cout << "Invalid port number" << std::endl;
-                    return print_invalid();
-                }
-            } else return print_invalid();
-            i++;
-        // The hostname
-        } else if (std::string(argv[i]) == "-h") {
-            if (i + 1 < argc) {
-                *local_hostname = std::string(argv[i + 1]);
-            }
-            i++;
-        // Whether or not to use verbose logging
-        } else if (std::string(argv[i]) == "-v") {
-            *verbose = true;
-        } else if (std::string(argv[i]) == "-n") {
-            *is_introducer = true;
-        } else return print_invalid();
-*/
