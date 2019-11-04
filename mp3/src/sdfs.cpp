@@ -7,7 +7,7 @@ void sdfs_client_start(sdfs_client client) {
 }
 
 void sdfs_server_start(sdfs_server server) {
-    server.process_client();
+    // server.process_client();
     return;
 }
 

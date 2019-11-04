@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <iterator>
+#include <chrono>
 
 #define SDFS_DIR "/home/lawsonp2/.sdfs/"
 #define SDFS_ACK_MSG "OK"
@@ -29,46 +30,47 @@ public:
      * wrapper around the put operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string put_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    std::string put_operation_wr(std::string hostname, std::string local_filename, std::string sdfs_filename);
     /*
      * wrapper around the get operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string get_operation_wr(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    std::string get_operation_wr(std::string hostname, std::string local_filename, std::string sdfs_filename);
     /*
      * wrapper around the delete operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string delete_operation_wr(std::string hostname, std::string port, std::string sdfs_filename);
+    std::string delete_operation_wr(std::string hostname, std::string sdfs_filename);
     /*
      * wrapper around the ls operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string ls_operation_wr(std::string hostname, std::string port, std::string sdfs_filename);
-
-
-
-
+    std::string ls_operation_wr(std::string hostname, std::string sdfs_filename);
     /*
      * handles the put operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string put_operation(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    std::string put_operation(std::string hostname, std::string local_filename, std::string sdfs_filename);
     /*
      * handles the get operation with the given arguments
      * returns 0 on success, -1 on failure
      **/
-    std::string get_operation(std::string hostname, std::string port, std::string local_filename, std::string sdfs_filename);
+    std::string get_operation(std::string hostname, std::string local_filename, std::string sdfs_filename);
     /*
      * handles the delete operation with the given argument
      * returns 0 on success, -1 on failure
      **/
-    std::string delete_operation(std::string hostname, std::string port, std::string sdfs_filename);
+    std::string delete_operation(std::string hostname, std::string sdfs_filename);
     /*
      * handles the ls operation with the given argument
      * returns 0 on success, -1 on failure
      **/
-    std::string ls_operation(std::string hostname, std::string port, std::string sdfs_filename);
+    std::string ls_operation(std::string hostname, std::string sdfs_filename);
+    /*
+     * handles the relay put operation with the given argument
+     * returns 0 on success, -1 on failure
+     **/
+    std::string relay_operation(std::string hostname, std::string relay_hostname, std::string operation);
     /*
      * handles the store operation
      * returns 0 on success, -1 on failure

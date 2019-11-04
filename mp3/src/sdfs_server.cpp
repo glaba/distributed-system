@@ -6,14 +6,16 @@ void sdfs_server::start() {
 
 void sdfs_server::process_loop() {
     while (true) {
-        process_client();
+        int client = server.accept_connection();
+        if (client == -1) continue;
+        // process_client(client);
+        std::thread *client_t = new std::thread([this, client] {process_client(client);});
+        client_t->detach();
+        // accept the connection on the server
     }
 }
 
-void sdfs_server::process_client() {
-    // accept the connection on the server
-    int client = server.accept_connection();
-    if (client == -1) return;
+void sdfs_server::process_client(int client) {
     std::string request = server.read_from_client(client);
 
     std::istringstream req_stream(request);
@@ -34,6 +36,22 @@ void sdfs_server::process_client() {
             delete_operation_mn(client, tokens[1]);
         } else if (cmd == "ls") {
             ls_operation_mn(client, tokens[1]);
+        }
+    } else if (tokens[0] == "r") {
+        // relay request
+        tokens.erase(tokens.begin());
+        std::string hostname = tokens[0];
+        tokens.erase(tokens.begin());
+        std::string cmd = tokens[0];
+        if (cmd == "put") {
+            std::string full_path = std::string(SDFS_DIR) + tokens[1];
+            sdfsc->put_operation(hostname, full_path, tokens[1]);
+        } else if (cmd == "get") {
+            // get_operation_mn(client, tokens[1]);
+        } else if (cmd == "delete") {
+            // delete_operation_mn(client, tokens[1]);
+        } else if (cmd == "ls") {
+            // ls_operation_mn(client, tokens[1]);
         }
     } else {
         std::string cmd = tokens[0];
@@ -58,7 +76,7 @@ int sdfs_server::put_operation(int client, std::string filename) {
     if (server.write_to_client(client, SDFS_ACK_MSG) == -1) return -1;
 
     // recv the file from the client
-    if (recv_file_over_socket(client, filename) == -1) return -1;
+    // if (recv_file_over_socket(client, filename) == -1) return -1;
 
     // send the client the success message
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
@@ -73,7 +91,7 @@ int sdfs_server::get_operation(int client, std::string filename) {
 
     // send the file to the client
     // #define SDFS_DIR "~/.sdfs"
-    if (sdfs_server::send_file_over_socket(client, filename) == -1) return -1;
+    // if (sdfs_server::send_file_over_socket(client, filename) == -1) return -1;
 
     lg->log("successful completion of get request for file " + filename);
     return 0;
@@ -121,21 +139,23 @@ int sdfs_server::put_operation_mn(int client, std::string filename) {
     // to send it to two other nodes (might need to add a spin of the put command for this)
     // e.g. a prefix command that simply means run this command locally
 
+    // get list of destinations
     std::vector<member> destinations = get_file_destinations(filename);
 
-    // at this point the master node should respond with the list of destinations
+    // write the initial host to client
+    server.write_to_client(client, destinations[0].hostname);
 
+    // receive the response from the client (how did the file transfer go?)
+    std::string response = server.read_from_client(client);
+    if (response != SDFS_SUCCESS_MSG) return -1;
 
-    // @TODO: after the client lets the master node know its finished, the master node should issue clone requests
-    //        instead of forcing the client to make replicas
-
-    // insert the pair of <id, filename> for all the newly replicated files
-    // this will be used to replicated files stored on failed nodes
-    for (auto dest : destinations) {
-        ids_to_files[dest.id].push_back(filename);
+    for (int i = 1; i < destinations.size(); i++) {
+        // relay put for each destination
+        std::string local = std::string(SDFS_DIR) + filename;
+        std::string operation = "put " + local + filename;
+        sdfsc->relay_operation(destinations[0].hostname, destinations[i].hostname, operation);
     }
 
-    send_client_mem_vector(client, destinations);
     return 0;
 }
 
