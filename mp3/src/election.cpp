@@ -7,6 +7,8 @@
 #include <string>
 #include <algorithm>
 
+using std::unique_ptr;
+
 election::election(heartbeater_intf *hb_, logger *lg_, udp_client_intf *client_, udp_server_intf *server_, uint16_t port_)
         : hb(hb_), lg(lg_), client(client_), server(server_), port(port_) {
 
@@ -27,13 +29,13 @@ void election::start() {
     running = true;
     timer_on = false;
 
-    timer_thread = new std::thread([this] {update_timer();});
+    timer_thread = std::make_unique<std::thread>([this] {update_timer();});
     timer_thread->detach();
 
-    server_thread = new std::thread([this] {server_thread_function();});
+    server_thread = std::make_unique<std::thread>([this] {server_thread_function();});
     server_thread->detach();
 
-    client_thread = new std::thread([this] {client_thread_function();});
+    client_thread = std::make_unique<std::thread>([this] {client_thread_function();});
     client_thread->detach();
 
     std::function<void(member)> callback = [this](member m) {
@@ -81,10 +83,6 @@ void election::stop() {
 
     running = false;
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-    delete timer_thread;
-    delete server_thread;
-    delete client_thread;
 }
 
 // Debugging function to print a string value for the enum
@@ -420,13 +418,11 @@ void election::client_thread_function() {
                 assert(false && "Should never send an empty message");
             }
 
-            char *buf;
+            unique_ptr<char[]> buf;
             unsigned length;
             buf = msg.serialize(length);
 
-            client->send(dest, port, buf, length);
-
-            delete[] buf;
+            client->send(dest, port, buf.get(), length);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(message_interval_ms));

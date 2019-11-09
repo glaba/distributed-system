@@ -7,6 +7,10 @@
 
 #include <chrono>
 #include <thread>
+#include <memory>
+
+using std::unique_ptr;
+using std::make_unique;
 
 bool testing = false;
 
@@ -25,23 +29,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    logger *lg = new logger("", verbose);
+    unique_ptr<logger> lg = make_unique<logger>("", verbose);
 
     if (testing) {
-        int retval = run_tests(lg);
-        delete lg;
-        return retval;
+        return run_tests(lg.get());
     }
 
-    udp_client_intf *udp_client_inst = new udp_client(lg);
-    udp_server_intf *udp_server_inst = new udp_server(lg);
-    member_list *mem_list = new member_list(local_hostname, lg);
+    unique_ptr<udp_client_intf> udp_client_inst = make_unique<udp_client>(lg.get());
+    unique_ptr<udp_server_intf> udp_server_inst = make_unique<udp_server>(lg.get());
+    unique_ptr<member_list> mem_list = make_unique<member_list>(local_hostname, lg.get());
 
-    heartbeater_intf *hb;
+    unique_ptr<heartbeater_intf> hb;
     if (introducer == "none") {
-        hb = new heartbeater<true>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
+        hb = make_unique<heartbeater<true>>(mem_list.get(), lg.get(), udp_client_inst.get(), udp_server_inst.get(), local_hostname, port);
     } else {
-        hb = new heartbeater<false>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
+        hb = make_unique<heartbeater<false>>(mem_list.get(), lg.get(), udp_client_inst.get(), udp_server_inst.get(), local_hostname, port);
     }
 
     hb->start();

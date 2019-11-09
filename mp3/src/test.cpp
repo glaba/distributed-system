@@ -12,6 +12,9 @@
 #include <chrono>
 #include <memory>
 
+using std::unique_ptr;
+using std::make_unique;
+
 bool compare_hostnames(const member &m1, const member &m2) {
     return (m1.hostname.compare(m2.hostname) < 0) ? true : false;
 }
@@ -109,18 +112,18 @@ int test_member_list(logger *lg) {
 int test_mock_udp(logger *lg) {
     std::cout << "=== TESTING CLIENT / SERVER COMMUNICATION WITH MOCK UDP SERVICES ===" << std::endl;
 
-    mock_udp_factory *fac = new mock_udp_factory();
+    unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
 
-    udp_client_intf *h1_client = fac->get_mock_udp_client("h1", false, 0.0);
-    udp_server_intf *h1_server = fac->get_mock_udp_server("h1");
-    udp_client_intf *h2_client = fac->get_mock_udp_client("h2", false, 0.0);
-    udp_server_intf *h2_server = fac->get_mock_udp_server("h2");
+    unique_ptr<udp_client_intf> h1_client = fac->get_mock_udp_client("h1", false, 0.0);
+    unique_ptr<udp_server_intf> h1_server = fac->get_mock_udp_server("h1");
+    unique_ptr<udp_client_intf> h2_client = fac->get_mock_udp_client("h2", false, 0.0);
+    unique_ptr<udp_server_intf> h2_server = fac->get_mock_udp_server("h2");
 
     volatile bool end = false;
 
     std::cout << "[ ";
 
-    std::thread h1c([h1_client] {
+    std::thread h1c([&h1_client] {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
         for (char i = 0; i < 20; i++) {
@@ -131,7 +134,7 @@ int test_mock_udp(logger *lg) {
         }
     });
 
-    std::thread h1s([&end, h1_server] {
+    std::thread h1s([&end, &h1_server] {
         char buf[1024];
         int counter = 0;
 
@@ -150,7 +153,7 @@ int test_mock_udp(logger *lg) {
         }
     });
 
-    std::thread h2s([&end, h2_server, h2_client] {
+    std::thread h2s([&end, &h2_server, &h2_client] {
         char buf[1024];
 
         h2_server->start_server(1234);
@@ -182,11 +185,6 @@ int test_mock_udp(logger *lg) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    delete h1_client;
-    delete h1_server;
-    delete h2_client;
-    delete h2_server;
-    delete fac;
     return 0;
 }
 
@@ -197,29 +195,29 @@ int test_joining(logger *lg) {
 
         double drop_probability = 0.2;
 
-        mock_udp_factory *fac = new mock_udp_factory();
+        unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
 
-        udp_client_intf *clients[NUM_NODES];
-        udp_server_intf *servers[NUM_NODES];
-        logger *loggers[NUM_NODES];
-        member_list *mem_lists[NUM_NODES];
+        unique_ptr<udp_client_intf> clients[NUM_NODES];
+        unique_ptr<udp_server_intf> servers[NUM_NODES];
+        unique_ptr<logger> loggers[NUM_NODES];
+        unique_ptr<member_list> mem_lists[NUM_NODES];
 
         for (int i = 0; i < NUM_NODES; i++) {
             clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
             servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
             if (lg->is_verbose()) {
-                loggers[i] = new logger("h" + std::to_string(i), true);
+                loggers[i] = make_unique<logger>("h" + std::to_string(i), true);
             } else {
-                loggers[i] = new logger("", "h" + std::to_string(i), false);
+                loggers[i] = make_unique<logger>("", "h" + std::to_string(i), false);
             }
-            mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
+            mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
         }
 
         // h1 is the introducer
-        heartbeater_intf *hbs[NUM_NODES];
-        hbs[0] = new heartbeater<true>(mem_lists[0], loggers[0], clients[0], servers[0], "h0", 1234);
+        unique_ptr<heartbeater_intf> hbs[NUM_NODES];
+        hbs[0] = make_unique<heartbeater<true>>(mem_lists[0].get(), loggers[0].get(), clients[0].get(), servers[0].get(), "h0", 1234);
         for (int i = 1; i < NUM_NODES; i++) {
-            hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], servers[i], "h" + std::to_string(i), 1234);
+            hbs[i] = make_unique<heartbeater<false>>(mem_lists[i].get(), loggers[i].get(), clients[i].get(), servers[i].get(), "h" + std::to_string(i), 1234);
         }
 
         hbs[0]->start();
@@ -268,7 +266,7 @@ int test_joining(logger *lg) {
 
         // Stop all heartbeaters
         for (unsigned i = 0; i < NUM_NODES; i++) {
-            std::thread stop_thread([hbs, i] {
+            std::thread stop_thread([&hbs, i] {
                 hbs[i]->stop();
             });
             stop_thread.detach();
@@ -286,32 +284,32 @@ int test_election(logger *lg) {
 
         double drop_probability = 0.0;
 
-        mock_udp_factory *fac = new mock_udp_factory();
+        unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
 
-        udp_client_intf *clients[NUM_NODES];
-        udp_server_intf *hb_servers[NUM_NODES];
-        udp_server_intf *election_servers[NUM_NODES];
-        logger *loggers[NUM_NODES];
-        member_list *mem_lists[NUM_NODES];
-        election *elections[NUM_NODES];
+        unique_ptr<udp_client_intf> clients[NUM_NODES];
+        unique_ptr<udp_server_intf> hb_servers[NUM_NODES];
+        unique_ptr<udp_server_intf> election_servers[NUM_NODES];
+        unique_ptr<logger> loggers[NUM_NODES];
+        unique_ptr<member_list> mem_lists[NUM_NODES];
+        unique_ptr<election> elections[NUM_NODES];
 
         for (int i = 0; i < NUM_NODES; i++) {
             clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
             hb_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
             election_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
             if (lg->is_verbose()) {
-                loggers[i] = new logger("h" + std::to_string(i), true);
+                loggers[i] = make_unique<logger>("h" + std::to_string(i), true);
             } else {
-                loggers[i] = new logger("h" + std::to_string(i), false);
+                loggers[i] = make_unique<logger>("h" + std::to_string(i), false);
             }
-            mem_lists[i] = new member_list("h" + std::to_string(i), loggers[i]);
+            mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
         }
 
         // h0 is the introducer
-        heartbeater_intf *hbs[NUM_NODES];
-        hbs[0] = new heartbeater<true>(mem_lists[0], loggers[0], clients[0], hb_servers[0], "h0", 1234);
+        unique_ptr<heartbeater_intf> hbs[NUM_NODES];
+        hbs[0] = make_unique<heartbeater<true>>(mem_lists[0].get(), loggers[0].get(), clients[0].get(), hb_servers[0].get(), "h0", 1234);
         for (int i = 1; i < NUM_NODES; i++) {
-            hbs[i] = new heartbeater<false>(mem_lists[i], loggers[i], clients[i], hb_servers[i], "h" + std::to_string(i), 1234);
+            hbs[i] = make_unique<heartbeater<false>>(mem_lists[i].get(), loggers[i].get(), clients[i].get(), hb_servers[i].get(), "h" + std::to_string(i), 1234);
         }
 
         hbs[0]->start();
@@ -319,7 +317,7 @@ int test_election(logger *lg) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
         for (int i = 0; i < NUM_NODES; i++) {
-            elections[i] = new election(hbs[i], loggers[i], clients[i], election_servers[i], 1235);
+            elections[i] = make_unique<election>(hbs[i].get(), loggers[i].get(), clients[i].get(), election_servers[i].get(), 1235);
             elections[i]->start();
         }
 
@@ -336,14 +334,14 @@ int test_election(logger *lg) {
         // Stop h0 and see how election proceeds
         hbs[0]->stop();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(14000));
 
         // Stop all heartbeaters
         for (unsigned i = 0; i < NUM_NODES; i++) {
             if (i == 0)
                 continue;
 
-            std::thread stop_thread([hbs, i] {
+            std::thread stop_thread([&hbs, i] {
                 hbs[i]->stop();
             });
             stop_thread.detach();

@@ -10,6 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <memory>
 
 // The minimum amount of time it will take for the member list to stabilize
 //  6s in the worst case for the introducer to notice the failure of the master node and prevent new nodes from joining
@@ -69,7 +70,7 @@ private:
     uint32_t prev_time;
     void start_timer(uint32_t time);
     void update_timer();
-    std::thread *timer_thread; // Thread that will update the timer
+    std::unique_ptr<std::thread> timer_thread; // Thread that will update the timer
     std::mutex timer_mutex; // Mutex that protects the timer variables
 
     // Debugging function to print a string value for the enum
@@ -90,7 +91,7 @@ private:
     udp_client_intf *client;
     udp_server_intf *server;
     // Thread for the server / client as well as the corresponding functions
-    std::thread *server_thread, *client_thread;
+    std::unique_ptr<std::thread> server_thread, client_thread;
     void server_thread_function();
     void client_thread_function();
     // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)

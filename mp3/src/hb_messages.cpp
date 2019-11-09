@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cassert>
 
+using std::unique_ptr;
+
 // Creates a message from a buffer
 hb_message::hb_message(char *buf_, unsigned length_) {
     char *buf = buf_;
@@ -141,7 +143,7 @@ std::vector<member> hb_message::get_joined_nodes() {
 }
 
 // Serializes the message and returns a buffer containing the message, along with the length
-char *hb_message::serialize(unsigned &length) {
+unique_ptr<char[]> hb_message::serialize(unsigned &length) {
     length = sizeof(uint32_t) + // Node ID
               sizeof(char) + sizeof(uint32_t) + failed_nodes.size() * sizeof(uint32_t) + // Failed nodes
               sizeof(char) + sizeof(uint32_t) + left_nodes.size() * sizeof(uint32_t) + // Left nodes
@@ -220,7 +222,7 @@ char *hb_message::serialize(unsigned &length) {
     if (ind != length)
         goto fail;
 
-    return original_buf;
+    return unique_ptr<char[]>(original_buf);
 
 fail:
     assert(false && "Message serialization led to memory corruption");

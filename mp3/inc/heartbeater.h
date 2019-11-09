@@ -139,6 +139,6 @@ private:
     std::vector<std::function<void(member)>> on_leave_handlers;
 
     // The client and server threads and a boolean used to stop the threads
-    std::thread *server_thread, *client_thread;
+    std::unique_ptr<std::thread> server_thread, client_thread;
     std::atomic<bool> running;
 };

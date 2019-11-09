@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 class election_message {
 public:
@@ -64,7 +65,7 @@ public:
     }
 
     // Serializes the message and returns a buffer containing the message, along with the length
-    char *serialize(unsigned &length);
+    std::unique_ptr<char[]> serialize(unsigned &length);
 
 private:
     std::string malformed_reason = "";

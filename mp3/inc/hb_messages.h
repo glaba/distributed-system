@@ -3,6 +3,7 @@
 #include "member_list.h"
 
 #include <vector>
+#include <memory>
 
 class hb_message {
 public:
@@ -36,7 +37,7 @@ public:
     std::vector<member> get_joined_nodes();
 
     // Serializes the message and returns a buffer containing the message, along with the length
-    char *serialize(unsigned &length);
+    std::unique_ptr<char[]> serialize(unsigned &length);
 
 private:
     std::string malformed_reason = "";

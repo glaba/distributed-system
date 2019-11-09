@@ -8,6 +8,7 @@
 #include <queue>
 #include <mutex>
 #include <tuple>
+#include <memory>
 
 using std::string;
 
@@ -15,15 +16,11 @@ using std::string;
 class mock_udp_factory {
 public:
     mock_udp_factory() {
-        coordinator = new mock_udp_coordinator();
+        coordinator = std::make_unique<mock_udp_coordinator>();
     }
 
-    ~mock_udp_factory() {
-        delete coordinator;
-    }
-
-    udp_client_intf *get_mock_udp_client(string hostname, bool show_packets, double drop_probability);
-    udp_server_intf *get_mock_udp_server(string hostname);
+    std::unique_ptr<udp_client_intf> get_mock_udp_client(string hostname, bool show_packets, double drop_probability);
+    std::unique_ptr<udp_server_intf> get_mock_udp_server(string hostname);
 private:
     // Coordinator class which passes mock UDP messages around for one port
     class mock_udp_port_coordinator {
@@ -43,7 +40,7 @@ private:
         // Lock access to both maps
         std::mutex msg_mutex;
         // A map from hostname of receiving machine to a queue of (char *msg, unsigned length)
-        std::unordered_map<std::string, std::queue<std::tuple<char*, unsigned>>> msg_queues;
+        std::unordered_map<std::string, std::queue<std::tuple<std::unique_ptr<char[]>, unsigned>>> msg_queues;
         // A map from hostname waiting for a message to arrive to a pointer to the flag that should be set to wake them
         std::unordered_map<std::string, volatile bool*> notify_flags;
     };
@@ -51,12 +48,6 @@ private:
     // Coordinator class which passes mock UDP messages for any number of ports
     class mock_udp_coordinator {
     public:
-        ~mock_udp_coordinator() {
-            for (auto k : coordinators) {
-                delete coordinators[k.first];
-            }
-        }
-
         // All these functions essentially just multiplex to the correct mock_udp_port_coordinator
         void start_server(string hostname, int port);
         void notify_waiting(string hostname, int port, volatile bool *flag);
@@ -65,17 +56,14 @@ private:
         void stop_server(string hostname, int port);
     private:
         std::mutex coordinators_mutex;
-        std::unordered_map<int, mock_udp_port_coordinator*> coordinators;
+        std::unordered_map<int, std::unique_ptr<mock_udp_port_coordinator>> coordinators;
     };
 
     class mock_udp_client : public udp_client_intf {
     public:
         mock_udp_client(string hostname_, bool show_packets_, double drop_probability_, mock_udp_coordinator *coordinator_)
             : show_packets(show_packets_), drop_probability(drop_probability_), hostname(hostname_),
-              coordinator(coordinator_), lg(new logger("UDP", show_packets)) {}
-        ~mock_udp_client() {
-            delete lg;
-        }
+              coordinator(coordinator_), lg(std::make_unique<logger>("UDP", show_packets)) {}
 
         // Sends a UDP packet to the specified destination
         void send(string host, int port, char *msg, unsigned length);
@@ -84,7 +72,7 @@ private:
         double drop_probability;
         string hostname;
         mock_udp_coordinator *coordinator;
-        logger *lg;
+        std::unique_ptr<logger> lg;
     };
 
     class mock_udp_server : public udp_server_intf {
@@ -106,5 +94,5 @@ private:
         mock_udp_coordinator *coordinator;
     };
 
-    mock_udp_coordinator *coordinator;
+    std::unique_ptr<mock_udp_coordinator> coordinator;
 };

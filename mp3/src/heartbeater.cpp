@@ -8,6 +8,8 @@
 #include <algorithm>
 
 using namespace std::chrono;
+using std::unique_ptr;
+using std::make_unique;
 
 template <bool is_introducer_>
 heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, udp_client_intf *client_,
@@ -34,10 +36,10 @@ void heartbeater<is_introducer_>::start() {
 
     running = true;
 
-    server_thread = new std::thread([this] {server_thread_function();});
+    server_thread = make_unique<std::thread>([this] {server_thread_function();});
     server_thread->detach();
 
-    client_thread = new std::thread([this] {client_thread_function();});
+    client_thread = make_unique<std::thread>([this] {client_thread_function();});
     client_thread->detach();
 }
 
@@ -50,8 +52,6 @@ void heartbeater<is_introducer_>::stop() {
 
     // Sleep for enough time for the threads to stop and then delete them
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    delete server_thread;
-    delete client_thread;
 }
 
 // Returns the list of members of the group that this node is aware of
@@ -99,7 +99,7 @@ void heartbeater<is_introducer_>::client_thread_function() {
             std::vector<uint32_t> left_nodes = left_nodes_queue.pop();
             std::vector<member> joined_nodes = joined_nodes_queue.pop();
 
-            char *msg_buf;
+            unique_ptr<char[]> msg_buf;
             unsigned msg_buf_len;
 
             // Create the message to send out
@@ -108,16 +108,14 @@ void heartbeater<is_introducer_>::client_thread_function() {
             msg.set_left_nodes(left_nodes);
             msg.set_joined_nodes(joined_nodes);
             msg_buf = msg.serialize(msg_buf_len);
-            assert(msg_buf != nullptr);
             assert(msg_buf_len > 0);
 
             // Send the message out to all the neighbors
             for (auto mem : mem_list->get_neighbors()) {
                 if (msg_buf != nullptr) {
-                    client->send(mem.hostname, port, msg_buf, msg_buf_len);
+                    client->send(mem.hostname, port, msg_buf.get(), msg_buf_len);
                 }
             }
-            delete[] msg_buf;
 
             // If we are the introducer, also send the introduction messages
             if (is_introducer_ && nodes_can_join.load() && new_nodes_queue.size() > 0) {
@@ -159,15 +157,13 @@ void heartbeater<is_introducer_>::check_for_failed_neighbors() {
 // (Should be called only by introducer) Sends pending messages to newly joined nodes
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::send_introducer_msg() {
-    char *msg_buf;
+    unique_ptr<char[]> msg_buf;
     unsigned msg_buf_len;
 
     std::vector<member> all_members = mem_list->get_members();
     hb_message intro_msg(our_id);
     intro_msg.set_joined_nodes(all_members);
     msg_buf = intro_msg.serialize(msg_buf_len);
-
-    assert(msg_buf != nullptr);
     assert(msg_buf_len > 0);
 
     auto new_nodes = new_nodes_queue.pop();
@@ -175,7 +171,7 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
 
     for (auto node : new_nodes) {
         lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
-        client->send(node.hostname, port, msg_buf, msg_buf_len);
+        client->send(node.hostname, port, msg_buf.get(), msg_buf_len);
 
         // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
         // so that it can be added to other nodes' membership lists
@@ -183,8 +179,6 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
             joined_nodes_queue.push(node, message_redundancy);
         }
     }
-
-    delete[] msg_buf;
 }
 
 // Runs the provided function atomically with any functions that read or write to the membership list
@@ -210,20 +204,17 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     us.id = our_id;
     us.hostname = local_hostname;
 
-    char *buf;
+    unique_ptr<char[]> buf;
     unsigned buf_len;
 
     hb_message join_req(our_id);
     join_req.set_joined_nodes(std::vector<member>{us});
     buf = join_req.serialize(buf_len);
-
-    assert(buf != nullptr);
     assert(buf_len > 0);
 
-    for (int i = 0; i < message_redundancy; i++)
-        client->send(introducer, port, buf, buf_len);
-
-    delete[] buf;
+    for (int i = 0; i < message_redundancy; i++) {
+        client->send(introducer, port, buf.get(), buf_len);
+    }
 }
 
 // Sends a message to peers stating that we are leaving
@@ -247,6 +238,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
     while (true) {
         // If the server is not running, stop everything and exit
         if (!running.load()) {
+            lg->log("Exiting server thread function");
             break;
         }
 

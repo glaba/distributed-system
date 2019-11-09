@@ -3,6 +3,8 @@
 
 #include <cassert>
 
+using std::unique_ptr;
+
 bool election_message::operator==(const election_message &m) {
     if (type != m.type)
         return false;
@@ -81,7 +83,7 @@ malformed_msg:
 }
 
 // Serializes the message and returns a buffer containing the message, along with the length
-char *election_message::serialize(unsigned &length) {
+unique_ptr<char[]> election_message::serialize(unsigned &length) {
     if (type == msg_type::empty) {
         length = 0;
         return nullptr;
@@ -132,7 +134,7 @@ char *election_message::serialize(unsigned &length) {
         default: assert(false && "Memory corruption has occurred and type is invalid enum value");
     }
 
-    return original_buf;
+    return unique_ptr<char[]>(original_buf);
 
 fail:
     assert(false && "Message serialization led to memory corruption");
