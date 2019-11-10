@@ -42,6 +42,11 @@ void election::start() {
         { // Atomic block for accessing the state
             std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
+            // If we don't know who the master node is, we cannot participate in elections
+            if (state == no_master) {
+                assert(false && "Did not receive master node introduction message at all OR in time for election");
+            }
+
             if (state != normal) {
                 return;
             }
@@ -81,6 +86,7 @@ void election::start() {
 void election::stop() {
     lg->log("Stopping election");
 
+    server->stop_server();
     running = false;
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 }
@@ -392,7 +398,6 @@ void election::client_thread_function() {
     while (running.load()) {
         // Pop off the messages that are waiting to be sent
         std::vector<std::tuple<std::string, election_message>> messages = message_queue.pop();
-        std::vector<std::tuple<std::string, election_message>> updated = message_queue.peek();
 
         for (auto m : messages) {
             std::string dest = std::get<0>(m);

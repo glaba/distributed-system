@@ -331,32 +331,57 @@ int test_election(logger *lg) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(4000));
 
+        // Assert that all nodes know who the master node is
+        for (unsigned i = 0; i < NUM_NODES; i++) {
+            bool succeeded;
+            member master_node = elections[i]->get_master_node(&succeeded);
+
+            assert(succeeded && "Node does not know who the master node is before failure");
+            assert(master_node.id == hbs[0]->get_id() && "Node thinks wrong node is the master node");
+        }
+
         // Stop h0 and see how election proceeds
+        elections[0]->stop();
         hbs[0]->stop();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(14000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20000));
+
+        // Assert that they successfully all re-elected some new member
+        uint32_t new_master_id = 0;
+        for (unsigned i = 1; i < NUM_NODES; i++) {
+            bool succeeded;
+            member new_master = elections[i]->get_master_node(&succeeded);
+
+            assert(succeeded && "Node did not successfully re-elect a master node");
+            if (new_master_id == 0) {
+                new_master_id = new_master.id;
+            } else {
+                assert(new_master.id == new_master_id && "Split brain occurred after failure");
+            }
+        }
 
         // Stop all heartbeaters
         for (unsigned i = 0; i < NUM_NODES; i++) {
             if (i == 0)
                 continue;
 
-            std::thread stop_thread([&hbs, i] {
+            std::thread stop_thread([&hbs, &elections, i] {
+                elections[i]->stop();
                 hbs[i]->stop();
             });
             stop_thread.detach();
         }
         // Wait for them all to stop
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(4500));
     }
 
     return 0;
 }
 
 int run_tests(logger *lg) {
-    // assert(test_member_list(lg) == 0);
-    // assert(test_mock_udp(lg) == 0);
-    // assert(test_joining(lg) == 0);
+    assert(test_member_list(lg) == 0);
+    assert(test_mock_udp(lg) == 0);
+    assert(test_joining(lg) == 0);
     assert(test_election(lg) == 0);
 
     std::cout << "=== ALL TESTS COMPLETED SUCCESSFULLY ===" << std::endl;

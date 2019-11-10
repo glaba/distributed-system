@@ -82,8 +82,10 @@ private:
     // The logger provided to us
     logger *lg;
 
-    // Number of times to send each message
-    const int message_redundancy = 4;
+    // Number of times to send an introduction message
+    // This is higher than the heartbeater redundancy in case the first few heartbeater introducer
+    // messages don't arrive, the election introduction message is not ignored
+    const int message_redundancy = 8;
     // Time between sending pending messages (in ms)
     const uint64_t message_interval_ms = 250;
 

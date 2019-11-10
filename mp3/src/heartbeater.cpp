@@ -19,6 +19,7 @@ heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, ud
 
     our_id = 0;
 
+    joined_group = false;
     if (is_introducer_) {
         int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         our_id = std::hash<std::string>()(local_hostname) ^ std::hash<int>()(join_time);
@@ -48,6 +49,7 @@ template <bool is_introducer_>
 void heartbeater<is_introducer_>::stop() {
     lg->log("Stopping heartbeater");
 
+    server->stop_server();
     running = false;
 
     // Sleep for enough time for the threads to stop and then delete them
@@ -229,6 +231,7 @@ void heartbeater<is_introducer_>::leave_group() {
 // Server thread function
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::server_thread_function() {
+    lg->log("Starting server thread");
     server->start_server(port);
 
     int size;
@@ -238,7 +241,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
     while (true) {
         // If the server is not running, stop everything and exit
         if (!running.load()) {
-            lg->log("Exiting server thread function");
+            lg->log("Exiting server thread");
             break;
         }
 
@@ -330,8 +333,6 @@ void heartbeater<is_introducer_>::server_thread_function() {
             mem_list->update_heartbeat(msg.get_id());
         }
     }
-
-    server->stop_server();
 }
 
 // Adds a handler to the list of handlers that will be called when a node fails
