@@ -172,7 +172,7 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
                 std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
                 hostname + " -> " + dest + " - ";
             for (unsigned i = 0; i < length; i++) {
-                log_msg += std::to_string(log_msg[i]) + " ";
+                log_msg += std::to_string(msg[i]) + " ";
             }
             lg->log_v(log_msg);
         }
@@ -183,7 +183,7 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
             std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
             hostname + " -> " + dest + " - ";
         for (unsigned i = 0; i < length; i++) {
-            log_msg += std::to_string(log_msg[i]) + " ";
+            log_msg += std::to_string(msg[i]) + " ";
         }
         lg->log_v(log_msg);
     }

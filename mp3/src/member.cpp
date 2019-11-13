@@ -12,27 +12,27 @@
 using std::unique_ptr;
 using std::make_unique;
 
-bool testing = false;
-
 int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
-        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer);
+        uint16_t *port, bool *running_tests, std::string *test_prefix, bool *verbose, bool *is_introducer);
 
 int main(int argc, char **argv) {
     std::string introducer = "";
     bool is_introducer = false;
     std::string local_hostname = "";
     uint16_t port = DEFAULT_PORT;
-    bool testing = false;
+    bool running_tests = false;
+    std::string test_prefix;
     bool verbose = false;
 
-    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing, &verbose, &is_introducer)) {
+    if (process_params(argc, argv, &introducer, &local_hostname, &port, &running_tests, &test_prefix, &verbose, &is_introducer)) {
         return 1;
     }
 
     unique_ptr<logger> lg = make_unique<logger>("", verbose);
 
-    if (testing) {
-        return run_tests(lg.get());
+    if (running_tests) {
+        testing::run_tests((test_prefix == "all" ? "" : test_prefix), lg.get(), true);
+        return 0;
     }
 
     unique_ptr<udp_client_intf> udp_client_inst = make_unique<udp_client>(lg.get());
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
 }
 
 void print_help() {
-    std::cout << "Usage: member [test | -i <introducer> -h <hostname> -p <port>] -v" << std::endl << std::endl;
+    std::cout << "Usage: member [test <prefix> | -i <introducer> -h <hostname> -p <port>] -v" << std::endl << std::endl;
     std::cout << "Option\tMeaning" << std::endl;
     std::cout << " -h\tThe hostname of this machine that other members can use" << std::endl;
     std::cout << " -i\tIntroducer hostname or \"none\" if this is the first introducer" << std::endl;
@@ -72,15 +72,20 @@ int print_invalid() {
 }
 
 int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
-        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer) {
+        uint16_t *port, bool *running_tests, std::string *test_prefix, bool *verbose, bool *is_introducer) {
     if (argc == 1)
         return print_invalid();
 
     if (std::string(argv[1]) == "test") {
-        *testing = true;
-
-        if (argc >= 3 && std::string(argv[2]) == "-v")
-            *verbose = true;
+        if (argc >= 3) {
+            *running_tests = true;
+            *test_prefix = std::string(argv[2]);
+            if (argc >= 4 && std::string(argv[3]) == "-v")
+                *verbose = true;
+        } else {
+            std::cout << "Must specify prefix of tests to run. A prefix of \"all\" will run all tests" << std::endl;
+            return print_invalid();
+        }
 
         return 0;
     }

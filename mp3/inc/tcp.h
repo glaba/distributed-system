@@ -16,9 +16,6 @@
 
 #define MAX_CLIENTS 10
 
-using std::cerr;
-using std::endl;
-
 class tcp_utils {
 public:
     // Read the first four bytes from socket and transform it into ssize_t
@@ -41,9 +38,9 @@ public:
 class tcp_server_intf : public tcp_utils {
 public:
     // Sets up server to receive connections on the given port
-    virtual void setup_server(std::string port) = 0;
-    // Tears down the server
-    virtual void tear_down_server() = 0;
+    virtual void setup_server(int port) = 0;
+    // Stops the server
+    virtual void stop_server() = 0;
     // Accepts a connection on the server fd
     // Returns the socket to the accepted connection
     virtual int accept_connection() = 0;
@@ -59,9 +56,8 @@ public:
 
 class tcp_server : public tcp_server_intf {
 public:
-    tcp_server(std::string port);
-    void setup_server(std::string port);
-    void tear_down_server();
+    void setup_server(int port);
+    void stop_server();
     int accept_connection();
     void close_connection(int client_socket);
     std::string read_from_client(int client);
@@ -75,7 +71,7 @@ class tcp_client_intf : public tcp_utils {
 public:
     // Creates client connection to a server
     // Returns socket to server
-    virtual int setup_connection(std::string host, std::string port) = 0;
+    virtual int setup_connection(std::string host, int port) = 0;
     // Reads the specified number of bytes from the given socket
     // Returns data received from the server
     virtual std::string read_from_server(int socket) = 0;
@@ -89,7 +85,7 @@ public:
 class tcp_client : public tcp_client_intf {
 public:
     tcp_client(void);
-    int setup_connection(std::string host, std::string port);
+    int setup_connection(std::string host, int port);
     void close_connection(int socket);
     std::string read_from_server(int socket);
     ssize_t write_to_server(int socket, std::string data);
