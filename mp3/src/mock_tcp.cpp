@@ -17,6 +17,17 @@ unique_ptr<tcp_server_intf> mock_tcp_factory::get_mock_tcp_server(string hostnam
     return make_unique<mock_tcp_server>(factory.get(), hostname, show_packets);
 }
 
+mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
+    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+    if (running.load()) {
+        stop_server();
+    }
+
+    // 500ms delay to reduce chance of race condition in msg_thread to essentially 0
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+}
+
 void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
@@ -32,15 +43,17 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
         unsigned length;
 
         while (running.load()) {
+            // There is a tremendously unlikely race condition here if the mock_tcp_server destructor is called,
+            // 500 milliseconds pass, and server is deleted all between the line above and the line below
             length = server->recv(buf, 1024);
-
-            // Handle the condition where recv has already been called but the server has been stopped
-            if (length == 0 && !running.load()) {
-                continue;
-            }
 
             { // Atomic block while we potentially touch the message queues
                 std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+                // Handle the condition where recv has already been called but the server has been stopped
+                if (length == 0 && !running.load()) {
+                    continue;
+                }
 
                 // Assert that it at least contains the prefix and message length
                 assert(length >= 5);
@@ -82,6 +95,13 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
 }
 
 void mock_tcp_factory::mock_tcp_server::stop_server() {
+    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+    // Close all open connections with client
+    for (auto client_info : client_hostnames) {
+        close_connection(std::get<0>(client_info));
+    }
+
     running = false;
     server->stop_server();
 }
@@ -181,6 +201,20 @@ ssize_t mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, std::s
     return data.size();
 }
 
+mock_tcp_factory::mock_tcp_client::~mock_tcp_client() {
+    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+    // Close all connections
+    std::vector<uint32_t> open_fds;
+    for (auto server_info : server_hostnames) {
+        open_fds.push_back(server_info.first);
+    }
+
+    for (uint32_t fd : open_fds) {
+        close_connection(fd);
+    }
+}
+
 int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int port_) {
     uint32_t server_id;
 
@@ -215,10 +249,17 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
             unsigned length;
 
             while (running[server_id].load()) {
+                // There is a tremendously unlikely race condition here if stop_server is called and running is set to false,
+                // 500 milliseconds pass, and servers[server_id] is deleted all between the line above and the line below
                 length = servers[server_id]->recv(buf, 1024);
 
                 { // Atomic block while we potentially touch the message queues
                     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+                    // Handle the condition where recv has already been called but the server (or client) has been stopped
+                    if (length == 0 && !running[server_id].load()) {
+                        return;
+                    }
 
                     // Assert that it at least contains the prefix and message length
                     assert(length >= 5);

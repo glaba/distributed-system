@@ -39,6 +39,7 @@ private:
     public:
         mock_tcp_server(mock_udp_factory *factory_, string hostname_, bool show_packets_)
             : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)), show_packets(show_packets_) {}
+        ~mock_tcp_server();
 
         void setup_server(int port_);
         void stop_server();
@@ -80,6 +81,7 @@ private:
     public:
         mock_tcp_client(mock_udp_factory *factory_, string hostname_, bool show_packets_)
             : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)), show_packets(show_packets_) {}
+        ~mock_tcp_client();
 
         int setup_connection(std::string host, int port_);
         std::string read_from_server(int socket);

@@ -37,6 +37,7 @@ public:
 
 class tcp_server_intf : public tcp_utils {
 public:
+    virtual ~tcp_server_intf() {}
     // Sets up server to receive connections on the given port
     virtual void setup_server(int port) = 0;
     // Stops the server
@@ -69,6 +70,7 @@ private:
 
 class tcp_client_intf : public tcp_utils {
 public:
+    virtual ~tcp_client_intf() {}
     // Creates client connection to a server
     // Returns socket to server
     virtual int setup_connection(std::string host, int port) = 0;
