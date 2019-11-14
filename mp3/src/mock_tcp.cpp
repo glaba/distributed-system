@@ -18,13 +18,16 @@ unique_ptr<tcp_server_intf> mock_tcp_factory::get_mock_tcp_server(string hostnam
 }
 
 mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
-    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+    {
+        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    if (running.load()) {
-        stop_server();
+        if (running.load()) {
+            stop_server();
+        }
     }
 
     // 500ms delay to reduce chance of race condition in msg_thread to essentially 0
+    // This should not be protected by the lock so that msg_thread gets its chance to finish up its work and quit
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
@@ -51,7 +54,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
                 std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
                 // Handle the condition where recv has already been called but the server has been stopped
-                if (length == 0 && !running.load()) {
+                if (!running.load()) {
                     continue;
                 }
 
@@ -97,9 +100,14 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
 void mock_tcp_factory::mock_tcp_server::stop_server() {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    // Close all open connections with client
+    // Close all open connections with client (use the vector to avoid modifying container while iterating)
+    std::vector<uint32_t> open_fds;
     for (auto client_info : client_hostnames) {
-        close_connection(std::get<0>(client_info));
+        open_fds.push_back(client_info.first);
+    }
+
+    for (uint32_t fd : open_fds) {
+        close_connection(fd);
     }
 
     running = false;
@@ -257,7 +265,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
                     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
                     // Handle the condition where recv has already been called but the server (or client) has been stopped
-                    if (length == 0 && !running[server_id].load()) {
+                    if (!running[server_id].load()) {
                         return;
                     }
 
@@ -369,22 +377,28 @@ void mock_tcp_factory::mock_tcp_client::close_connection(int socket) {
 }
 
 void mock_tcp_factory::mock_tcp_client::delete_connection(int socket) {
-    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+    {
+        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    assert(server_hostnames.find(socket) != server_hostnames.end() && "Socket was not opened to begin with");
+        assert(server_hostnames.find(socket) != server_hostnames.end() && "Socket was not opened to begin with");
 
-    // Remove all data about the server
-    running[socket] = false;
-    servers[socket]->stop_server();
+        // Remove all data about the server
+        running[socket] = false;
+        servers[socket]->stop_server();
+    }
 
     // Wait for the server to stop (should actually take ~20ms, but we give some extra time)
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Delete all information
-    servers.erase(socket);
-    clients.erase(socket);
-    msg_threads.erase(socket);
-    running.erase(socket);
-    msg_queues.erase(socket);
-    server_hostnames.erase(socket);
+    {
+        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+        // Delete all information
+        servers.erase(socket);
+        clients.erase(socket);
+        msg_threads.erase(socket);
+        running.erase(socket);
+        msg_queues.erase(socket);
+        server_hostnames.erase(socket);
+    }
 }

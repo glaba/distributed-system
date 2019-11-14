@@ -15,6 +15,7 @@
 
 class heartbeater_intf {
 public:
+    virtual ~heartbeater_intf() {}
     // Starts the heartbeater
     virtual void start() = 0;
     // Stops the heartbeater synchronously

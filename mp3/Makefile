@@ -35,4 +35,4 @@ $(OBJ_DIR)/%.test.o: $(TEST_DIR)/%.cpp
 .PHONY: all clean
 
 clean:
-	rm member obj/*
+	rm member election obj/*

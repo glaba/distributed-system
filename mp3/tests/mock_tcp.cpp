@@ -178,3 +178,65 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
     }
     std::cout << " ]" << std::endl;
 });
+
+testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
+    "Tests passing messages between a multiple TCP clients and a single TCP server", [] (logger *lg)
+{
+    const int NUM_CLIENTS = 5;
+
+    unique_ptr<mock_tcp_factory> factory = make_unique<mock_tcp_factory>();
+
+    std::vector<unique_ptr<tcp_client_intf>> clients;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(factory->get_mock_tcp_client("client" + std::to_string(i), false));
+    }
+    unique_ptr<tcp_server_intf> server = factory->get_mock_tcp_server("server", false);
+
+    std::cout << "[ " << std::flush;
+
+    // Start the server in its own thread
+    std::thread server_thread([&server, NUM_CLIENTS] {
+        server->setup_server(1234);
+
+        for (int i = 0; i < NUM_CLIENTS; i++) {
+            int fd = server->accept_connection();
+
+            // Spin off a thread for each client
+            std::thread client_thread([&server, fd] {
+                for (int j = 0; j < 10; j++) {
+                    std::string msg = server->read_from_client(fd);
+                    assert(msg == std::to_string(j));
+                    server->write_to_client(fd, std::to_string(j));
+                    std::cout << "<-" << std::flush;
+                }
+            });
+            client_thread.detach();
+        }
+    });
+    server_thread.detach();
+
+    // Wait a bit for the server to set up
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // Start the clients in their own thread
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        std::thread client_thread([&clients, i] {
+            int fd = clients[i]->setup_connection("server", 1234);
+
+            for (int j = 0; j < 10; j++) {
+                clients[i]->write_to_server(fd, std::to_string(j));
+                std::cout << "->" << std::flush;
+                std::string msg = clients[i]->read_from_server(fd);
+                assert(msg == std::to_string(j));
+            }
+
+            clients[i]->close_connection(fd);
+        });
+        client_thread.detach();
+    }
+
+    // Wait for all communication to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    std::cout << " ]" << std::endl;
+});
