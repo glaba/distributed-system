@@ -11,6 +11,8 @@
 #include <mutex>
 #include <thread>
 #include <memory>
+#include <random>
+#include <unordered_set>
 
 // The minimum amount of time it will take for the member list to stabilize
 //  6s in the worst case for the introducer to notice the failure of the master node and prevent new nodes from joining
@@ -52,8 +54,6 @@ private:
 
     // Transitions the current state to the given state
     void transition(election_state origin_state, election_state dest_state);
-    // Variable that indicates that a transition has occurred
-    std::atomic<bool> state_changed;
 
     // Indicates whether or not the election is running
     std::atomic<bool> running;
@@ -85,9 +85,13 @@ private:
     // Number of times to send an introduction message
     // This is higher than the heartbeater redundancy in case the first few heartbeater introducer
     // messages don't arrive, the election introduction message is not ignored
-    const int message_redundancy = 8;
+    const int introduction_message_redundancy = 8;
+    // Number of times to send all other message types
+    const int message_redundancy = 3;
     // Time between sending pending messages (in ms)
     const uint64_t message_interval_ms = 250;
+    // TTL of the list of seen message IDs in minutes (effectively a limit on how late UDP messages can be delayed)
+    const int seen_ids_ttl = 5;
 
     // UDP client and server interfaces for communication with other nodes
     udp_client_intf *client;
@@ -98,6 +102,13 @@ private:
     void client_thread_function();
     // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
     redundant_queue<std::tuple<std::string, election_message>> message_queue;
+    // Enqueues a message into the message_queue and prints debug information
+    void enqueue_message(std::string dest, election_message msg, int redundancy);
+
+    // A "redundant" queue that will be popped every 1 minute containing all the message IDs seen so far
+    redundant_queue<uint32_t> seen_message_ids;
+    // The random number generator which we will use to generate message IDs
+    std::mt19937 mt_rand;
 
     // The current master node (an ID of 0 means there is no master node)
     member master_node;

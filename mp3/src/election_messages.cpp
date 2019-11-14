@@ -1,8 +1,6 @@
 #include "election_messages.h"
 #include "serialization.h"
 
-#include <cassert>
-
 using std::unique_ptr;
 
 bool election_message::operator==(const election_message &m) {
@@ -28,12 +26,18 @@ election_message::election_message(char *buf_, unsigned length_) {
     id = serialization::read_uint32_from_char_buf(buf);
     buf += sizeof(id); length -= sizeof(id);
 
+    // Reconstruct the UUID in little endian order
+    if (length < sizeof(uuid)) {malformed_reason = "Message ends before UUID"; goto malformed_msg;}
+    uuid = serialization::read_uint32_from_char_buf(buf);
+    buf += sizeof(uuid); length -= sizeof(uuid);
+
     // Get the type of the message
     if (length < sizeof(uint8_t)) {malformed_reason = "Message ends before message type"; goto malformed_msg;}
     switch (*buf) {
         case 0: type = msg_type::election; break;
         case 1: type = msg_type::elected; break;
         case 2: type = msg_type::introduction; break;
+        case 3: type = msg_type::proposal; break;
         default: {malformed_reason = "Message type is neither election or elected"; goto malformed_msg;}
     }
     buf += sizeof(uint8_t); length -= sizeof(uint8_t);
@@ -56,6 +60,8 @@ election_message::election_message(char *buf_, unsigned length_) {
             if (length < sizeof(master_id)) {malformed_reason = "Message ends before master ID"; goto malformed_msg;}
             master_id = serialization::read_uint32_from_char_buf(buf);
             buf += sizeof(master_id); length -= sizeof(master_id);
+            break;
+        case msg_type::proposal:
             break;
         default: goto malformed_msg;
     }
@@ -90,8 +96,18 @@ unique_ptr<char[]> election_message::serialize(unsigned &length) {
     }
 
     length = sizeof(uint32_t) + // Node ID
-             sizeof(uint8_t) + // Message type
-             ((type == msg_type::election) ? (2 * sizeof(uint32_t)) : sizeof(uint32_t)); // Data
+             sizeof(uint32_t) + // UUID
+             sizeof(uint8_t); // Message type
+    switch (type) {
+        case msg_type::election:
+            length += 2 * sizeof(uint32_t); break;
+        case msg_type::elected:
+        case msg_type::introduction:
+            length += sizeof(uint32_t); break;
+        case msg_type::proposal:
+            break;
+        default: assert(false);
+    }
 
     char *buf = new char[length];
     char *original_buf = buf;
@@ -102,12 +118,18 @@ unique_ptr<char[]> election_message::serialize(unsigned &length) {
     serialization::write_uint32_to_char_buf(id, buf + ind);
     ind += sizeof(uint32_t);
 
+    // Write the UUID to the message
+    if (ind + sizeof(uint32_t) > length) goto fail;
+    serialization::write_uint32_to_char_buf(uuid, buf + ind);
+    ind += sizeof(uint32_t);
+
     // Write the message type
     if (ind + sizeof(uint8_t) > length) goto fail;
     switch (type) {
         case msg_type::election: buf[ind] = 0; break;
         case msg_type::elected: buf[ind] = 1; break;
         case msg_type::introduction: buf[ind] = 2; break;
+        case msg_type::proposal: buf[ind] = 3; break;
         default: assert(false);
     }
     ind += sizeof(uint8_t);
@@ -130,6 +152,8 @@ unique_ptr<char[]> election_message::serialize(unsigned &length) {
             if (ind + sizeof(uint32_t) > length) goto fail;
             serialization::write_uint32_to_char_buf(master_id, buf + ind);
             ind += sizeof(uint32_t);
+            break;
+        case msg_type::proposal:
             break;
         default: assert(false && "Memory corruption has occurred and type is invalid enum value");
     }

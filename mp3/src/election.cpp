@@ -29,6 +29,10 @@ void election::start() {
     running = true;
     timer_on = false;
 
+    // Initialize RNG with a slight delay so that unit tests have different seeds
+    mt_rand = std::mt19937(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
     timer_thread = std::make_unique<std::thread>([this] {update_timer();});
     timer_thread->detach();
 
@@ -62,7 +66,7 @@ void election::start() {
     hb->on_fail(callback);
     hb->on_leave(callback);
 
-    // If we are the introducer, add a callback to tell new nodes who the master node is
+    // If we are the introducer, add a callback to tell new nodes who thise master node is
     if (hb->is_introducer()) {
         std::function<void(member)> join_callback = [this](member m) {
             { // Atomic block for accessing the state and the master node
@@ -72,9 +76,9 @@ void election::start() {
                 assert(state == normal);
 
                 // Send the master node to the new node
-                election_message intro_msg(hb->get_id());
+                election_message intro_msg(hb->get_id(), mt_rand());
                 intro_msg.set_type_introduction(master_node.id);
-                message_queue.push(std::make_tuple(m.hostname, intro_msg), message_redundancy);
+                enqueue_message(m.hostname, intro_msg, introduction_message_redundancy);
             }
         };
 
@@ -94,6 +98,7 @@ void election::stop() {
 // Debugging function to print a string value for the enum
 std::string election::print_state(election_state s) {
     switch (s) {
+        case no_master: return "NO_MASTER";
         case normal: return "NORMAL";
         case election_wait: return "ELECTION_WAIT";
         case election_init: return "ELECTION_INIT";
@@ -125,9 +130,9 @@ void election::transition(election_state origin_state, election_state dest_state
         }
         case election_init: {
             // Send an election initiation message to our successor
-            election_message init_msg(hb->get_id());
+            election_message init_msg(hb->get_id(), mt_rand());
             init_msg.set_type_election(hb->get_id(), hb->get_id());
-            message_queue.push(std::make_tuple(hb->get_successor().hostname, init_msg), 1);
+            enqueue_message(hb->get_successor().hostname, init_msg, message_redundancy);
 
             highest_initiator_id = hb->get_id();
             transition(election_init, electing);
@@ -141,9 +146,9 @@ void election::transition(election_state origin_state, election_state dest_state
         }
         case elected: {
             // Send a message to the successor stating that we have been elected
-            election_message elected_msg(hb->get_id());
+            election_message elected_msg(hb->get_id(), mt_rand());
             elected_msg.set_type_elected(hb->get_id());
-            message_queue.push(std::make_tuple(hb->get_successor().hostname, elected_msg), 1);
+            enqueue_message(hb->get_successor().hostname, elected_msg, message_redundancy);
             lg->log("We have been nominated as the new master node");
 
             // Set a timer in case the ELECTED message gets lost in the ring
@@ -172,6 +177,7 @@ void election::start_timer(uint32_t time) {
 
 // Updates the timer and performs the appropriate action in the state machine if the timer reaches 0
 void election::update_timer() {
+    uint64_t elapsed_time = 0;
     for (; running.load(); std::this_thread::sleep_for(std::chrono::milliseconds(100))) {
         { // Atomic block for updating timer variables
             std::lock_guard<std::mutex> guard(timer_mutex);
@@ -203,22 +209,31 @@ void election::update_timer() {
                     transition(election_wait, election_init);
                     break;
                 }
-                case electing: {
-                    highest_initiator_id = 0;
-                    lg->log("Election has timed out, restarting election");
-                    transition(electing, election_wait);
-                    break;
-                }
+                case electing:
                 case elected: {
                     highest_initiator_id = 0;
-                    lg->log("Elected message failed to go around ring, restarting election");
-                    transition(elected, election_wait);
+                    lg->log("Election has timed out, restarting election");
+
+                    // Create a proposal message to send to the next node to start a new election
+                    election_message proposal_msg(hb->get_id(), mt_rand());
+                    proposal_msg.set_type_proposal();
+                    enqueue_message(hb->get_successor().hostname, proposal_msg, message_redundancy);
+
+                    // Transition to a waiting state while the proposal message makes the rounds and
+                    //  the membership list stabilizes
+                    transition(state, election_wait);
                     break;
                 }
                 case normal:
                 case election_init:
                 default:
                     break;
+            }
+
+            // Update seen_message_ids if 1 minute has passed
+            uint64_t new_time = elapsed_time + 100;
+            if (new_time / 60000 > elapsed_time / 60000) {
+                seen_message_ids.pop();
             }
         }
     }
@@ -241,7 +256,10 @@ void election::propagate(election_message msg) {
         assert(msg.get_vote_id() != hb->get_id());
 
         // Create the new message to pass on
-        election_message new_msg(hb->get_id());
+        // If we are the initiator, change the UUID of the message to indicate that
+        //  we are beginning the second cycle through the ring
+        uint32_t uuid = (msg.get_initiator_id() == hb->get_id()) ? mt_rand() : msg.get_uuid();
+        election_message new_msg(hb->get_id(), uuid);
         if (msg.get_vote_id() > hb->get_id()) {
             new_msg.set_type_election(msg.get_initiator_id(), msg.get_vote_id());
         } else {
@@ -249,8 +267,39 @@ void election::propagate(election_message msg) {
         }
 
         // Send the message
-        message_queue.push(std::make_tuple(hb->get_successor().hostname, new_msg), 1);
+        enqueue_message(hb->get_successor().hostname, new_msg, message_redundancy);
     }
+}
+
+// Enqueues a message into the message_queue and prints debug information
+void election::enqueue_message(std::string dest, election_message msg, int redundancy) {
+    // Print log information first
+    if (msg.get_type() == election_message::msg_type::introduction) {
+        lg->log("Informing new node at " + dest + " that master node is " +
+            hb->get_member_by_id(msg.get_master_id()).hostname);
+    }
+
+    if (msg.get_type() == election_message::msg_type::election) {
+        lg->log("Sending ELECTION message with initiator ID " + std::to_string(msg.get_initiator_id()) +
+            " and vote ID " + std::to_string(msg.get_vote_id()) + " to node at " + dest);
+    }
+
+    if (msg.get_type() == election_message::msg_type::elected) {
+        lg->log("Sending ELECTED message with master ID " + std::to_string(msg.get_master_id()) +
+            " to node at " + dest);
+    }
+
+    if (msg.get_type() == election_message::msg_type::proposal) {
+        lg->log("Sending PROPOSAL message with UUID " + std::to_string(msg.get_uuid()) +
+            " to node at " + dest);
+    }
+
+    if (msg.get_type() == election_message::msg_type::empty) {
+        assert(false && "Should never send an empty message");
+    }
+
+    // Actually enqueue the message
+    message_queue.push(std::make_tuple(dest, msg), redundancy);
 }
 
 void election::server_thread_function() {
@@ -280,6 +329,17 @@ void election::server_thread_function() {
                 lg->log("Ignoring election message from " + std::to_string(msg.get_id()) + " because they are not in the group");
                 continue;
             }
+
+            // Check that we have not seen a message with this ID yet
+            std::vector<uint32_t> seen_ids = seen_message_ids.peek();
+            if (std::find(seen_ids.begin(), seen_ids.end(), msg.get_uuid()) != seen_ids.end()) {
+                // Ignore the message
+                lg->log_v("Received duplicate message of type " + msg.print_type() + " from host at " +
+                    hb->get_member_by_id(msg.get_id()).hostname);
+                continue;
+            }
+            // Mark this message ID as seen
+            seen_message_ids.push(msg.get_uuid(), seen_ids_ttl);
 
             if (msg.get_type() == election_message::msg_type::election) {
                 switch (state) {
@@ -347,9 +407,9 @@ void election::server_thread_function() {
                                     std::to_string(master_node.id) + " as master node");
 
                                 // Pass the message along to the next node
-                                election_message propagated_msg(hb->get_id());
+                                election_message propagated_msg(hb->get_id(), msg.get_uuid());
                                 propagated_msg.set_type_elected(master_node.id);
-                                message_queue.push(std::make_tuple(hb->get_successor().hostname, propagated_msg), 1);
+                                enqueue_message(hb->get_successor().hostname, propagated_msg, message_redundancy);
                                 transition(electing, normal);
                             }
                         });
@@ -390,44 +450,44 @@ void election::server_thread_function() {
                     }
                 });
             }
+
+            if (msg.get_type() == election_message::msg_type::proposal) {
+                lg->log("Received proposal to restart election from " + hb->get_member_by_id(msg.get_id()).hostname +
+                    ", passing on proposal message and restarting election");
+
+                // Discard all election state
+                highest_initiator_id = 0;
+                message_queue.clear();
+
+                // And propagate the proposal message around the circle
+                election_message new_msg(hb->get_id(), msg.get_uuid());
+                new_msg.set_type_proposal();
+                enqueue_message(hb->get_successor().hostname, new_msg, message_redundancy);
+
+                // Wait for an election to begin
+                transition(state, election_wait);
+            }
         }
     }
 }
 
 void election::client_thread_function() {
     while (running.load()) {
-        // Pop off the messages that are waiting to be sent
-        std::vector<std::tuple<std::string, election_message>> messages = message_queue.pop();
+        { // Atomic block to access message_queue
+            std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-        for (auto m : messages) {
-            std::string dest = std::get<0>(m);
-            election_message msg = std::get<1>(m);
+            // Pop off the messages that are waiting to be sent
+            std::vector<std::tuple<std::string, election_message>> messages = message_queue.pop();
 
-            // Print log information first
-            if (msg.get_type() == election_message::msg_type::introduction) {
-                lg->log("Informing new node at " + dest + " that master node is " +
-                    hb->get_member_by_id(msg.get_master_id()).hostname);
+            for (auto m : messages) {
+                std::string dest = std::get<0>(m);
+                election_message msg = std::get<1>(m);
+
+                unsigned length;
+                unique_ptr<char[]> buf = msg.serialize(length);
+
+                client->send(dest, port, buf.get(), length);
             }
-
-            if (msg.get_type() == election_message::msg_type::election) {
-                lg->log("Sending ELECTION message with initiator ID " + std::to_string(msg.get_initiator_id()) +
-                    " and vote ID " + std::to_string(msg.get_vote_id()) + " to node at " + dest);
-            }
-
-            if (msg.get_type() == election_message::msg_type::elected) {
-                lg->log("Sending ELECTED message with master ID " + std::to_string(msg.get_master_id()) +
-                    " to node at " + dest);
-            }
-
-            if (msg.get_type() == election_message::msg_type::empty) {
-                assert(false && "Should never send an empty message");
-            }
-
-            unique_ptr<char[]> buf;
-            unsigned length;
-            buf = msg.serialize(length);
-
-            client->send(dest, port, buf.get(), length);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(message_interval_ms));
