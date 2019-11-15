@@ -19,9 +19,20 @@ void logger::log(std::string data) {
     (use_stdout ? std::cout : log_stream) << msg;
 }
 
-// Adds a verbose log line to the log file if verbose logging is enabled
-void logger::log_v(std::string data) {
-    if (verbose) {
+void logger::info(std::string data) {
+    if (level == level_info || level == level_debug || level == level_trace) {
+        log(data);
+    }
+}
+
+void logger::debug(std::string data) {
+    if (level == level_debug || level == level_trace) {
+        log(data);
+    }
+}
+
+void logger::trace(std::string data) {
+    if (level == level_trace) {
         log(data);
     }
 }

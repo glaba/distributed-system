@@ -33,7 +33,7 @@ heartbeater<is_introducer_>::heartbeater(member_list *mem_list_, logger *lg_, ud
 // Starts the heartbeater
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::start() {
-    lg->log("Starting heartbeater");
+    lg->info("Starting heartbeater");
 
     running = true;
 
@@ -47,7 +47,7 @@ void heartbeater<is_introducer_>::start() {
 // Stops the heartbeater synchronously
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::stop() {
-    lg->log("Stopping heartbeater");
+    lg->info("Stopping heartbeater");
 
     server->stop_server();
     running = false;
@@ -138,7 +138,7 @@ void heartbeater<is_introducer_>::check_for_failed_neighbors() {
 
     for (auto mem : neighbors) {
         if (current_time > mem.last_heartbeat + timeout_interval_ms) {
-            lg->log("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
+            lg->info("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list->remove_member(mem.id);
 
             // Only tell neighbors about failure if we are still in the group
@@ -172,7 +172,7 @@ void heartbeater<is_introducer_>::send_introducer_msg() {
     auto updated = new_nodes_queue.peek();
 
     for (auto node : new_nodes) {
-        lg->log("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
+        lg->debug("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
         client->send(node.hostname, port, msg_buf.get(), msg_buf_len);
 
         // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
@@ -196,7 +196,7 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
     if (is_introducer_)
         return;
 
-    lg->log("Requesting introducer to join group");
+    lg->info("Requesting introducer to join group");
     joined_group = true;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -222,7 +222,7 @@ void heartbeater<is_introducer_>::join_group(std::string introducer) {
 // Sends a message to peers stating that we are leaving
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::leave_group() {
-    lg->log("Leaving the group");
+    lg->info("Leaving the group");
 
     joined_group = false;
     left_nodes_queue.push(our_id, message_redundancy);
@@ -231,7 +231,7 @@ void heartbeater<is_introducer_>::leave_group() {
 // Server thread function
 template <bool is_introducer_>
 void heartbeater<is_introducer_>::server_thread_function() {
-    lg->log("Starting server thread");
+    lg->debug("Starting server thread");
     server->start_server(port);
 
     int size;
@@ -241,7 +241,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
     while (true) {
         // If the server is not running, stop everything and exit
         if (!running.load()) {
-            lg->log("Exiting server thread");
+            lg->debug("Exiting server thread");
             break;
         }
 
@@ -258,7 +258,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
             hb_message msg(buf, size);
 
             if (!msg.is_well_formed()) {
-                lg->log("Received malformed heartbeat message!");
+                lg->debug("Received malformed heartbeat message!");
                 continue;
             }
 
@@ -274,11 +274,11 @@ void heartbeater<is_introducer_>::server_thread_function() {
                     if (nodes_can_join.load()) {
                         // Do nothing
                     } else {
-                        lg->log("Nodes cannot join because leader election is occurring!");
+                        lg->debug("Nodes cannot join because leader election is occurring!");
                         continue;
                     }
                 } else {
-                    lg->log("Ignoring heartbeat message from " + std::to_string(msg.get_id()) + " because they are not in the group");
+                    lg->trace("Ignoring heartbeat message from " + std::to_string(msg.get_id()) + " because they are not in the group");
                     continue;
                 }
             }
@@ -292,9 +292,14 @@ void heartbeater<is_introducer_>::server_thread_function() {
                     mem_list->add_member(m.hostname, m.id);
 
                     if (is_introducer_) {
-                        lg->log("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
+                        lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
                         new_nodes_queue.push(m, message_redundancy);
                     } else {
+                        // Check if the newly joined member is us
+                        if (m.id == our_id) {
+                            lg->info("Successfully joined group");
+                        }
+
                         joined_nodes_queue.push(m, message_redundancy);
                     }
 

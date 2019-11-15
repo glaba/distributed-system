@@ -36,7 +36,7 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
     else
         prev->next = new_node;
 
-    lg->log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
+    lg->debug("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
         std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
 
     assert(num_members() - original_size == 1);
@@ -70,7 +70,7 @@ void member_list::remove_member(uint32_t id) {
             } else {
                 prev->next = cur->next;
             }
-            lg->log("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
+            lg->debug("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
             delete cur;
             break;
         }

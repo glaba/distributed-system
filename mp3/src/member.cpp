@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
     std::string local_hostname;
     std::string introducer;
     uint16_t port;
-    bool verbose;
+    logger::log_level log_level;
     // Arguments for subcommand: member test ...
     std::string test_prefix;
 
@@ -33,18 +33,32 @@ int main(int argc, char **argv) {
             return false;
         }
     });
-    cli_parser.add_option("v", "Enable verbose logging", &verbose);
+    std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
+        if (str == "OFF") {
+            log_level = logger::log_level::level_off;
+        } else if (str == "INFO") {
+            log_level = logger::log_level::level_info;
+        } else if (str == "DEBUG") {
+            log_level = logger::log_level::level_debug;
+        } else if (str == "TRACE") {
+            log_level = logger::log_level::level_trace;
+        } else {
+            return false;
+        }
+        return true;
+    };
+    cli_parser.add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
 
     cli_command *test_parser = cli_parser.add_subcommand("test");
     test_parser->add_argument("prefix", "The prefix of the tests to run, where \"all\" will run all tests", &test_prefix);
-    test_parser->add_option("v", "Enable verbose logging", &verbose);
+    test_parser->add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
 
     // Run CLI parser and exit on failure
     if (!cli_parser.parse("member", argc, argv)) {
         return 1;
     }
 
-    unique_ptr<logger> lg = make_unique<logger>("", verbose);
+    unique_ptr<logger> lg = make_unique<logger>("", log_level);
 
     if (test_parser->was_invoked()) {
         testing::run_tests((test_prefix == "all" ? "" : test_prefix), lg.get(), true);

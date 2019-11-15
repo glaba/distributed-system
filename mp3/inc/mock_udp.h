@@ -63,7 +63,8 @@ private:
     public:
         mock_udp_client(string hostname_, bool show_packets_, double drop_probability_, mock_udp_coordinator *coordinator_)
             : show_packets(show_packets_), drop_probability(drop_probability_), hostname(hostname_),
-              coordinator(coordinator_), lg(std::make_unique<logger>("UDP", show_packets)) {}
+              coordinator(coordinator_),
+              lg(std::make_unique<logger>("UDP", logger::log_level::level_info)) {}
 
         // Sends a UDP packet to the specified destination
         void send(string host, int port, char *msg, unsigned length);

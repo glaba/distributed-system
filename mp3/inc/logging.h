@@ -4,33 +4,50 @@
 #include <cstdio>
 #include <fstream>
 #include <mutex>
+#include <cassert>
 
 class logger {
 public:
-    logger(std::string log_file_path_, std::string prefix_, bool verbose_)
+    enum log_level {
+        level_off, level_info, level_debug, level_trace
+    };
+
+    logger(std::string log_file_path_, std::string prefix_, log_level level_)
         : use_stdout(false), log_file_path((log_file_path_ == "") ? "/dev/null" : log_file_path_),
-          prefix(prefix_), verbose(verbose_), log_stream(log_file_path) {}
+          prefix(prefix_), level(level_), log_stream(log_file_path) {}
 
-    logger(std::string prefix_, bool verbose_)
-        : use_stdout(true), prefix(prefix_), verbose(verbose_) {}
+    logger(std::string prefix_, log_level level_)
+        : use_stdout(true), prefix(prefix_), level(level_) {}
 
+    logger(std::string prefix_, logger &l_)
+        : use_stdout(true), prefix(prefix_) {
+        assert(l_.use_stdout == true);
+
+        level = l_.level;
+    }
+
+    logger(std::string log_file_path_, std::string prefix_, logger &l_)
+        : use_stdout(false), log_file_path((log_file_path_ == "") ? "/dev/null" : log_file_path_),
+          prefix(prefix_), log_stream(log_file_path) {
+
+        assert(l_.use_stdout == false);
+
+        level = l_.level;
+    }
+
+    // Adds log lines at varying levels of importance
+    void info(std::string data);
+    void debug(std::string data);
+    void trace(std::string data);
+
+private:
     // Adds a log line to the log file
     void log(std::string data);
-    // Adds a verbose log line to the log file if verbose logging is enabled
-    void log_v(std::string data);
 
-    bool using_stdout() {
-        return use_stdout;
-    }
-
-    bool is_verbose() {
-        return verbose;
-    }
-private:
     bool use_stdout;
     std::string log_file_path;
     std::string prefix;
-    bool verbose;
+    log_level level;
 
     static std::mutex log_mutex;
 

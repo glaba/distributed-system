@@ -21,7 +21,7 @@ int udp_server::recv(char *buf, unsigned length) {
 
     int msg_size = recvfrom(server_fd, buf, length, 0, (struct sockaddr*)&client_sa, &client_len);
     if (msg_size < 0) {
-        lg->log_v("Unexpected error in receiving UDP packet, errno " + std::to_string(errno));
+        lg->trace("Unexpected error in receiving UDP packet, errno " + std::to_string(errno));
     }
 
     return msg_size;
@@ -78,7 +78,7 @@ udp_client_info udp_client::create_udp_client(string host, string port) {
     int s = getaddrinfo(host.c_str(), port.c_str(), &info, &res);
     if (s != 0) {
         // get the error using gai
-        lg->log_v("getaddrinfo failed for host " + host + " on port " + port);
+        lg->debug("getaddrinfo failed for host " + host + " on port " + port);
         ret.client_socket = -1;
         return ret;
     }

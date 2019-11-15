@@ -29,11 +29,7 @@ testing::register_test election_test("election.failover",
         clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
         hb_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
         election_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        if (lg->is_verbose()) {
-            loggers[i] = make_unique<logger>("h" + std::to_string(i), true);
-        } else {
-            loggers[i] = make_unique<logger>("h" + std::to_string(i), false);
-        }
+        loggers[i] = make_unique<logger>("h" + std::to_string(i), *lg);
         mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
     }
 
@@ -127,11 +123,7 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
         clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
         hb_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
         election_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        if (lg->is_verbose()) {
-            loggers[i] = make_unique<logger>("h" + std::to_string(i), true);
-        } else {
-            loggers[i] = make_unique<logger>("h" + std::to_string(i), false);
-        }
+        loggers[i] = make_unique<logger>("h" + std::to_string(i), *lg);
         mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
     }
 

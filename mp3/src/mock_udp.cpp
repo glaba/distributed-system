@@ -174,7 +174,7 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
             for (unsigned i = 0; i < length; i++) {
                 log_msg += std::to_string(msg[i]) + " ";
             }
-            lg->log_v(log_msg);
+            lg->info(log_msg);
         }
         coordinator->send(dest, port, msg, length);
     }
@@ -185,7 +185,7 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
         for (unsigned i = 0; i < length; i++) {
             log_msg += std::to_string(msg[i]) + " ";
         }
-        lg->log_v(log_msg);
+        lg->info(log_msg);
     }
 }
 
