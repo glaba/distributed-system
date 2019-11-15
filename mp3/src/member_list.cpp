@@ -124,7 +124,7 @@ std::vector<member> member_list::get_neighbors() {
 
     // Get the 2 predecessors
     node *prev_2[2] = {nullptr, nullptr};
-    node *us;
+    node *us = head;
     cur = head;
     while (cur != nullptr) {
         if (cur->m.hostname == local_hostname) {

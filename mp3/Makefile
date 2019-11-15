@@ -1,6 +1,6 @@
 INC_DIR        := inc
 CXX            := g++
-CXXFLAGS       := -I$(INC_DIR) -std=c++14 -Wall -DDEBUG -g
+CXXFLAGS       := -I$(INC_DIR) -std=c++17 -Wall -DDEBUG -g
 LDFLAGS        := -pthread
 
 OBJ_DIR        := obj
