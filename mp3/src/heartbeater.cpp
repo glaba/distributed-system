@@ -258,7 +258,7 @@ void heartbeater<is_introducer_>::server_thread_function() {
             hb_message msg(buf, size);
 
             if (!msg.is_well_formed()) {
-                lg->log("Received malformed heartbeat message! Reason: " + msg.why_malformed());
+                lg->log("Received malformed heartbeat message!");
                 continue;
             }
 

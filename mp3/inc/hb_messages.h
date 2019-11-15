@@ -22,10 +22,6 @@ public:
 
     // Returns true if the deserialized message is not malformed
     bool is_well_formed();
-    // Returns the reason why the message is malformed
-    std::string why_malformed() {
-        return malformed_reason;
-    }
 
     // Gets the ID of the node that produced the message
     uint32_t get_id();
@@ -40,7 +36,6 @@ public:
     std::unique_ptr<char[]> serialize(unsigned &length);
 
 private:
-    std::string malformed_reason = "";
     uint32_t id; // The ID of the node that produced the message
     std::vector<uint32_t> failed_nodes;
     std::vector<uint32_t> left_nodes;

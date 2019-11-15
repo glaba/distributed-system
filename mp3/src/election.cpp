@@ -316,7 +316,7 @@ void election::server_thread_function() {
             election_message msg(buf, size);
 
             if (!msg.is_well_formed()) {
-                lg->log("Received malformed election message! Reason: " + msg.why_malformed());
+                lg->log("Received malformed election message!");
                 continue;
             }
 
