@@ -9,12 +9,34 @@
 using std::unique_ptr;
 using std::make_unique;
 
-unique_ptr<tcp_client_intf> mock_tcp_factory::get_mock_tcp_client(string hostname, bool show_packets) {
-    return make_unique<mock_tcp_client>(factory.get(), hostname, show_packets);
+unique_ptr<tcp_client> mock_tcp_factory::get_tcp_client() {
+    return unique_ptr<tcp_client>(new mock_tcp_client(get_mock_udp_factory(), config->get_hostname()));
 }
 
-unique_ptr<tcp_server_intf> mock_tcp_factory::get_mock_tcp_server(string hostname, bool show_packets) {
-    return make_unique<mock_tcp_server>(factory.get(), hostname, show_packets);
+unique_ptr<tcp_server> mock_tcp_factory::get_tcp_server() {
+    return unique_ptr<tcp_server>(new mock_tcp_server(get_mock_udp_factory(), config->get_hostname()));
+}
+
+mock_udp_factory *mock_tcp_factory::get_mock_udp_factory() {
+    // Poll while we wait for the state to get instantiated, and create mock_udp_env when it does
+    while (true) {
+        {
+            std::lock_guard<std::mutex> guard(env_mutex);
+            if (mock_udp_env.get() != nullptr) {
+                break;
+            }
+            access_state([this] (service_state *state) {
+                if (state == nullptr) {
+                    return;
+                }
+                mock_udp_env = dynamic_cast<mock_tcp_state*>(state)->udp_env_group->get_env();
+            });
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(mock_udp_env->get<udp_factory>());
+    fac->reinitialize(env); // Set the mock_udp_factory to get all its services from our env instead of the fake env
+    return fac;
 }
 
 mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
@@ -36,8 +58,8 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
 
     port = port_;
 
-    client = factory->get_mock_udp_client(hostname + "_server", show_packets, 0.0);
-    server = factory->get_mock_udp_server(hostname + "_server");
+    client = factory->get_udp_client(hostname + "_server");
+    server = factory->get_udp_server(hostname + "_server");
     server->start_server(port);
 
     running = true;
@@ -240,8 +262,8 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
 
         // Each connection just pretends to be a different UDP host entirely
         server_hostnames[server_id] = host;
-        clients[server_id] = factory->get_mock_udp_client(hostname + "->" + host + "_client", show_packets, 0.0);
-        servers[server_id] = factory->get_mock_udp_server(hostname + "->" + host + "_client");
+        clients[server_id] = factory->get_udp_client(hostname + "->" + host + "_client");
+        servers[server_id] = factory->get_udp_server(hostname + "->" + host + "_client");
         servers[server_id]->start_server(port);
 
         // Send connection initiation message to server
@@ -249,6 +271,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
         initiation_msg[0] = initiate_magic_byte;
         serializer::write_uint32_to_char_buf(id, initiation_msg.get() + 1);
         std::strncpy(initiation_msg.get() + 5, hostname.c_str(), hostname.size());
+
         clients[server_id]->send(host + "_server", port, initiation_msg.get(), 5 + hostname.size());
 
         running[server_id] = true;
@@ -402,3 +425,5 @@ void mock_tcp_factory::mock_tcp_client::delete_connection(int socket) {
         server_hostnames.erase(socket);
     }
 }
+
+register_test_service<tcp_factory, mock_tcp_factory> register_mock_tcp_factory;

@@ -1,9 +1,18 @@
 #include "tcp.h"
+#include "tcp.hpp"
 
 #include <memory>
 
 using std::unique_ptr;
 using std::make_unique;
+
+unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client() {
+    return unique_ptr<tcp_client>(new tcp_client_impl());
+}
+
+unique_ptr<tcp_server> tcp_factory_impl::get_tcp_server() {
+    return unique_ptr<tcp_server>(new tcp_server_impl());
+}
 
 ssize_t tcp_utils::get_message_size(int socket) {
     int32_t size;
@@ -57,7 +66,7 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     return total;
 }
 
-void tcp_server::setup_server(int port) {
+void tcp_server_impl::setup_server(int port) {
     // Set up the server_fd
     struct addrinfo info, *res;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -97,12 +106,12 @@ void tcp_server::setup_server(int port) {
     server_fd = fd;
 }
 
-void tcp_server::stop_server() {
+void tcp_server_impl::stop_server() {
     // Close socket and clear queue
     close(server_fd);
 }
 
-int tcp_server::accept_connection() {
+int tcp_server_impl::accept_connection() {
     int client_fd = accept(server_fd, NULL, NULL);
     if (client_fd < 0) {
         return -1;
@@ -111,12 +120,12 @@ int tcp_server::accept_connection() {
     return client_fd;
 }
 
-void tcp_server::close_connection(int client_socket) {
+void tcp_server_impl::close_connection(int client_socket) {
     // Close socket
     close(client_socket);
 }
 
-std::string tcp_server::read_from_client(int client) {
+std::string tcp_server_impl::read_from_client(int client) {
     ssize_t message_size;
     if ((message_size = tcp_utils::get_message_size(client)) == -1)
         return "";
@@ -128,16 +137,16 @@ std::string tcp_server::read_from_client(int client) {
     return std::string(buf.get(), message_size);
 }
 
-ssize_t tcp_server::write_to_client(int client, std::string data) {
+ssize_t tcp_server_impl::write_to_client(int client, std::string data) {
     size_t size = (size_t) data.length();
     if (write_message_size(size, client) == -1) return -1;
 
     return write_all_to_socket(client, data.c_str(), data.length());
 }
 
-tcp_client::tcp_client(void) {}
+tcp_client_impl::tcp_client_impl(void) {}
 
-int tcp_client::setup_connection(std::string host, int port) {
+int tcp_client_impl::setup_connection(std::string host, int port) {
     struct addrinfo info, *res;
     memset(&info, 0, sizeof(info));
 
@@ -168,7 +177,7 @@ int tcp_client::setup_connection(std::string host, int port) {
     return client_socket;
 }
 
-std::string tcp_client::read_from_server(int socket) {
+std::string tcp_client_impl::read_from_server(int socket) {
     ssize_t message_size;
     if ((message_size = tcp_utils::get_message_size(socket)) == -1)
         return "";
@@ -180,7 +189,7 @@ std::string tcp_client::read_from_server(int socket) {
     return std::string(buf.get(), message_size);
 }
 
-ssize_t tcp_client::write_to_server(int socket, std::string data) {
+ssize_t tcp_client_impl::write_to_server(int socket, std::string data) {
     size_t size = (size_t) data.length();
     if (write_message_size(size, socket) == -1)
         return -1;
@@ -188,7 +197,9 @@ ssize_t tcp_client::write_to_server(int socket, std::string data) {
     return write_all_to_socket(socket, data.c_str(), data.length());
 }
 
-void tcp_client::close_connection(int socket) {
+void tcp_client_impl::close_connection(int socket) {
     // No internal state being managed so this is fine
     close(socket);
 }
+
+register_service<tcp_factory, tcp_factory_impl> register_tcp_factory;

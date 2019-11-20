@@ -5,6 +5,7 @@
 #include "member_list.h"
 #include "test.h"
 #include "cli.h"
+#include "environment.h"
 
 #include <chrono>
 #include <thread>
@@ -18,7 +19,7 @@ int main(int argc, char **argv) {
     std::string local_hostname;
     std::string introducer;
     uint16_t port;
-    logger::log_level log_level;
+    logger::log_level log_level = logger::log_level::level_off;
     // Arguments for subcommand: member test ...
     std::string test_prefix;
 
@@ -58,23 +59,20 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    unique_ptr<logger> lg = make_unique<logger>("", log_level);
-
     if (test_parser->was_invoked()) {
-        testing::run_tests((test_prefix == "all" ? "" : test_prefix), lg.get(), true);
-    } else {
-        unique_ptr<udp_client_intf> udp_client_inst = make_unique<udp_client>(lg.get());
-        unique_ptr<udp_server_intf> udp_server_inst = make_unique<udp_server>(lg.get());
-        unique_ptr<member_list> mem_list = make_unique<member_list>(local_hostname, lg.get());
+        testing::run_tests((test_prefix == "all" ? "" : test_prefix), log_level, true);
+        return 0;
+    }
 
-        unique_ptr<heartbeater_intf> hb;
-        if (introducer == "") {
-            hb = make_unique<heartbeater<true>>(mem_list.get(), lg.get(), udp_client_inst.get(), udp_server_inst.get(), local_hostname, port);
-        } else {
-            hb = make_unique<heartbeater<false>>(mem_list.get(), lg.get(), udp_client_inst.get(), udp_server_inst.get(), local_hostname, port);
-        }
+    if (!test_parser->was_invoked()) {
+        environment env(false);
+        env.get<configuration>()->set_hostname(local_hostname);
+        env.get<configuration>()->set_hb_port(port);
+        env.get<configuration>()->set_hb_introducer(introducer == "");
+        env.get<logger_factory>()->configure(log_level);
 
-        hb->start();
+        // Start up the heartbeater
+        env.get<heartbeater>()->start();
 
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));

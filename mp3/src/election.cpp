@@ -1,4 +1,6 @@
 #include "election.h"
+#include "election.hpp"
+#include "environment.h"
 
 #include <functional>
 #include <chrono>
@@ -9,10 +11,14 @@
 
 using std::unique_ptr;
 
-election::election(heartbeater_intf *hb_, logger *lg_, udp_client_intf *client_, udp_server_intf *server_, uint16_t port_)
-        : hb(hb_), lg(lg_), client(client_), server(server_), port(port_) {
-
-    if (hb->is_introducer()) {
+election_impl::election_impl(environment &env)
+    : hb(env.get<heartbeater>()),
+      lg(env.get<logger_factory>()->get_logger("election")),
+      client(env.get<udp_factory>()->get_udp_client()),
+      server(env.get<udp_factory>()->get_udp_server()),
+      config(env.get<configuration>())
+{
+    if (config->is_hb_introducer()) {
         // Set ourselves as the master node
         master_node = hb->get_member_by_id(hb->get_id());
         state = normal;
@@ -23,7 +29,7 @@ election::election(heartbeater_intf *hb_, logger *lg_, udp_client_intf *client_,
 }
 
 // Starts keeping track of the master node and running elections
-void election::start() {
+void election_impl::start() {
     lg->info("Starting election");
 
     running = true;
@@ -67,7 +73,7 @@ void election::start() {
     hb->on_leave(callback);
 
     // If we are the introducer, add a callback to tell new nodes who thise master node is
-    if (hb->is_introducer()) {
+    if (config->is_hb_introducer()) {
         std::function<void(member)> join_callback = [this](member m) {
             { // Atomic block for accessing the state and the master node
                 std::lock_guard<std::recursive_mutex> guard(state_mutex);
@@ -87,7 +93,7 @@ void election::start() {
 }
 
 // Stops all threads and election logic (may leave master_node in an invalid state)
-void election::stop() {
+void election_impl::stop() {
     lg->info("Stopping election");
 
     server->stop_server();
@@ -96,7 +102,7 @@ void election::stop() {
 }
 
 // Debugging function to print a string value for the enum
-std::string election::print_state(election_state s) {
+std::string election_impl::print_state(election_state s) {
     switch (s) {
         case no_master: return "NO_MASTER";
         case normal: return "NORMAL";
@@ -109,7 +115,7 @@ std::string election::print_state(election_state s) {
 }
 
 // Transitions the current state to the given state
-void election::transition(election_state origin_state, election_state dest_state) {
+void election_impl::transition(election_state origin_state, election_state dest_state) {
     std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
     if (state != origin_state) {
@@ -167,7 +173,7 @@ void election::transition(election_state origin_state, election_state dest_state
 }
 
 // Starts the timer to run for the given number of milliseconds
-void election::start_timer(uint32_t time) {
+void election_impl::start_timer(uint32_t time) {
     std::lock_guard<std::mutex> guard(timer_mutex);
 
     timer_on = true;
@@ -176,7 +182,7 @@ void election::start_timer(uint32_t time) {
 }
 
 // Updates the timer and performs the appropriate action in the state machine if the timer reaches 0
-void election::update_timer() {
+void election_impl::update_timer() {
     uint64_t elapsed_time = 0;
     for (; running.load(); std::this_thread::sleep_for(std::chrono::milliseconds(100))) {
         { // Atomic block for updating timer variables
@@ -240,7 +246,7 @@ void election::update_timer() {
 }
 
 // Keeps track of the highest initiator ID seen for ELECTION messages so far
-void election::add_to_cache(election_message msg) {
+void election_impl::add_to_cache(election_message msg) {
     assert(msg.get_type() == election_message::msg_type::election);
 
     if (highest_initiator_id < msg.get_initiator_id()) {
@@ -249,7 +255,7 @@ void election::add_to_cache(election_message msg) {
 }
 
 // Passes on an ELECTION message as defined by the protocol
-void election::propagate(election_message msg) {
+void election_impl::propagate(election_message msg) {
     assert(msg.get_type() == election_message::msg_type::election);
 
     if (msg.get_initiator_id() >= highest_initiator_id) {
@@ -272,7 +278,7 @@ void election::propagate(election_message msg) {
 }
 
 // Enqueues a message into the message_queue and prints debug information
-void election::enqueue_message(std::string dest, election_message msg, int redundancy) {
+void election_impl::enqueue_message(std::string dest, election_message msg, int redundancy) {
     // Print log information first
     if (msg.get_type() == election_message::msg_type::introduction) {
         lg->debug("Informing new node at " + dest + " that master node is " +
@@ -302,8 +308,8 @@ void election::enqueue_message(std::string dest, election_message msg, int redun
     message_queue.push(std::make_tuple(dest, msg), redundancy);
 }
 
-void election::server_thread_function() {
-    server->start_server(port);
+void election_impl::server_thread_function() {
+    server->start_server(config->get_election_port());
 
     int size;
     char buf[1024];
@@ -470,7 +476,7 @@ void election::server_thread_function() {
     }
 }
 
-void election::client_thread_function() {
+void election_impl::client_thread_function() {
     while (running.load()) {
         { // Atomic block to access message_queue
             std::lock_guard<std::recursive_mutex> guard(state_mutex);
@@ -485,7 +491,7 @@ void election::client_thread_function() {
                 unsigned length;
                 unique_ptr<char[]> buf = msg.serialize(length);
 
-                client->send(dest, port, buf.get(), length);
+                client->send(dest, config->get_election_port(), buf.get(), length);
             }
         }
 
@@ -496,9 +502,11 @@ void election::client_thread_function() {
 // Returns the master node, and sets succeeded to true if an election is not going on
 // If an election is going on, sets succeeded to false and returns potentially garbage data
 // If succeeded is set to false, no I/O should occur!
-member election::get_master_node(bool *succeeded) {
+member election_impl::get_master_node(bool *succeeded) {
     std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
     *succeeded = (state == normal);
     return master_node;
 }
+
+register_auto<election, election_impl> register_election;

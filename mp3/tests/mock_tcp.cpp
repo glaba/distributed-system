@@ -1,5 +1,7 @@
 #include "test.h"
 #include "mock_tcp.h"
+#include "environment.h"
+#include "configuration.h"
 
 #include <memory>
 #include <thread>
@@ -10,12 +12,18 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
-    "Tests passing messages between one TCP client and one TCP server", [] (logger *lg)
+    "Tests passing messages between one TCP client and one TCP server", [] (logger::log_level level)
 {
-    unique_ptr<mock_tcp_factory> factory = make_unique<mock_tcp_factory>();
+    environment_group env_group(true);
+    unique_ptr<environment> client_env = env_group.get_env();
+    unique_ptr<environment> server_env = env_group.get_env();
+    client_env->get<configuration>()->set_hostname("client");
+    server_env->get<configuration>()->set_hostname("server");
+    client_env->get<logger_factory>()->configure(level);
+    server_env->get<logger_factory>()->configure(level);
 
-    unique_ptr<tcp_client_intf> client = factory->get_mock_tcp_client("client", false);
-    unique_ptr<tcp_server_intf> server = factory->get_mock_tcp_server("server", false);
+    unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
+    unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
 
     std::cout << "[ " << std::flush;
 
@@ -50,12 +58,18 @@ testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
 });
 
 testing::register_test closing_connection("mock_tcp.closing_connection",
-    "Tests that closing connections behaves as expected", [] (logger *lg)
+    "Tests that closing connections behaves as expected", [] (logger::log_level level)
 {
-    unique_ptr<mock_tcp_factory> factory = make_unique<mock_tcp_factory>();
+    environment_group env_group(true);
+    unique_ptr<environment> client_env = env_group.get_env();
+    unique_ptr<environment> server_env = env_group.get_env();
+    client_env->get<configuration>()->set_hostname("client");
+    server_env->get<configuration>()->set_hostname("server");
+    client_env->get<logger_factory>()->configure(level);
+    server_env->get<logger_factory>()->configure(level);
 
-    unique_ptr<tcp_client_intf> client = factory->get_mock_tcp_client("client", false);
-    unique_ptr<tcp_server_intf> server = factory->get_mock_tcp_server("server", false);
+    unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
+    unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
     server->setup_server(1234);
 
     // Wait a little bit for the server to get setup
@@ -114,16 +128,26 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
 });
 
 testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
-    "Tests passing messages between a single TCP client and multiple TCP servers", [] (logger *lg)
+    "Tests passing messages between a single TCP client and multiple TCP servers", [] (logger::log_level level)
 {
     const int NUM_SERVERS = 5;
 
-    unique_ptr<mock_tcp_factory> factory = make_unique<mock_tcp_factory>();
+    environment_group env_group(true);
+    std::vector<unique_ptr<environment>> server_envs = env_group.get_envs(NUM_SERVERS);
+    unique_ptr<environment> client_env = env_group.get_env();
 
-    unique_ptr<tcp_client_intf> client = factory->get_mock_tcp_client("client", false);
-    std::vector<unique_ptr<tcp_server_intf>> servers;
+    client_env->get<configuration>()->set_hostname("client");
+    client_env->get<logger_factory>()->configure(level);
     for (int i = 0; i < NUM_SERVERS; i++) {
-        servers.push_back(factory->get_mock_tcp_server("server" + std::to_string(i), false));
+        server_envs[i]->get<configuration>()->set_hostname("server" + std::to_string(i));
+        server_envs[i]->get<logger_factory>()->configure(level);
+    }
+
+    unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
+
+    std::vector<unique_ptr<tcp_server>> servers;
+    for (int i = 0; i < NUM_SERVERS; i++) {
+        servers.push_back(server_envs[i]->get<tcp_factory>()->get_tcp_server());
     }
 
     std::cout << "[" << std::flush;
@@ -180,17 +204,27 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
 });
 
 testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
-    "Tests passing messages between a multiple TCP clients and a single TCP server", [] (logger *lg)
+    "Tests passing messages between a multiple TCP clients and a single TCP server", [] (logger::log_level level)
 {
     const int NUM_CLIENTS = 5;
 
-    unique_ptr<mock_tcp_factory> factory = make_unique<mock_tcp_factory>();
+    environment_group env_group(true);
+    std::vector<unique_ptr<environment>> client_envs = env_group.get_envs(NUM_CLIENTS);
+    unique_ptr<environment> server_env = env_group.get_env();
 
-    std::vector<unique_ptr<tcp_client_intf>> clients;
+    server_env->get<configuration>()->set_hostname("server");
+    server_env->get<logger_factory>()->configure(level);
     for (int i = 0; i < NUM_CLIENTS; i++) {
-        clients.push_back(factory->get_mock_tcp_client("client" + std::to_string(i), false));
+        client_envs[i]->get<configuration>()->set_hostname("client" + std::to_string(i));
+        client_envs[i]->get<logger_factory>()->configure(level);
     }
-    unique_ptr<tcp_server_intf> server = factory->get_mock_tcp_server("server", false);
+
+    unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
+
+    std::vector<unique_ptr<tcp_client>> clients;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(client_envs[i]->get<tcp_factory>()->get_tcp_client());
+    }
 
     std::cout << "[ " << std::flush;
 

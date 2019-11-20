@@ -5,16 +5,48 @@
 #include <iostream>
 #include <cassert>
 #include <cstdlib>
+#include <chrono>
 
+using namespace std::chrono;
 using std::unique_ptr;
 using std::make_unique;
 
-std::unique_ptr<udp_client_intf> mock_udp_factory::get_mock_udp_client(string hostname, bool show_packets, double drop_probability) {
-    return std::make_unique<mock_udp_client>(hostname, show_packets, drop_probability, coordinator.get());
+unique_ptr<udp_client> mock_udp_factory::get_udp_client() {
+    return get_udp_client(config->get_hostname());
 }
 
-std::unique_ptr<udp_server_intf> mock_udp_factory::get_mock_udp_server(string hostname) {
-    return std::make_unique<mock_udp_server>(hostname, coordinator.get());
+unique_ptr<udp_server> mock_udp_factory::get_udp_server() {
+    return get_udp_server(config->get_hostname());
+}
+
+std::unique_ptr<service_state> mock_udp_factory::init_state() {
+    mock_udp_state *state = new mock_udp_state();
+    state->coordinator = std::make_unique<mock_udp_coordinator>();
+    return std::unique_ptr<service_state>(state);
+}
+
+void mock_udp_factory::reinitialize(environment &env_) {
+    env = &env_;
+    config = env->get<configuration>();
+}
+
+unique_ptr<udp_client> mock_udp_factory::get_udp_client(string hostname) {
+    mock_udp_coordinator *coordinator;
+    access_state([&coordinator] (service_state *state) {
+        coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
+    });
+
+    return make_unique<mock_udp_client>(hostname, show_packets, drop_probability,
+        coordinator, env->get<logger_factory>()->get_logger("mock_udp_client"));
+}
+
+unique_ptr<udp_server> mock_udp_factory::get_udp_server(string hostname) {
+    mock_udp_coordinator *coordinator;
+    access_state([&coordinator] (service_state *state) {
+        coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
+    });
+
+    return make_unique<mock_udp_server>(hostname, coordinator);
 }
 
 // Notifies the coordinator that the server is now started
@@ -234,3 +266,5 @@ int mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) {
         return coordinator->recv(hostname, port, buf, length);
     }
 }
+
+register_test_service<udp_factory, mock_udp_factory> register_mock_udp_factory;

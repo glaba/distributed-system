@@ -1,23 +1,36 @@
 #include "test.h"
 #include "mock_udp.h"
+#include "environment.h"
+#include "configuration.h"
 
 #include <thread>
 #include <memory>
 #include <iostream>
 #include <chrono>
+#include <cstring>
 
 using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test mock_udp("mock_udp.mock_udp",
-    "Tests passing messages between two client / server pairs", [] (logger *lg)
+    "Tests passing messages between two client / server pairs", [] (logger::log_level level)
 {
-    unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
+    environment_group env_group(true);
+    unique_ptr<environment> env1 = env_group.get_env();
+    unique_ptr<environment> env2 = env_group.get_env();
 
-    unique_ptr<udp_client_intf> h1_client = fac->get_mock_udp_client("h1", false, 0.0);
-    unique_ptr<udp_server_intf> h1_server = fac->get_mock_udp_server("h1");
-    unique_ptr<udp_client_intf> h2_client = fac->get_mock_udp_client("h2", false, 0.0);
-    unique_ptr<udp_server_intf> h2_server = fac->get_mock_udp_server("h2");
+    env1->get<configuration>()->set_hostname("h1");
+    env2->get<configuration>()->set_hostname("h2");
+    env1->get<logger_factory>()->configure(level);
+    env2->get<logger_factory>()->configure(level);
+
+    udp_factory *fac1 = env1->get<udp_factory>();
+    unique_ptr<udp_client> h1_client = fac1->get_udp_client();
+    unique_ptr<udp_server> h1_server = fac1->get_udp_server();
+
+    udp_factory *fac2 = env2->get<udp_factory>();
+    unique_ptr<udp_client> h2_client = fac2->get_udp_client();
+    unique_ptr<udp_server> h2_server = fac2->get_udp_server();
 
     volatile bool end = false;
 
@@ -45,11 +58,13 @@ testing::register_test mock_udp("mock_udp.mock_udp",
             if (h1_server->recv(buf, 1024) > 0) {
                 assert(buf[0] == counter * 2);
                 std::cout << "<- " << std::flush;
+                counter++;
             }
 
-            counter++;
-
-            if (end) break;
+            if (end) {
+                assert(counter == 20 && "Server did not receive all messages");
+                break;
+            }
         }
     });
 

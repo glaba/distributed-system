@@ -2,6 +2,9 @@
 
 #include "tcp.h"
 #include "mock_udp.h"
+#include "configuration.h"
+#include "environment.h"
+#include "service.h"
 
 #include <string>
 #include <memory>
@@ -13,14 +16,35 @@
 #include <tuple>
 #include <thread>
 
-// Factory which produces mock TCP clients and servers
-// Only this class should be instantiated
-class mock_tcp_factory {
+class mock_tcp_state : public service_state {
 public:
-    mock_tcp_factory() : factory(std::make_unique<mock_udp_factory>()) {}
-    std::unique_ptr<tcp_client_intf> get_mock_tcp_client(string hostname, bool show_packets);
-    std::unique_ptr<tcp_server_intf> get_mock_tcp_server(string hostname, bool show_packets);
+    std::unique_ptr<environment_group> udp_env_group;
+};
+
+// Factory which produces mock TCP clients and servers
+class mock_tcp_factory : public tcp_factory, public service_impl<mock_tcp_factory> {
+public:
+    mock_tcp_factory(environment &env_)
+        : env(env_),
+          config(env.get<configuration>()) {}
+
+    std::unique_ptr<service_state> init_state() {
+        mock_tcp_state *state = new mock_tcp_state();
+        state->udp_env_group = std::make_unique<environment_group>(true);
+        return std::unique_ptr<service_state>(state);
+    }
+    std::unique_ptr<tcp_client> get_tcp_client();
+    std::unique_ptr<tcp_server> get_tcp_server();
+
+    // Tests can call this method directly after safely casting tcp_factory to mock_tcp_factory
+    void show_packets() {
+        get_mock_udp_factory()->configure(true, 0.0);
+    }
 private:
+
+    // Wait until the mock_udp_env is obtained, and then get a mock_udp_factory from it
+    mock_udp_factory *get_mock_udp_factory();
+
     // Initiate messages are of the format <magic byte><ID><hostname>
     static const char initiate_magic_byte = 0x0;
     // Regular messages are of the format <magic byte><ID><message>
@@ -35,10 +59,10 @@ private:
     // The next 4 bytes will be a unique ID identifying the host
 
     // Mock TCP server, which is just a wrapper around a no-failure mock UDP server
-    class mock_tcp_server : public tcp_server_intf {
+    class mock_tcp_server : public tcp_server {
     public:
-        mock_tcp_server(mock_udp_factory *factory_, string hostname_, bool show_packets_)
-            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)), show_packets(show_packets_) {}
+        mock_tcp_server(mock_udp_factory *factory_, string hostname_)
+            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)) {}
         ~mock_tcp_server();
 
         void setup_server(int port_);
@@ -55,12 +79,11 @@ private:
         void delete_connection(int client_fd);
 
         mock_udp_factory *factory;
-        std::unique_ptr<udp_server_intf> server;
-        std::unique_ptr<udp_client_intf> client;
+        std::unique_ptr<udp_server> server;
+        std::unique_ptr<udp_client> client;
         string hostname;
         uint32_t id;
         int port;
-        bool show_packets;
 
         // Thread which reads UDP messages and pushes them into the correct queue
         std::thread msg_thread;
@@ -77,10 +100,10 @@ private:
     };
 
     // Mock TCP client, which is just a wrapper around a no-failure mock UDP client
-    class mock_tcp_client : public tcp_client_intf {
+    class mock_tcp_client : public tcp_client {
     public:
-        mock_tcp_client(mock_udp_factory *factory_, string hostname_, bool show_packets_)
-            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)), show_packets(show_packets_) {}
+        mock_tcp_client(mock_udp_factory *factory_, string hostname_)
+            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)) {}
         ~mock_tcp_client();
 
         int setup_connection(std::string host, int port_);
@@ -92,12 +115,11 @@ private:
         void delete_connection(int socket);
 
         mock_udp_factory *factory;
-        std::unordered_map<uint32_t, std::unique_ptr<udp_server_intf>> servers;
-        std::unordered_map<uint32_t, std::unique_ptr<udp_client_intf>> clients;
+        std::unordered_map<uint32_t, std::unique_ptr<udp_server>> servers;
+        std::unordered_map<uint32_t, std::unique_ptr<udp_client>> clients;
         string hostname;
         uint32_t id;
         int port;
-        bool show_packets;
 
         // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue
         std::unordered_map<uint32_t, std::thread> msg_threads;
@@ -114,6 +136,10 @@ private:
         std::unordered_map<uint32_t, std::string> server_hostnames;
     };
 
-    std::unique_ptr<mock_udp_factory> factory;
+    environment &env;
+    configuration *config;
+
+    std::mutex env_mutex;
+    std::unique_ptr<environment> mock_udp_env;
 };
 

@@ -1,38 +1,121 @@
 #include "logging.h"
+#include "logging.hpp"
 
 #include <iostream>
 #include <chrono>
 #include <cstring>
 
-std::mutex logger::log_mutex;
+using std::unique_ptr;
+using std::make_unique;
 
-// Adds a log line to the log file
-void logger::log(std::string data) {
+std::mutex logger_factory_impl::log_mutex;
+
+template <logger::log_level level>
+void logger_factory_impl::stdout_logger<level>::log(std::string data) {
     std::lock_guard<std::mutex> guard(log_mutex);
 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t tt = std::chrono::system_clock::to_time_t(now);
 
     std::string msg = std::string("[") + std::strtok(ctime(&tt), "\n") + std::string("] ") +
-        prefix + std::string(": ") + data + std::string("\n");
+        prefix + std::string(": ") + data;
 
-    (use_stdout ? std::cout : log_stream) << msg;
+    std::cout << msg << std::endl;
 }
 
-void logger::info(std::string data) {
+template <logger::log_level level>
+void logger_factory_impl::stdout_logger<level>::info(std::string data) {
     if (level == level_info || level == level_debug || level == level_trace) {
         log(data);
     }
 }
 
-void logger::debug(std::string data) {
+template <logger::log_level level>
+void logger_factory_impl::stdout_logger<level>::debug(std::string data) {
     if (level == level_debug || level == level_trace) {
         log(data);
     }
 }
 
-void logger::trace(std::string data) {
+template <logger::log_level level>
+void logger_factory_impl::stdout_logger<level>::trace(std::string data) {
     if (level == level_trace) {
         log(data);
     }
 }
+
+template <logger::log_level level>
+void logger_factory_impl::file_logger<level>::log(std::string data) {
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    time_t tt = std::chrono::system_clock::to_time_t(now);
+
+    std::string msg = std::string("[") + std::strtok(ctime(&tt), "\n") + std::string("] ") +
+        prefix + std::string(": ") + data;
+
+    log_stream << msg << std::endl;
+}
+
+template <logger::log_level level>
+void logger_factory_impl::file_logger<level>::info(std::string data) {
+    if (level == level_info || level == level_debug || level == level_trace) {
+        log(data);
+    }
+}
+
+template <logger::log_level level>
+void logger_factory_impl::file_logger<level>::debug(std::string data) {
+    if (level == level_debug || level == level_trace) {
+        log(data);
+    }
+}
+
+template <logger::log_level level>
+void logger_factory_impl::file_logger<level>::trace(std::string data) {
+    if (level == level_trace) {
+        log(data);
+    }
+}
+
+void logger_factory_impl::configure(logger::log_level level_, std::string log_file_path_) {
+    std::lock_guard<std::mutex> guard(logger_factory_mutex);
+    level = level_;
+    log_file_path = log_file_path_;
+    using_stdout = false;
+}
+
+void logger_factory_impl::configure(logger::log_level level_) {
+    std::lock_guard<std::mutex> guard(logger_factory_mutex);
+    level = level_;
+    using_stdout = true;
+}
+
+void logger_factory_impl::include_hostname() {
+    std::lock_guard<std::mutex> guard(logger_factory_mutex);
+    including_hostname = true;
+}
+
+unique_ptr<logger> logger_factory_impl::get_logger(std::string prefix) {
+    std::lock_guard<std::mutex> guard(logger_factory_mutex);
+
+    std::string full_prefix = (including_hostname) ? (config->get_hostname() + " " + prefix) : prefix;
+    if (using_stdout) {
+        switch (level) {
+            case logger::log_level::level_off: return make_unique<stdout_logger<logger::log_level::level_off>>(full_prefix);
+            case logger::log_level::level_info: return make_unique<stdout_logger<logger::log_level::level_info>>(full_prefix);
+            case logger::log_level::level_debug: return make_unique<stdout_logger<logger::log_level::level_debug>>(full_prefix);
+            case logger::log_level::level_trace: return make_unique<stdout_logger<logger::log_level::level_trace>>(full_prefix);
+            default: assert(false && "Invalid enum value");
+        }
+    } else {
+        switch (level) {
+            case logger::log_level::level_off: return make_unique<file_logger<logger::log_level::level_off>>(log_file_path, full_prefix);
+            case logger::log_level::level_info: return make_unique<file_logger<logger::log_level::level_info>>(log_file_path, full_prefix);
+            case logger::log_level::level_debug: return make_unique<file_logger<logger::log_level::level_debug>>(log_file_path, full_prefix);
+            case logger::log_level::level_trace: return make_unique<file_logger<logger::log_level::level_trace>>(log_file_path, full_prefix);
+            default: assert(false && "Invalid enum value");
+        }
+    }
+}
+
+register_service<logger_factory, logger_factory_impl> register_logger_factory;
+register_test_service<logger_factory, test_logger_factory_impl> register_test_logger_factory;

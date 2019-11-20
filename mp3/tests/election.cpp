@@ -2,6 +2,8 @@
 #include "election.h"
 #include "heartbeater.h"
 #include "mock_udp.h"
+#include "environment.h"
+#include "configuration.h"
 
 #include <memory>
 #include <unordered_map>
@@ -10,42 +12,35 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test election_test("election.failover",
-    "Tests that re-election of a master node after failure succeeds", [] (logger *lg)
+    "Tests that re-election of a master node after failure succeeds", [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
 
-    double drop_probability = 0.0;
+    environment_group env_group(true);
+    std::vector<unique_ptr<environment>> envs = env_group.get_envs(NUM_NODES);
 
-    unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
+    // Set the hostnames and heartbeater / election parameters for each of the environments
+    for (int i = 0; i < 10; i++) {
+        configuration *config = envs[i]->get<configuration>();
+        config->set_hostname("h" + std::to_string(i));
+        config->set_hb_port(1234);
+        config->set_hb_introducer(i == 0);
+        config->set_election_port(1235);
 
-    unique_ptr<udp_client_intf> clients[NUM_NODES];
-    unique_ptr<udp_server_intf> hb_servers[NUM_NODES];
-    unique_ptr<udp_server_intf> election_servers[NUM_NODES];
-    unique_ptr<logger> loggers[NUM_NODES];
-    unique_ptr<member_list> mem_lists[NUM_NODES];
-    unique_ptr<election> elections[NUM_NODES];
+        envs[i]->get<logger_factory>()->configure(level);
+    }
 
+    std::vector<heartbeater*> hbs;
     for (int i = 0; i < NUM_NODES; i++) {
-        clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
-        hb_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        election_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        loggers[i] = make_unique<logger>("h" + std::to_string(i), *lg);
-        mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
+        hbs.push_back(envs[i]->get<heartbeater>());
     }
-
-    // h0 is the introducer
-    unique_ptr<heartbeater_intf> hbs[NUM_NODES];
-    hbs[0] = make_unique<heartbeater<true>>(mem_lists[0].get(), loggers[0].get(), clients[0].get(), hb_servers[0].get(), "h0", 1234);
-    for (int i = 1; i < NUM_NODES; i++) {
-        hbs[i] = make_unique<heartbeater<false>>(mem_lists[i].get(), loggers[i].get(), clients[i].get(), hb_servers[i].get(), "h" + std::to_string(i), 1234);
-    }
-
     hbs[0]->start();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+    std::vector<election*> elections;
     for (int i = 0; i < NUM_NODES; i++) {
-        elections[i] = make_unique<election>(hbs[i].get(), loggers[i].get(), clients[i].get(), election_servers[i].get(), 1235);
+        elections.push_back(envs[i]->get<election>());
         elections[i]->start();
     }
 
@@ -104,42 +99,39 @@ testing::register_test election_test("election.failover",
 });
 
 testing::register_test election_test_packet_loss("election.failover_packet_loss",
-    "Tests that re-election of a master node after failure succeeds even with UDP packet loss", [] (logger *lg)
+    "Tests that re-election of a master node after failure succeeds even with UDP packet loss", [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
-
     double drop_probability = 0.25;
 
-    unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
+    environment_group env_group(true);
+    std::vector<unique_ptr<environment>> envs = env_group.get_envs(NUM_NODES);
 
-    unique_ptr<udp_client_intf> clients[NUM_NODES];
-    unique_ptr<udp_server_intf> hb_servers[NUM_NODES];
-    unique_ptr<udp_server_intf> election_servers[NUM_NODES];
-    unique_ptr<logger> loggers[NUM_NODES];
-    unique_ptr<member_list> mem_lists[NUM_NODES];
-    unique_ptr<election> elections[NUM_NODES];
+    // Set the hostnames and heartbeater / election parameters for each of the environments
+    for (int i = 0; i < 10; i++) {
+        configuration *config = envs[i]->get<configuration>();
+        config->set_hostname("h" + std::to_string(i));
+        config->set_hb_port(1234);
+        config->set_hb_introducer(i == 0);
+        config->set_election_port(1235);
 
+        mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(envs[i]->get<udp_factory>());
+        fac->configure(false, drop_probability);
+
+        envs[i]->get<logger_factory>()->configure(level);
+    }
+
+    std::vector<heartbeater*> hbs;
     for (int i = 0; i < NUM_NODES; i++) {
-        clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
-        hb_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        election_servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        loggers[i] = make_unique<logger>("h" + std::to_string(i), *lg);
-        mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
+        hbs.push_back(envs[i]->get<heartbeater>());
     }
-
-    // h0 is the introducer
-    unique_ptr<heartbeater_intf> hbs[NUM_NODES];
-    hbs[0] = make_unique<heartbeater<true>>(mem_lists[0].get(), loggers[0].get(), clients[0].get(), hb_servers[0].get(), "h0", 1234);
-    for (int i = 1; i < NUM_NODES; i++) {
-        hbs[i] = make_unique<heartbeater<false>>(mem_lists[i].get(), loggers[i].get(), clients[i].get(), hb_servers[i].get(), "h" + std::to_string(i), 1234);
-    }
-
     hbs[0]->start();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+    std::vector<election*> elections;
     for (int i = 0; i < NUM_NODES; i++) {
-        elections[i] = make_unique<election>(hbs[i].get(), loggers[i].get(), clients[i].get(), election_servers[i].get(), 1235);
+        elections.push_back(envs[i]->get<election>());
         elections[i]->start();
     }
 

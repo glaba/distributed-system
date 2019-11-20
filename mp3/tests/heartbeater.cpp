@@ -1,6 +1,9 @@
 #include "test.h"
 #include "heartbeater.h"
 #include "mock_udp.h"
+#include "environment.h"
+#include "configuration.h"
+#include "logging.h"
 
 #include <memory>
 #include <set>
@@ -9,31 +12,32 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test joining_group("heartbeater.joining_group",
-    "Tests that 10 nodes can successfully join and remain in the group", [] (logger *lg)
+    "Tests that 10 nodes can successfully join and remain in the group", [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
-
+    bool show_packets = false;
     double drop_probability = 0.2;
 
-    unique_ptr<mock_udp_factory> fac = make_unique<mock_udp_factory>();
+    environment_group env_group(true);
+    std::vector<unique_ptr<environment>> envs = env_group.get_envs(NUM_NODES);
 
-    unique_ptr<udp_client_intf> clients[NUM_NODES];
-    unique_ptr<udp_server_intf> servers[NUM_NODES];
-    unique_ptr<logger> loggers[NUM_NODES];
-    unique_ptr<member_list> mem_lists[NUM_NODES];
-
+    // Set the hostnames and heartbeater parameters for each of the environments
+    // Also set the mock UDP drop probability
     for (int i = 0; i < NUM_NODES; i++) {
-        clients[i] = fac->get_mock_udp_client("h" + std::to_string(i), false, drop_probability);
-        servers[i] = fac->get_mock_udp_server("h" + std::to_string(i));
-        loggers[i] = make_unique<logger>("h" + std::to_string(i), *lg);
-        mem_lists[i] = make_unique<member_list>("h" + std::to_string(i), loggers[i].get());
+        configuration *config = envs[i]->get<configuration>();
+        config->set_hostname("h" + std::to_string(i));
+        config->set_hb_port(1234);
+        config->set_hb_introducer(i == 0);
+
+        mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(envs[i]->get<udp_factory>());
+        fac->configure(show_packets, drop_probability);
+
+        envs[i]->get<logger_factory>()->configure(level);
     }
 
-    // h1 is the introducer
-    unique_ptr<heartbeater_intf> hbs[NUM_NODES];
-    hbs[0] = make_unique<heartbeater<true>>(mem_lists[0].get(), loggers[0].get(), clients[0].get(), servers[0].get(), "h0", 1234);
-    for (int i = 1; i < NUM_NODES; i++) {
-        hbs[i] = make_unique<heartbeater<false>>(mem_lists[i].get(), loggers[i].get(), clients[i].get(), servers[i].get(), "h" + std::to_string(i), 1234);
+    std::vector<heartbeater*> hbs;
+    for (int i = 0; i < NUM_NODES; i++) {
+        hbs.push_back(envs[i]->get<heartbeater>());
     }
 
     hbs[0]->start();

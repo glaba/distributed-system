@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
     }
 
     // logger, udp interfaces, and mem list for heartbeater
-    logger *lg_hb = new logger("", "heartbeater", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
+    logger *lg_hb;// = new logger("", "heartbeater", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
     udp_client_intf *udp_client_inst = new udp_client(lg_hb);
     udp_server_intf *udp_server_inst = new udp_server(lg_hb);
     member_list *mem_list = new member_list(local_hostname, lg_hb);
@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
         hb = new heartbeater<false>(mem_list, lg_hb, udp_client_inst, udp_server_inst, local_hostname, port);
     }
 
-    logger *lg_el = new logger("election", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
+    logger *lg_el;// = new logger("election", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
     udp_server_intf *election_udp_server_inst = new udp_server(lg_el);
     election *el = new election(hb, lg_el, udp_client_inst, election_udp_server_inst, el_port);
 
@@ -52,10 +52,10 @@ int main(int argc, char **argv) {
     tcp_server server = tcp_server();
     server.setup_server(1237);
 
-    logger *lg_c = new logger("", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
+    logger *lg_c;// = new logger("", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
     sdfs_client *sdfsc = new sdfs_client(1237, client, lg_c, el, hb);
 
-    logger *lg_s = new logger("sdfs_server.log", "", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
+    logger *lg_s;// = new logger("sdfs_server.log", "", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
     sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, sdfsc, lg_s, hb, el);
 
     if (introducer != "none")
