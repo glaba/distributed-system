@@ -13,6 +13,13 @@ public:
     // Creates an message that will be empty by default
     hb_message(uint32_t id_) : id(id_) {}
 
+    // Makes this message a join request, as opposed to a regular heartbeat message
+    void make_join_request(member us);
+    // Returns true if this message is a join request
+    bool is_join_request();
+    // Get the member that is requesting to join the group
+    member get_join_request();
+
     // Sets the list of failed nodes to the given list of nodes
     void set_failed_nodes(std::vector<uint32_t> nodes);
     // Sets the list of joined nodes to the given list of nodes
@@ -36,6 +43,11 @@ public:
     std::unique_ptr<char[]> serialize(unsigned &length);
 
 private:
+    const int JOIN_REQUEST_ID = 0;
+    const int NORMAL_HEARTBEAT_ID = 1;
+
+    bool join_request = false;
+    member join_request_member; // The member that is requesting to join the group
     uint32_t id; // The ID of the node that produced the message
     std::vector<uint32_t> failed_nodes;
     std::vector<uint32_t> left_nodes;

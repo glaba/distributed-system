@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <random>
 
 using std::unique_ptr;
 using std::make_unique;
@@ -24,7 +25,7 @@ testing::register_test election_test("election.failover",
         configuration *config = envs[i]->get<configuration>();
         config->set_hostname("h" + std::to_string(i));
         config->set_hb_port(1234);
-        config->set_hb_introducer(i == 0);
+        config->set_first_node(i == 0);
         config->set_election_port(1235);
 
         envs[i]->get<logger_factory>()->configure(level);
@@ -56,11 +57,10 @@ testing::register_test election_test("election.failover",
 
     // Assert that all nodes know who the master node is
     for (unsigned i = 0; i < NUM_NODES; i++) {
-        bool succeeded;
-        member master_node = elections[i]->get_master_node(&succeeded);
-
-        assert(succeeded && "Node does not know who the master node is before failure");
-        assert(master_node.id == hbs[0]->get_id() && "Node thinks wrong node is the master node");
+        elections[i]->get_master_node([&] (member master_node, bool succeeded) {
+            assert(succeeded && "Node does not know who the master node is before failure");
+            assert(master_node.id == hbs[0]->get_id() && "Node thinks wrong node is the master node");
+        });
     }
 
     // Stop h0 and see how election proceeds
@@ -72,15 +72,14 @@ testing::register_test election_test("election.failover",
     // Assert that they successfully all re-elected some new member
     uint32_t new_master_id = 0;
     for (unsigned i = 1; i < NUM_NODES; i++) {
-        bool succeeded;
-        member new_master = elections[i]->get_master_node(&succeeded);
-
-        assert(succeeded && "Node did not successfully re-elect a master node");
-        if (new_master_id == 0) {
-            new_master_id = new_master.id;
-        } else {
-            assert(new_master.id == new_master_id && "Split brain occurred after failure");
-        }
+        elections[i]->get_master_node([&] (member new_master, bool succeeded) {
+            assert(succeeded && "Node did not successfully re-elect a master node");
+            if (new_master_id == 0) {
+                new_master_id = new_master.id;
+            } else {
+                assert(new_master.id == new_master_id && "Split brain occurred after failure");
+            }
+        });
     }
 
     // Stop all heartbeaters
@@ -112,7 +111,7 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
         configuration *config = envs[i]->get<configuration>();
         config->set_hostname("h" + std::to_string(i));
         config->set_hb_port(1234);
-        config->set_hb_introducer(i == 0);
+        config->set_first_node(i == 0);
         config->set_election_port(1235);
 
         mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(envs[i]->get<udp_factory>());
@@ -158,11 +157,10 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
 
     // Assert that all nodes know who the master node is
     for (unsigned i = 0; i < NUM_NODES; i++) {
-        bool succeeded;
-        member master_node = elections[i]->get_master_node(&succeeded);
-
-        assert(succeeded && "Node does not know who the master node is before failure");
-        assert(master_node.id == hbs[0]->get_id() && "Node thinks wrong node is the master node");
+        elections[i]->get_master_node([&] (member master_node, bool succeeded) {
+            assert(succeeded && "Node does not know who the master node is before failure");
+            assert(master_node.id == hbs[0]->get_id() && "Node thinks wrong node is the master node");
+        });
     }
 
     // Stop h0 and see how election proceeds
@@ -179,27 +177,25 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
         uint32_t new_master_id = 0;
         bool all_decided = true;
         for (unsigned i = 1; i < NUM_NODES; i++) {
-            bool succeeded;
-            member new_master = elections[i]->get_master_node(&succeeded);
+            elections[i]->get_master_node([&] (member new_master, bool succeeded) {
+                if (!succeeded) {
+                    all_decided = false;
+                    return;
+                }
 
-            if (!succeeded) {
-                all_decided = false;
-                continue;
-            }
-
-            if (new_master_id == 0) {
-                new_master_id = new_master.id;
-            } else {
-                assert(new_master.id == new_master_id);
-            }
+                if (new_master_id == 0) {
+                    new_master_id = new_master.id;
+                } else {
+                    assert(new_master.id == new_master_id);
+                }
+            });
         }
 
         // If some nodes have decided but not all, make sure the supposed master node doesn't think anyone is master
         if (!all_decided && new_master_id != 0) {
-            bool succeeded;
-            elections[id_to_index[new_master_id]]->get_master_node(&succeeded);
-
-            assert(!succeeded);
+            elections[id_to_index[new_master_id]]->get_master_node([&] (member master_node, bool succeeded) {
+                assert(!succeeded && "Node incorrectly believes it is the master node");
+            });
         }
 
         // If all nodes have decided and are in agreement, the test is complete

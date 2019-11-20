@@ -2,12 +2,14 @@
 
 #include "member_list.h"
 
+#include <functional>
+
 class election {
 public:
-    // Returns the master node, and sets succeeded to true if an election is not going on
-    // If an election is going on, sets succeeded to false and returns potentially garbage data
-    // If succeeded is set to false, no I/O should occur!
-    virtual member get_master_node(bool *succeeded) = 0;
+    // Calls the callback, providing the master node and a boolean indicating whether or not
+    // there currently is a master node. If the boolean is false, garbage data is given as the master node.
+    // The callback will run atomically with all other election logic
+    virtual void get_master_node(std::function<void(member, bool)> callback) = 0;
     // Starts keeping track of the master node and running elections
     virtual void start() = 0;
     // Stops all election logic, which may leave the master_node permanently undefined

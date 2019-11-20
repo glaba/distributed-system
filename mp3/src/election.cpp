@@ -18,7 +18,7 @@ election_impl::election_impl(environment &env)
       server(env.get<udp_factory>()->get_udp_server()),
       config(env.get<configuration>())
 {
-    if (config->is_hb_introducer()) {
+    if (config->is_first_node()) {
         // Set ourselves as the master node
         master_node = hb->get_member_by_id(hb->get_id());
         state = normal;
@@ -72,24 +72,22 @@ void election_impl::start() {
     hb->on_fail(callback);
     hb->on_leave(callback);
 
-    // If we are the introducer, add a callback to tell new nodes who thise master node is
-    if (config->is_hb_introducer()) {
-        std::function<void(member)> join_callback = [this](member m) {
-            { // Atomic block for accessing the state and the master node
-                std::lock_guard<std::recursive_mutex> guard(state_mutex);
+    // If we are the master node, tell new nodes that we are the master node
+    std::function<void(member)> join_callback = [this](member m) {
+        { // Atomic block for accessing the state and the master node
+            std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-                // A new node should not have been allowed to join if state != normal
-                assert(state == normal);
+            // A new node should not have been allowed to join if state != normal
+            assert(state == normal);
 
-                // Send the master node to the new node
-                election_message intro_msg(hb->get_id(), mt_rand());
-                intro_msg.set_type_introduction(master_node.id);
-                enqueue_message(m.hostname, intro_msg, introduction_message_redundancy);
-            }
-        };
+            // Send the master node to the new node
+            election_message intro_msg(hb->get_id(), mt_rand());
+            intro_msg.set_type_introduction(master_node.id);
+            enqueue_message(m.hostname, intro_msg, introduction_message_redundancy);
+        }
+    };
 
-        hb->on_join(join_callback);
-    }
+    hb->on_join(join_callback);
 }
 
 // Stops all threads and election logic (may leave master_node in an invalid state)
@@ -403,7 +401,7 @@ void election_impl::server_thread_function() {
                                 lg->info("New master failed during the election, restarting election");
 
                                 // Restart the election by going back to election_wait
-                                // We choose election_wait instead of election_init since the introducer may have
+                                // We choose election_wait instead of election_init since some nodes may have
                                 //  accepted this node as the master node and reallowed nodes to join
                                 highest_initiator_id = 0;
                                 transition(electing, election_wait);
@@ -448,7 +446,7 @@ void election_impl::server_thread_function() {
                             master_node = hb->get_member_by_id(msg.get_master_id());
 
                             lg->info("Received master node at " + master_node.hostname + " with id " +
-                                std::to_string(master_node.id) + " from introducer");
+                                std::to_string(master_node.id));
 
                             transition(no_master, normal);
                         }
@@ -499,14 +497,12 @@ void election_impl::client_thread_function() {
     }
 }
 
-// Returns the master node, and sets succeeded to true if an election is not going on
-// If an election is going on, sets succeeded to false and returns potentially garbage data
-// If succeeded is set to false, no I/O should occur!
-member election_impl::get_master_node(bool *succeeded) {
+// Calls the callback, providing the master node and a boolean indicating whether or not
+// there currently is a master node. If the boolean is false, garbage data is given as the master node.
+// The callback will run atomically with all other election logic
+void election_impl::get_master_node(std::function<void(member, bool)> callback) {
     std::lock_guard<std::recursive_mutex> guard(state_mutex);
-
-    *succeeded = (state == normal);
-    return master_node;
+    callback(master_node, state == normal);
 }
 
 register_auto<election, election_impl> register_election;

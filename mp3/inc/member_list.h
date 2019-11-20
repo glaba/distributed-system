@@ -51,7 +51,7 @@ public:
     uint32_t num_members();
     // Whether or not we are in the member list
     bool joined_list();
-    // Gets a list of all the members (to be used by introducer)
+    // Gets a list of all the members
     std::vector<member> get_members();
     // Gets the successor to the node with the given ID
     // Returns a member with ID 0 if the given ID was not found

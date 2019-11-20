@@ -1,4 +1,3 @@
-#include "member.h"
 #include "heartbeater.h"
 #include "udp.h"
 #include "logging.h"
@@ -17,7 +16,7 @@ using std::make_unique;
 int main(int argc, char **argv) {
     // Arguments for command: member ...
     std::string local_hostname;
-    std::string introducer;
+    bool is_first_node;
     uint16_t port;
     logger::log_level log_level = logger::log_level::level_off;
     // Arguments for subcommand: member test ...
@@ -25,7 +24,7 @@ int main(int argc, char **argv) {
 
     // Setup CLI arguments and options
     cli_parser.add_required_option("h", "hostname", "The hostname of this node that other nodes can use", &local_hostname);
-    cli_parser.add_option("i", "introducer", "Introducer hostname, which may be omitted if we are the first node", &introducer);
+    cli_parser.add_option("f", "Indicates whether or not we are the first node in the group", &is_first_node);
     cli_parser.add_required_option("p", "port", "The UDP port to use for heartbeating", [&port] (std::string str) {
         try {
             port = std::stoi(str);
@@ -51,7 +50,7 @@ int main(int argc, char **argv) {
     cli_parser.add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
 
     cli_command *test_parser = cli_parser.add_subcommand("test");
-    test_parser->add_argument("prefix", "The prefix of the tests to run, where \"all\" will run all tests", &test_prefix);
+    test_parser->add_option("p", "prefix", "The prefix of the tests to run. By default all tests will be run", &test_prefix);
     test_parser->add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
 
     // Run CLI parser and exit on failure
@@ -60,7 +59,7 @@ int main(int argc, char **argv) {
     }
 
     if (test_parser->was_invoked()) {
-        testing::run_tests((test_prefix == "all" ? "" : test_prefix), log_level, true);
+        testing::run_tests(test_prefix, log_level, true);
         return 0;
     }
 
@@ -68,7 +67,7 @@ int main(int argc, char **argv) {
         environment env(false);
         env.get<configuration>()->set_hostname(local_hostname);
         env.get<configuration>()->set_hb_port(port);
-        env.get<configuration>()->set_hb_introducer(introducer == "");
+        env.get<configuration>()->set_first_node(is_first_node);
         env.get<logger_factory>()->configure(log_level);
 
         // Start up the heartbeater

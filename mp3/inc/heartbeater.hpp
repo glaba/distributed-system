@@ -27,7 +27,7 @@ public:
     member get_member_by_id(uint32_t id);
     member get_successor();
     void run_atomically_with_mem_list(std::function<void()>);
-    void join_group(std::string introducer);
+    void join_group(std::string node);
     void leave_group();
 
     uint32_t get_id() {
@@ -56,7 +56,7 @@ private:
     // Scans through neighbors and marks those with a heartbeat past the timeout as failed
     void check_for_failed_neighbors();
 
-    // (Should be called only by introducer) Sends pending messages to newly joined nodes
+    // Sends pending messages to newly joined nodes that joined using us as an introducer
     void send_introducer_msg();
 
     // Number of times to send each message
@@ -80,10 +80,10 @@ private:
     redundant_queue<uint32_t> failed_nodes_queue;
     redundant_queue<uint32_t> left_nodes_queue;
     redundant_queue<member> joined_nodes_queue;
-    // (If we are the introducer), queue of new nodes that should be sent the membership list
+    // Queue of new nodes that should be sent the membership list
     redundant_queue<member> new_nodes_queue;
 
-    // Boolean indicating whether or not new nodes can join (if we are the introducer)
+    // Boolean indicating whether or not new nodes can join
     std::atomic<bool> nodes_can_join;
 
     // Set containing all IDs that have ever joined

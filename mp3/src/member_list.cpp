@@ -199,7 +199,7 @@ bool member_list::joined_list() {
     return false;
 }
 
-// Gets a list of all the members (to be used by introducer)
+// Gets a list of all the members
 std::vector<member> member_list::get_members() {
     std::vector<member> list;
     for (node *cur = head; cur != nullptr; cur = cur->next) {

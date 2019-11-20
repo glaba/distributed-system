@@ -22,15 +22,15 @@ public:
     virtual member get_successor() = 0;
     // Runs the provided function atomically with any functions that read or write to the membership list
     virtual void run_atomically_with_mem_list(std::function<void()> fn) = 0;
-    // Initiates an async request to join the group by sending a message to the introducer
-    virtual void join_group(std::string introducer) = 0;
+    // Initiates an async request to join the group by sending a message to a node in the group
+    virtual void join_group(std::string node) = 0;
     // Sends a message to peers stating that we are leaving
     virtual void leave_group() = 0;
     // Returns the ID of the current node, which will be 0 if we have not joined the group
     virtual uint32_t get_id() = 0;
-    // If we are the introducer, prevents any nodes from joining
+    // Prevents any nodes from joining
     virtual void lock_new_joins() = 0;
-    // If we are the introducer, allows nodes to join again
+    // Allows nodes to join again
     virtual void unlock_new_joins() = 0;
 
     // Adds to a list of handlers that will be called when membership list changes

@@ -13,17 +13,17 @@ public:
     std::string get_hostname() {
         return hostname;
     }
+    void set_first_node(bool first_node_) {
+        first_node = first_node_;
+    }
+    bool is_first_node() {
+        return first_node;
+    }
     void set_hb_port(int port_) {
         hb_port = port_;
     }
     int get_hb_port() {
         return hb_port;
-    }
-    void set_hb_introducer(bool is_introducer_) {
-        is_introducer = is_introducer_;
-    }
-    bool is_hb_introducer() {
-        return is_introducer;
     }
     void set_election_port(int port_) {
         election_port = port_;
@@ -34,8 +34,8 @@ public:
 
 private:
     std::string hostname;
+    bool first_node;
     int hb_port;
-    bool is_introducer;
     int election_port;
 
     configuration_impl() {}

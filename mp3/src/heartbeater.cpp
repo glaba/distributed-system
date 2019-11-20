@@ -22,7 +22,7 @@ heartbeater_impl::heartbeater_impl(environment &env)
     our_id = 0;
 
     joined_group = false;
-    if (config->is_hb_introducer()) {
+    if (config->is_first_node()) {
         int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         our_id = std::hash<std::string>()(config->get_hostname()) ^ std::hash<int>()(join_time);
 
@@ -115,8 +115,8 @@ void heartbeater_impl::client_thread_function() {
                 }
             }
 
-            // If we are the introducer, also send the introduction messages
-            if (config->is_hb_introducer() && nodes_can_join.load() && new_nodes_queue.size() > 0) {
+            // Send the introduction messages
+            if (nodes_can_join.load() && new_nodes_queue.size() > 0) {
                 send_introducer_msg();
             }
         }
@@ -151,7 +151,7 @@ void heartbeater_impl::check_for_failed_neighbors() {
     }
 }
 
-// (Should be called only by introducer) Sends pending messages to newly joined nodes
+// Sends pending messages to newly joined nodes
 void heartbeater_impl::send_introducer_msg() {
     unique_ptr<char[]> msg_buf;
     unsigned msg_buf_len;
@@ -183,12 +183,12 @@ void heartbeater_impl::run_atomically_with_mem_list(std::function<void()> fn) {
     fn();
 }
 
-// Initiates an async request to join the group by sending a message to the introducer
-void heartbeater_impl::join_group(std::string introducer) {
-    if (config->is_hb_introducer())
+// Initiates an async request to join the group by sending a message a node to let us in
+void heartbeater_impl::join_group(std::string node) {
+    if (config->is_first_node())
         return;
 
-    lg->info("Requesting introducer to join group");
+    lg->info("Requesting node at " + node + " to join group");
     joined_group = true;
 
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -202,12 +202,12 @@ void heartbeater_impl::join_group(std::string introducer) {
     unsigned buf_len;
 
     hb_message join_req(our_id);
-    join_req.set_joined_nodes(std::vector<member>{us});
+    join_req.make_join_request(us);
     buf = join_req.serialize(buf_len);
     assert(buf_len > 0);
 
     for (int i = 0; i < message_redundancy; i++) {
-        client->send(introducer, config->get_hb_port(), buf.get(), buf_len);
+        client->send(node, config->get_hb_port(), buf.get(), buf_len);
     }
 }
 
@@ -252,25 +252,32 @@ void heartbeater_impl::server_thread_function() {
                 continue;
             }
 
-            // If we are in the group and the message is not from within the group, ignore it (with special case for introducer)
+            // If we are in the group and the message is not from within the group, ignore it
             if (mem_list.get_member_by_id(our_id).id == our_id &&
                 mem_list.get_member_by_id(msg.get_id()).id != msg.get_id())
             {
-                // Allow the message to be processed if we are the introducer and it's a join request
-                if (config->is_hb_introducer() && msg.get_joined_nodes().size() == 1 &&
-                    msg.get_left_nodes().size() == 0 &&
-                    msg.get_failed_nodes().size() == 0 &&
-                    msg.get_joined_nodes()[0].id == msg.get_id())
-                {
-                    if (nodes_can_join.load()) {
-                        // Do nothing
-                    } else {
+                // Allow the message to be processed if it's a join request
+                if (msg.is_join_request()) {
+                    if (!nodes_can_join.load()) {
                         lg->debug("Nodes cannot join because leader election is occurring!");
                         continue;
                     }
                 } else {
                     lg->trace("Ignoring heartbeat message from " + std::to_string(msg.get_id()) + " because they are not in the group");
                     continue;
+                }
+            }
+
+            if (msg.is_join_request()) {
+                member m = msg.get_join_request();
+
+                // Make sure this is a node we haven't seen yet
+                if (joined_ids.find(m.id) == joined_ids.end()) {
+                    joined_ids.insert(m.id);
+                    mem_list.add_member(m.hostname, m.id);
+
+                    lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
+                    new_nodes_queue.push(m, message_redundancy);
                 }
             }
 
@@ -282,17 +289,12 @@ void heartbeater_impl::server_thread_function() {
                     joined_ids.insert(m.id);
                     mem_list.add_member(m.hostname, m.id);
 
-                    if (config->is_hb_introducer()) {
-                        lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
-                        new_nodes_queue.push(m, message_redundancy);
-                    } else {
-                        // Check if the newly joined member is us
-                        if (m.id == our_id) {
-                            lg->info("Successfully joined group");
-                        }
-
-                        joined_nodes_queue.push(m, message_redundancy);
+                    // Check if the newly joined member is us
+                    if (m.id == our_id) {
+                        lg->info("Successfully joined group");
                     }
+
+                    joined_nodes_queue.push(m, message_redundancy);
 
                     for (auto handler : on_join_handlers) {
                         handler(m);

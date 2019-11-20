@@ -7,13 +7,14 @@
 
 #include <memory>
 #include <set>
+#include <functional>
+#include <random>
 
 using std::unique_ptr;
 using std::make_unique;
 
-testing::register_test joining_group("heartbeater.joining_group",
-    "Tests that 10 nodes can successfully join and remain in the group", [] (logger::log_level level)
-{
+template <bool UseRandomIntroducers>
+std::function<void(logger::log_level)> test_fn([] (logger::log_level level) {
     const int NUM_NODES = 10;
     bool show_packets = false;
     double drop_probability = 0.2;
@@ -27,7 +28,7 @@ testing::register_test joining_group("heartbeater.joining_group",
         configuration *config = envs[i]->get<configuration>();
         config->set_hostname("h" + std::to_string(i));
         config->set_hb_port(1234);
-        config->set_hb_introducer(i == 0);
+        config->set_first_node(i == 0);
 
         mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(envs[i]->get<udp_factory>());
         fac->configure(show_packets, drop_probability);
@@ -62,7 +63,11 @@ testing::register_test joining_group("heartbeater.joining_group",
         }
 
         hbs[i]->start();
-        hbs[i]->join_group("h0");
+        if (UseRandomIntroducers) {
+            hbs[i]->join_group("h" + std::to_string(std::rand() % i));
+        } else {
+            hbs[i]->join_group("h0");
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
@@ -94,3 +99,11 @@ testing::register_test joining_group("heartbeater.joining_group",
     // Wait for them all to stop
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 });
+
+testing::register_test joining_group("heartbeater.joining_group",
+    "Tests that 10 nodes can successfully join and remain in the group",
+    test_fn<false>);
+
+testing::register_test joining_group_random_introducer("heartbeater.joining_group_random_introducer",
+    "Tests that 10 nodes can successfully join and remain in the group using any node as the introducer",
+    test_fn<true>);

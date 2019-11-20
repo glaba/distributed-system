@@ -1,5 +1,4 @@
 #include "test.h"
-#include "member.h"
 #include "member_list.h"
 #include "mock_udp.h"
 #include "heartbeater.h"

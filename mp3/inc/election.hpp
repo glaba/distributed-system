@@ -18,7 +18,7 @@
 #include <unordered_set>
 
 // The minimum amount of time it will take for the member list to stabilize
-//  6s in the worst case for the introducer to notice the failure of the master node and prevent new nodes from joining
+//  6s in the worst case for all nodes to notice the failure of the master node and prevent new nodes from joining
 //  and 6s more for any nodes that joined in the meantime to join all membership lists
 #define MEMBER_LIST_STABILIZATION_TIME 12000
 // The range we will wait for the member list to stabilize before starting an election is in
@@ -34,7 +34,7 @@ class election_impl : public election, public service_impl<election_impl> {
 public:
     election_impl(environment &env);
 
-    member get_master_node(bool *succeeded);
+    void get_master_node(std::function<void(member, bool)> callback);
     void start();
     void stop();
 private:
