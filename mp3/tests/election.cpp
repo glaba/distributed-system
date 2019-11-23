@@ -101,7 +101,7 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
     "Tests that re-election of a master node after failure succeeds even with UDP packet loss", [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
-    double drop_probability = 0.25;
+    double drop_probability = 0.1;
 
     environment_group env_group(true);
     std::vector<unique_ptr<environment>> envs = env_group.get_envs(NUM_NODES);

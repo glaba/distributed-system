@@ -34,8 +34,6 @@ testing::register_test mock_udp("mock_udp.mock_udp",
 
     volatile bool end = false;
 
-    std::cout << "[ ";
-
     std::thread h1c([&h1_client] {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
@@ -43,7 +41,6 @@ testing::register_test mock_udp("mock_udp.mock_udp",
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             h1_client->send("h2", 1234, const_cast<char*>(std::string(1, i).c_str()), 1);
-            std::cout << "->" << std::flush;
         }
     });
 
@@ -57,7 +54,6 @@ testing::register_test mock_udp("mock_udp.mock_udp",
 
             if (h1_server->recv(buf, 1024) > 0) {
                 assert(buf[0] == counter * 2);
-                std::cout << "<- " << std::flush;
                 counter++;
             }
 
@@ -79,7 +75,6 @@ testing::register_test mock_udp("mock_udp.mock_udp",
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
                 h2_client->send("h1", 1234, const_cast<char*>(std::string(1, val * 2).c_str()), 1);
-                std::cout << "=" << std::flush;
             }
 
             if (end) break;
@@ -95,8 +90,6 @@ testing::register_test mock_udp("mock_udp.mock_udp",
     end = true;
     h1_server->stop_server();
     h2_server->stop_server();
-
-    std::cout << "]" << std::endl;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 });

@@ -77,13 +77,17 @@ void election_impl::start() {
         { // Atomic block for accessing the state and the master node
             std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
-            // A new node should not have been allowed to join if state != normal
-            assert(state == normal);
+            if (state == normal && master_node.id == hb->get_id()) {
+                lg->debug("Telling node at " + m.hostname + " that we are the master node");
 
-            // Send the master node to the new node
-            election_message intro_msg(hb->get_id(), mt_rand());
-            intro_msg.set_type_introduction(master_node.id);
-            enqueue_message(m.hostname, intro_msg, introduction_message_redundancy);
+                // Tell the new node we are the master node
+                election_message intro_msg(hb->get_id(), mt_rand());
+                intro_msg.set_type_introduction(master_node.id);
+                enqueue_message(m.hostname, intro_msg, introduction_message_redundancy);
+            }
+
+            // If the master node is down, the new node will in state NO_MASTER, and will
+            // simply participate in the upcoming elections as a normal node
         }
     };
 
@@ -119,6 +123,9 @@ void election_impl::transition(election_state origin_state, election_state dest_
     if (state != origin_state) {
         assert(false && "Incorrect origin_state for transition");
     }
+
+    // Cancel the timer if it was already running
+    stop_timer();
 
     state = dest_state;
     lg->debug("Election state transition " + print_state(origin_state) + " -> " + print_state(state));
@@ -165,6 +172,7 @@ void election_impl::transition(election_state origin_state, election_state dest_
             hb->unlock_new_joins();
             break;
         }
+        case no_master: assert(false && "We should never transition into state NO_MASTER");
         default:
             break;
     }
@@ -172,74 +180,80 @@ void election_impl::transition(election_state origin_state, election_state dest_
 
 // Starts the timer to run for the given number of milliseconds
 void election_impl::start_timer(uint32_t time) {
-    std::lock_guard<std::mutex> guard(timer_mutex);
+    std::lock_guard<std::recursive_mutex> guard(timer_mutex);
 
     timer_on = true;
     timer = time;
     prev_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+// Stops the timer
+void election_impl::stop_timer() {
+    std::lock_guard<std::recursive_mutex> guard(timer_mutex);
+
+    timer_on = false;
+    timer = 0;
+}
+
 // Updates the timer and performs the appropriate action in the state machine if the timer reaches 0
 void election_impl::update_timer() {
     uint64_t elapsed_time = 0;
     for (; running.load(); std::this_thread::sleep_for(std::chrono::milliseconds(100))) {
-        { // Atomic block for updating timer variables
-            std::lock_guard<std::mutex> guard(timer_mutex);
+        std::lock_guard<std::recursive_mutex> guard_state(state_mutex);
+        std::lock_guard<std::recursive_mutex> guard_timer(timer_mutex);
 
-            if (timer_on) {
-                // Update timer without letting it overflow (since it is unsigned)
-                uint32_t cur_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                uint32_t diff = cur_time - prev_time;
-                prev_time = cur_time;
-                timer = (timer > diff) ? (timer - diff) : 0;
+        if (timer_on) {
+            // Update timer without letting it overflow (since it is unsigned)
+            uint32_t cur_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+            uint32_t diff = cur_time - prev_time;
+            prev_time = cur_time;
+            timer = (timer > diff) ? (timer - diff) : 0;
 
-                if (timer != 0) {
-                    continue;
-                } else {
-                    // Now that the timer has expired, turn the timer off before we perform the associated action
-                    timer_on = false;
-                }
-            } else {
+            if (timer != 0) {
                 continue;
+            } else {
+                // Now that the timer has expired, turn the timer off before we perform the associated action
+                timer_on = false;
             }
+        } else {
+            continue;
         }
 
-        { // Atomic block for accessing the state
-            std::lock_guard<std::recursive_mutex> guard(state_mutex);
-
-            switch (state) {
-                case election_wait: {
-                    lg->debug("Membership list has stabilized, sending election initiation message");
-                    transition(election_wait, election_init);
-                    break;
-                }
-                case electing:
-                case elected: {
-                    highest_initiator_id = 0;
-                    lg->info("Election has timed out, restarting election by sending PROPOSAL message");
-
-                    // Create a proposal message to send to the next node to start a new election
-                    election_message proposal_msg(hb->get_id(), mt_rand());
-                    proposal_msg.set_type_proposal();
-                    enqueue_message(hb->get_successor().hostname, proposal_msg, message_redundancy);
-
-                    // Transition to a waiting state while the proposal message makes the rounds and
-                    //  the membership list stabilizes
-                    transition(state, election_wait);
-                    break;
-                }
-                case normal:
-                case election_init:
-                default:
-                    break;
+        switch (state) {
+            case election_wait: {
+                lg->debug("Membership list has stabilized, sending election initiation message");
+                transition(election_wait, election_init);
+                break;
             }
+            case electing:
+            case elected: {
+                highest_initiator_id = 0;
+                lg->info("Election has timed out, restarting election by sending PROPOSAL message");
 
-            // Update seen_message_ids if 1 minute has passed
-            uint64_t new_time = elapsed_time + 100;
-            if (new_time / 60000 > elapsed_time / 60000) {
-                seen_message_ids.pop();
+                // Create a proposal message to send to the next node to start a new election
+                election_message proposal_msg(hb->get_id(), mt_rand());
+                proposal_msg.set_type_proposal();
+                enqueue_message(hb->get_successor().hostname, proposal_msg, message_redundancy);
+
+                // Transition to a waiting state while the proposal message makes the rounds and
+                //  the membership list stabilizes
+                transition(state, election_wait);
+                break;
             }
+            case normal:
+            case election_init:
+            case no_master:
+                assert(false && "These states do not have timers associated with them");
+            default:
+                break;
         }
+
+        // Update seen_message_ids if 1 minute has passed
+        uint64_t new_time = elapsed_time + 100;
+        if (new_time / 60000 > elapsed_time / 60000) {
+            seen_message_ids.pop();
+        }
+        elapsed_time = new_time;
     }
 }
 
@@ -347,6 +361,7 @@ void election_impl::server_thread_function() {
 
             if (msg.get_type() == election_message::msg_type::election) {
                 switch (state) {
+                    case no_master: // If we joined after the master node failed, just participate in the elections as normal
                     case election_wait: {
                         add_to_cache(msg);
                         propagate(msg);
@@ -385,8 +400,8 @@ void election_impl::server_thread_function() {
                         transition(elected, electing);
                         break;
                     }
-                    case normal:
-                    case election_init:
+                    case normal: assert(false && "Should not be in state NORMAL while receiving election message");
+                    case election_init: assert(false && "Locking of state_mutex is incorrect somewhere");
                     default:
                         break;
                 }
@@ -429,9 +444,10 @@ void election_impl::server_thread_function() {
                         }
                         break;
                     }
-                    case normal:
-                    case election_wait:
-                    case election_init:
+                    case normal: assert(false && "Should not be in state NORMAL while receiving elected message");
+                    case election_wait: assert(false && "Should not be in state ELECTION_WAIT while receiving elected message");
+                    case election_init: assert(false && "Locking of state_mutex is incorrect somewhere");
+                    case no_master: assert(false && "Should not be in state NO_MASTER while receiving elected message");
                     default:
                         break;
                 }

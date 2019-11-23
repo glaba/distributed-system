@@ -65,9 +65,10 @@ private:
     uint32_t timer;
     uint32_t prev_time;
     void start_timer(uint32_t time);
+    void stop_timer();
     void update_timer();
     std::unique_ptr<std::thread> timer_thread; // Thread that will update the timer
-    std::mutex timer_mutex; // Mutex that protects the timer variables
+    std::recursive_mutex timer_mutex; // Mutex that protects the timer variables
 
     // Debugging function to print a string value for the enum
     std::string print_state(election_state s);

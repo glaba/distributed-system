@@ -278,6 +278,11 @@ void heartbeater_impl::server_thread_function() {
 
                     lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
                     new_nodes_queue.push(m, message_redundancy);
+
+                    // Call the join handlers after adding this node
+                    for (auto handler : on_join_handlers) {
+                        handler(m);
+                    }
                 }
             }
 

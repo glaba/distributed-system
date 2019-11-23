@@ -17,7 +17,7 @@ template <bool UseRandomIntroducers>
 std::function<void(logger::log_level)> test_fn([] (logger::log_level level) {
     const int NUM_NODES = 10;
     bool show_packets = false;
-    double drop_probability = 0.2;
+    double drop_probability = 0.1;
 
     environment_group env_group(true);
     std::vector<unique_ptr<environment>> envs = env_group.get_envs(NUM_NODES);
