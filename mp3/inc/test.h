@@ -17,9 +17,9 @@ public:
 
     class register_test {
     public:
-        register_test(std::string name, std::string description, std::function<void(logger::log_level)> test_fn);
+        register_test(std::string name, std::string description, unsigned approx_length, std::function<void(logger::log_level)> test_fn);
     };
 private:
-    using test = std::tuple<std::string, std::string, std::function<void(logger::log_level)>>;
+    using test = std::tuple<std::string, std::string, unsigned, std::function<void(logger::log_level)>>;
     static std::vector<test> tests;
 };

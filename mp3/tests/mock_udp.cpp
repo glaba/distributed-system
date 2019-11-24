@@ -13,7 +13,8 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test mock_udp("mock_udp.mock_udp",
-    "Tests passing messages between two client / server pairs", [] (logger::log_level level)
+    "Tests passing messages between two client / server pairs",
+    3, [] (logger::log_level level)
 {
     environment_group env_group(true);
     unique_ptr<environment> env1 = env_group.get_env();

@@ -12,7 +12,8 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
-    "Tests passing messages between one TCP client and one TCP server", [] (logger::log_level level)
+    "Tests passing messages between one TCP client and one TCP server",
+    4, [] (logger::log_level level)
 {
     environment_group env_group(true);
     unique_ptr<environment> client_env = env_group.get_env();
@@ -61,7 +62,8 @@ testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
 });
 
 testing::register_test closing_connection("mock_tcp.closing_connection",
-    "Tests that closing connections behaves as expected", [] (logger::log_level level)
+    "Tests that closing connections behaves as expected",
+    9, [] (logger::log_level level)
 {
     environment_group env_group(true);
     unique_ptr<environment> client_env = env_group.get_env();
@@ -138,7 +140,8 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
 });
 
 testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
-    "Tests passing messages between a single TCP client and multiple TCP servers", [] (logger::log_level level)
+    "Tests passing messages between a single TCP client and multiple TCP servers",
+    6, [] (logger::log_level level)
 {
     const int NUM_SERVERS = 5;
 
@@ -223,7 +226,8 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
 });
 
 testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
-    "Tests passing messages between a multiple TCP clients and a single TCP server", [] (logger::log_level level)
+    "Tests passing messages between a multiple TCP clients and a single TCP server",
+    6, [] (logger::log_level level)
 {
     const int NUM_CLIENTS = 5;
 

@@ -13,7 +13,8 @@ using std::unique_ptr;
 using std::make_unique;
 
 testing::register_test election_test("election.failover",
-    "Tests that re-election of a master node after failure succeeds", [] (logger::log_level level)
+    "Tests that re-election of a master node after failure succeeds",
+    35, [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
 
@@ -98,7 +99,8 @@ testing::register_test election_test("election.failover",
 });
 
 testing::register_test election_test_packet_loss("election.failover_packet_loss",
-    "Tests that re-election of a master node after failure succeeds even with UDP packet loss", [] (logger::log_level level)
+    "Tests that re-election of a master node after failure succeeds even with UDP packet loss",
+    45, [] (logger::log_level level)
 {
     const int NUM_NODES = 10;
     double drop_probability = 0.1;

@@ -12,7 +12,8 @@ bool compare_hostnames(const member &m1, const member &m2) {
 }
 
 testing::register_test inserting_small("member_list.inserting_small",
-    "Tests inserting / reading member lists with less than 5 members", [] (logger::log_level level)
+    "Tests inserting / reading member lists with less than 5 members",
+    1, [] (logger::log_level level)
 {
     environment env(true);
     env.get<configuration>()->set_hostname("local");
@@ -36,7 +37,8 @@ testing::register_test inserting_small("member_list.inserting_small",
 });
 
 testing::register_test inserting_large("member_list.inserting_large",
-    "Tests inserting / reading / sortedness of member list with more than 5 members", [] (logger::log_level level)
+    "Tests inserting / reading / sortedness of member list with more than 5 members",
+    1, [] (logger::log_level level)
 {
     environment env(true);
     env.get<configuration>()->set_hostname("local");
@@ -71,7 +73,8 @@ testing::register_test inserting_large("member_list.inserting_large",
 });
 
 testing::register_test removing("member_list.removing_large",
-    "Tests removing from member list, while verifying sortedness and neighbors", [] (logger::log_level level)
+    "Tests removing from member list, while verifying sortedness and neighbors",
+    1, [] (logger::log_level level)
 {
     environment env(true);
     env.get<configuration>()->set_hostname("8");

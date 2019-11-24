@@ -102,8 +102,10 @@ std::function<void(logger::log_level)> test_fn([] (logger::log_level level) {
 
 testing::register_test joining_group("heartbeater.joining_group",
     "Tests that 10 nodes can successfully join and remain in the group",
+    30,
     test_fn<false>);
 
 testing::register_test joining_group_random_introducer("heartbeater.joining_group_random_introducer",
     "Tests that 10 nodes can successfully join and remain in the group using any node as the introducer",
+    30,
     test_fn<true>);
