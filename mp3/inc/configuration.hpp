@@ -3,6 +3,12 @@
 #include "configuration.h"
 #include "service.h"
 
+#include <sys/stat.h>
+#include <random>
+#include <chrono>
+#include <string>
+#include <iostream>
+
 class configuration_impl : public configuration, public service_impl<configuration_impl> {
 public:
     configuration_impl(environment &env) {}
@@ -31,26 +37,56 @@ public:
     int get_election_port() {
         return election_port;
     }
-    void set_sdfs_port(int port_) {
-        sdfs_port = port_;
+    void set_sdfs_internal_port(int port_) {
+        sdfs_internal_port = port_;
     }
-    int get_sdfs_port() {
-        return sdfs_port;
+    int get_sdfs_master_port() {
+        return sdfs_internal_port;
     }
-    void set_sdfs_dir(std::string dir) {
-        sdfs_dir = dir;
+    void set_sdfs_internal_port(int port_) {
+        sdfs_master_port = port_;
+    }
+    int get_sdfs_master_port() {
+        return sdfs_master_port;
+    }
+    // Sets the directory that all files for the program will be stored in
+    // Assumes that the directory exist and is empty
+    void set_dir(std::string dir_) {
+        dir = dir_;
+    }
+    void set_sdfs_subdir(std::string subdir) {
+        sdfs_dir = dir + "/" + subdir;
     }
     std::string get_sdfs_dir() {
         return sdfs_dir;
     }
 
-private:
+protected:
     std::string hostname;
     bool first_node;
     int hb_port;
     int election_port;
-    int sdfs_port;
+    int sdfs_internal_port;
+    int sdfs_master_port;
+    std::string dir;
     std::string sdfs_dir;
 
     configuration_impl() {}
+};
+
+class configuration_test_impl : public configuration_impl {
+public:
+    configuration_test_impl(environment &env) {}
+
+    void set_dir(std::string dir_) {
+        // Create our own subdirectory within this directory only for files within this environment
+        std::mt19937 mt(std::chrono::system_clock::now().time_since_epoch().count());
+        std::string subdir = "test" + std::to_string(mt());
+        if (mkdir((dir_ + subdir).c_str(), 700) != 0) {
+            std::cerr << "Invalid directory provided, exiting" << std::endl;
+            exit(1);
+        }
+
+        dir = dir_ + subdir + "/";
+    }
 };

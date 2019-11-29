@@ -14,14 +14,14 @@ TEST_OBJ_FILES := $(patsubst $(TEST_DIR)/%.cpp,$(OBJ_DIR)/%.test.o,$(TEST_FILES)
 OBJ_FILES      := $(SRC_OBJ_FILES) $(TEST_OBJ_FILES)
 
 MEMBER         := member
-ELECTION       := election
+SDFS           := sdfs
 
-all: $(MEMBER) #$(ELECTION)
+all: $(MEMBER) $(SDFS)
 
 $(MEMBER): $(filter-out obj/sdfs.o obj/sdfs_client.o obj/sdfs_server.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ELECTION): $(filter-out obj/member.o, $(OBJ_FILES))
+$(SDFS): $(filter-out obj/member.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp

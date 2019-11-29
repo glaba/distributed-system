@@ -1,59 +1,123 @@
-#include "sdfs.h"
+#include "cli.h"
+#include "logging.h"
+#include "environment.h"
+#include "configuration.h"
+#include "test.h"
+
+#include <string>
+#include <chrono>
+#include <thread>
 
 int main(int argc, char **argv) {
-    std::string introducer = "";
-    bool is_introducer = false;
-    std::string local_hostname = "";
-    uint16_t port = 1235; // 1235 will be port for heartbeater
-    uint16_t el_port = 1236; // 1236 will be port for election protocol
-    bool verbose = false;
+    // Arguments for command: sdfs ...
+    std::string local_hostname;
+    bool is_first_node;
+    int hb_port = 1234;
+    int el_port = 1235;
+    int sdfs_internal_port = 1234;
+    int sdfs_master_port = 1235;
+    std::string dir;
+    std::string sdfs_subdir;
+    logger::log_level log_level = logger::log_level::level_off;
+    // Arguments for subcommand: sdfs test ...
+    std::string test_prefix;
 
-    if (process_params(argc, argv, &introducer, &local_hostname, &verbose, &is_introducer)) {
+    // Setup CLI arguments and options
+    cli_parser.add_required_option("h", "hostname", "The hostname of this node that other nodes can use", &local_hostname);
+    cli_parser.add_option("f", "Indicates whether or not we are the first node in the group", &is_first_node);
+    cli_parser.add_option("hp", "port", "The UDP port to use for heartbeating (default 1234)", [&hb_port, &el_port] (std::string str) {
+        try {
+            hb_port = std::stoi(str);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    });
+    cli_parser.add_option("ep", "port", "The UDP port to use for elections (default 1235)", [&hb_port, &el_port] (std::string str) {
+        try {
+            el_port = std::stoi(str);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    });
+    cli_parser.add_option("ip", "port", "The TCP port used for communication between nodes in SDFS (default 1234)",
+        [&sdfs_internal_port] (std::string str) {
+            try {
+                sdfs_internal_port = std::stoi(str);
+                return true;
+            } catch (...) {
+                return false;
+            }
+    });
+    cli_parser.add_option("ip", "port", "The TCP port used for communication between clients and the master node in SDFS (default 1235)",
+        [&sdfs_master_port] (std::string str) {
+            try {
+                sdfs_master_port = std::stoi(str);
+                return true;
+            } catch (...) {
+                return false;
+            }
+    });
+    cli_parser.add_required_option("d", "dir", "The empty directory to store any files in, ending with a /", [&dir] (std::string str) {
+        if (str[str.length() - 1] != '/') {
+            return false;
+        }
+        dir = str;
+        return true;
+    });
+    cli_parser.add_required_option("sd", "sdfs_subdir", "The name of the subdirectory to store SDFS files in", &sdfs_subdir);
+
+    std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
+        if (str == "OFF") {
+            log_level = logger::log_level::level_off;
+        } else if (str == "INFO") {
+            log_level = logger::log_level::level_info;
+        } else if (str == "DEBUG") {
+            log_level = logger::log_level::level_debug;
+        } else if (str == "TRACE") {
+            log_level = logger::log_level::level_trace;
+        } else {
+            return false;
+        }
+        return true;
+    };
+    cli_parser.add_option("l", "log_level", "The logging level to use: OFF, INFO, DEBUG, or TRACE (default: OFF)", log_level_parser);
+
+    cli_command *test_parser = cli_parser.add_subcommand("test");
+    test_parser->add_option("p", "prefix", "The prefix of the tests to run. By default all tests will be run", &test_prefix);
+    test_parser->add_option("l", "log_level", "The logging level to use: OFF, INFO, DEBUG, or TRACE (default OFF)", log_level_parser);
+
+    // Run CLI parser and exit on failure
+    if (!cli_parser.parse("sdfs", argc, argv)) {
         return 1;
     }
 
-    // logger, udp interfaces, and mem list for heartbeater
-    logger *lg_hb;// = new logger("", "heartbeater", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
-    udp_client_intf *udp_client_inst = new udp_client(lg_hb);
-    udp_server_intf *udp_server_inst = new udp_server(lg_hb);
-    member_list *mem_list = new member_list(local_hostname, lg_hb);
-
-    heartbeater_intf *hb;
-    if (introducer == "none") {
-        hb = new heartbeater<true>(mem_list, lg_hb, udp_client_inst, udp_server_inst, local_hostname, port);
-    } else {
-        hb = new heartbeater<false>(mem_list, lg_hb, udp_client_inst, udp_server_inst, local_hostname, port);
+    if (test_parser->was_invoked()) {
+        testing::run_tests(test_prefix, log_level, log_level != logger::log_level::level_off);
+        return 0;
     }
 
-    logger *lg_el;// = new logger("election", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
-    udp_server_intf *election_udp_server_inst = new udp_server(lg_el);
-    election *el = new election(hb, lg_el, udp_client_inst, election_udp_server_inst, el_port);
+    if (!test_parser->was_invoked()) {
+        environment env(false);
+        configuration *config = env.get<configuration>();
+        config->set_hostname(local_hostname);
+        config->set_first_node(is_first_node);
+        config->set_hb_port(hb_port);
+        config->set_election_port(el_port);
+        config->set_sdfs_internal_port(sdfs_internal_port);
+        config->set_sdfs_master_port(sdfs_master_port);
+        config->set_dir(dir);
+        config->set_sdfs_subdir(sdfs_subdir);
 
-    el->start();
-    hb->start();
+        env.get<logger_factory>()->configure(log_level);
 
-    // tcp client and server
-    // server is going to run on port 1237
-    tcp_client client = tcp_client();
-    tcp_server server = tcp_server();
-    server.setup_server(1237);
+        // Start up SDFS services
 
-    logger *lg_c;// = new logger("", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
-    sdfs_client *sdfsc = new sdfs_client(1237, client, lg_c, el, hb);
-
-    logger *lg_s;// = new logger("sdfs_server.log", "", verbose ? logger::log_level::level_trace : logger::log_level::level_info);
-    sdfs_server *sdfss = new sdfs_server(local_hostname, client, server, sdfsc, lg_s, hb, el);
-
-    if (introducer != "none")
-        hb->join_group(introducer);
-
-    sdfss->start();
-    sdfsc->start();
-
-    /*
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
     }
-    */
+
     return 0;
 }
