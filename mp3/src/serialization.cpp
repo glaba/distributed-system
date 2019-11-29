@@ -11,9 +11,9 @@ void serializer::add_field(field f) {
     fields.push_back(f);
 }
 
-unique_ptr<char[]> serializer::serialize(unsigned &length) {
+std::string serializer::serialize() {
     // First, compute the length
-    length = 0;
+    unsigned length = 0;
     for (field f : fields) {
         if (std::holds_alternative<uint32_t>(f)) {
             length += sizeof(uint32_t);
@@ -48,7 +48,7 @@ unique_ptr<char[]> serializer::serialize(unsigned &length) {
 
     assert(pos == length && "Position does not match length of buffer and memory corruption may have occurred!");
 
-    return buf;
+    return std::string(buf.get(), length);
 }
 
 void serializer::write_uint32_to_char_buf(uint32_t n, char *buf) {

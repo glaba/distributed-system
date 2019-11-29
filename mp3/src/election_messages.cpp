@@ -57,11 +57,10 @@ election_message::election_message(char *buf_, unsigned length_) {
     }
 }
 
-// Serializes the message and returns a buffer containing the message, along with the length
-unique_ptr<char[]> election_message::serialize(unsigned &length) {
+// Serializes the message and returns a string containing the message
+std::string election_message::serialize() {
     if (type == msg_type::empty) {
-        length = 0;
-        return nullptr;
+        return "";
     }
 
     serializer ser;
@@ -84,5 +83,5 @@ unique_ptr<char[]> election_message::serialize(unsigned &length) {
         default: assert(false && "Memory corruption caused msg_type to be invalid");
     }
 
-    return ser.serialize(length);
+    return ser.serialize();
 }

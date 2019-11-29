@@ -31,12 +31,26 @@ public:
     int get_election_port() {
         return election_port;
     }
+    void set_sdfs_port(int port_) {
+        sdfs_port = port_;
+    }
+    int get_sdfs_port() {
+        return sdfs_port;
+    }
+    void set_sdfs_dir(std::string dir) {
+        sdfs_dir = dir;
+    }
+    std::string get_sdfs_dir() {
+        return sdfs_dir;
+    }
 
 private:
     std::string hostname;
     bool first_node;
     int hb_port;
     int election_port;
+    int sdfs_port;
+    std::string sdfs_dir;
 
     configuration_impl() {}
 };

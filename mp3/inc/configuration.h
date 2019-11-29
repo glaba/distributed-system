@@ -8,9 +8,13 @@ public:
     virtual void set_first_node(bool first_node) = 0;
     virtual void set_hb_port(int port) = 0;
     virtual void set_election_port(int port) = 0;
+    virtual void set_sdfs_port(int port) = 0;
+    virtual void set_sdfs_dir(std::string dir) = 0;
 
     virtual std::string get_hostname() = 0;
     virtual bool is_first_node() = 0;
     virtual int get_hb_port() = 0;
     virtual int get_election_port() = 0;
+    virtual int get_sdfs_port() = 0;
+    virtual std::string get_sdfs_dir() = 0;
 };

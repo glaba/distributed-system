@@ -41,7 +41,7 @@ testing::register_test mock_udp("mock_udp.mock_udp",
         for (char i = 0; i < 20; i++) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-            h1_client->send("h2", 1234, const_cast<char*>(std::string(1, i).c_str()), 1);
+            h1_client->send("h2", 1234, std::string(1, i));
         }
     });
 
@@ -75,7 +75,7 @@ testing::register_test mock_udp("mock_udp.mock_udp",
             // Listen for messages and send back 2 * the result
             if (h2_server->recv(buf, 1024) > 0) {
                 char val = buf[0];
-                h2_client->send("h1", 1234, const_cast<char*>(std::string(1, val * 2).c_str()), 1);
+                h2_client->send("h1", 1234, std::string(1, val * 2));
             }
 
             if (end) break;

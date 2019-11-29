@@ -80,8 +80,8 @@ public:
         }
     }
 
-    // Serializes the message and returns a buffer containing the message, along with the length
-    std::unique_ptr<char[]> serialize(unsigned &length);
+    // Serializes the message and returns a string containing the message
+    std::string serialize();
 
 private:
     uint32_t id; // The ID of the node that produced the message

@@ -62,7 +62,7 @@ private:
     class mock_tcp_server : public tcp_server {
     public:
         mock_tcp_server(mock_udp_factory *factory_, string hostname_)
-            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)) {}
+            : factory(factory_), hostname(hostname_) {}
         ~mock_tcp_server();
 
         void setup_server(int port_);
@@ -106,7 +106,7 @@ private:
             : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)) {}
         ~mock_tcp_client();
 
-        int setup_connection(std::string host, int port_);
+        int setup_connection(std::string host, int port);
         std::string read_from_server(int socket);
         ssize_t write_to_server(int socket, std::string data);
         void close_connection(int socket);
@@ -119,7 +119,6 @@ private:
         std::unordered_map<uint32_t, std::unique_ptr<udp_client>> clients;
         string hostname;
         uint32_t id;
-        int port;
 
         // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue
         std::unordered_map<uint32_t, std::thread> msg_threads;
@@ -134,6 +133,8 @@ private:
 
         // A map of server IDs to server hostnames
         std::unordered_map<uint32_t, std::string> server_hostnames;
+        // A map of server IDs to server ports
+        std::unordered_map<uint32_t, int> server_ports;
     };
 
     environment &env;

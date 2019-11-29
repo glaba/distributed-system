@@ -50,7 +50,7 @@ private:
         // Reads a packet (non-blocking) after notify_waiting was called and flag was set to true
         int recv(string hostname, char *buf, unsigned length);
         // Sends a packet to the specified destination
-        void send(string dest, char *msg, unsigned length);
+        void send(string dest, const char *msg, unsigned length);
         // Clears the message queue for this host and notifies with no message if recv is being called
         void stop_server(string hostname);
     private:
@@ -69,7 +69,7 @@ private:
         void start_server(string hostname, int port);
         void notify_waiting(string hostname, int port, volatile bool *flag);
         int recv(string hostname, int port, char *buf, unsigned length);
-        void send(string dest, int port, char *msg, unsigned length);
+        void send(string dest, int port, const char *msg, unsigned length);
         void stop_server(string hostname, int port);
     private:
         std::mutex coordinators_mutex;
@@ -88,7 +88,7 @@ private:
               coordinator(coordinator_), lg(std::move(lg_)) {}
 
         // Sends a UDP packet to the specified destination
-        void send(string host, int port, char *msg, unsigned length);
+        void send(string host, int port, std::string msg);
     private:
         bool show_packets;
         double drop_probability;

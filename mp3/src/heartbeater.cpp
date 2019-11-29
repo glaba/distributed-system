@@ -97,22 +97,17 @@ void heartbeater_impl::client_thread_function() {
             std::vector<uint32_t> left_nodes = left_nodes_queue.pop();
             std::vector<member> joined_nodes = joined_nodes_queue.pop();
 
-            unique_ptr<char[]> msg_buf;
-            unsigned msg_buf_len;
-
             // Create the message to send out
             hb_message msg(our_id);
             msg.set_failed_nodes(failed_nodes);
             msg.set_left_nodes(left_nodes);
             msg.set_joined_nodes(joined_nodes);
-            msg_buf = msg.serialize(msg_buf_len);
-            assert(msg_buf_len > 0);
+            std::string msg_str = msg.serialize();
+            assert(msg_str.length() > 0);
 
             // Send the message out to all the neighbors
             for (auto mem : mem_list.get_neighbors()) {
-                if (msg_buf != nullptr) {
-                    client->send(mem.hostname, config->get_hb_port(), msg_buf.get(), msg_buf_len);
-                }
+                client->send(mem.hostname, config->get_hb_port(), msg_str);
             }
 
             // Send the introduction messages
@@ -153,21 +148,18 @@ void heartbeater_impl::check_for_failed_neighbors() {
 
 // Sends pending messages to newly joined nodes
 void heartbeater_impl::send_introducer_msg() {
-    unique_ptr<char[]> msg_buf;
-    unsigned msg_buf_len;
-
     std::vector<member> all_members = mem_list.get_members();
     hb_message intro_msg(our_id);
     intro_msg.set_joined_nodes(all_members);
-    msg_buf = intro_msg.serialize(msg_buf_len);
-    assert(msg_buf_len > 0);
+    std::string msg_str = intro_msg.serialize();
+    assert(msg_str.length() > 0);
 
     auto new_nodes = new_nodes_queue.pop();
     auto updated = new_nodes_queue.peek();
 
     for (auto node : new_nodes) {
         lg->debug("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
-        client->send(node.hostname, config->get_hb_port(), msg_buf.get(), msg_buf_len);
+        client->send(node.hostname, config->get_hb_port(), msg_str);
 
         // If this node isn't in new_nodes_queue anymore, we should now add it to joined_nodes_queue
         // so that it can be added to other nodes' membership lists
@@ -198,16 +190,13 @@ void heartbeater_impl::join_group(std::string node) {
     us.id = our_id;
     us.hostname = config->get_hostname();
 
-    unique_ptr<char[]> buf;
-    unsigned buf_len;
-
     hb_message join_req(our_id);
     join_req.make_join_request(us);
-    buf = join_req.serialize(buf_len);
-    assert(buf_len > 0);
+    std::string msg_str = join_req.serialize();
+    assert(msg_str.length() > 0);
 
     for (int i = 0; i < message_redundancy; i++) {
-        client->send(node, config->get_hb_port(), buf.get(), buf_len);
+        client->send(node, config->get_hb_port(), msg_str);
     }
 }
 

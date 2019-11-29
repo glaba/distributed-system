@@ -53,12 +53,12 @@ int udp_server_impl::create_udp_server(int port) {
 }
 
 // Sends a UDP packet to the specified destination
-void udp_client_impl::send(string host, int port, char *msg, unsigned length) {
+void udp_client_impl::send(string host, int port, std::string msg) {
     udp_client_info conn = create_udp_client(host, std::to_string(port));
     if (conn.client_socket == -1) return;
 
     // Send the message and close the connection
-    sendto(conn.client_socket, msg, length, 0, &conn.addr, sizeof(conn.addr));
+    sendto(conn.client_socket, msg.c_str(), msg.length(), 0, &conn.addr, sizeof(conn.addr));
     close(conn.client_socket);
 }
 

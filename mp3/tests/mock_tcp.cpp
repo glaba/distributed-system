@@ -61,6 +61,122 @@ testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
     assert(client_complete && server_complete);
 });
 
+testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_server_ports",
+    "Tests passing messages between one TCP client and multiple TCP server on the same machine with different ports",
+    4, [] (logger::log_level level)
+{
+    const unsigned NUM_SERVERS = 5;
+
+    environment_group env_group(true);
+    unique_ptr<environment> client_env = env_group.get_env();
+    unique_ptr<environment> server_env = env_group.get_env();
+    client_env->get<configuration>()->set_hostname("client");
+    server_env->get<configuration>()->set_hostname("server");
+    client_env->get<logger_factory>()->configure(level);
+    server_env->get<logger_factory>()->configure(level);
+
+    unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
+    std::vector<unique_ptr<tcp_server>> servers;
+    for (unsigned i = 0; i < NUM_SERVERS; i++) {
+        servers.push_back(server_env->get<tcp_factory>()->get_tcp_server());
+    }
+
+    // Start the servers in their own thread
+    std::vector<bool> servers_complete;
+    for (unsigned i = 0; i < NUM_SERVERS; i++) {
+        servers_complete.push_back(false);
+        std::thread server_thread([&servers, &servers_complete, i] {
+            servers[i]->setup_server(i + 1); // A port of 0 is invalid
+
+            int fd = servers[i]->accept_connection();
+
+            for (int j = 0; j < 10; j++) {
+                std::string msg = servers[i]->read_from_client(fd);
+                assert(msg == std::to_string(j));
+                servers[i]->write_to_client(fd, std::to_string(j));
+            }
+            servers_complete[i] = true;
+        });
+        server_thread.detach();
+    }
+
+    // Wait a little bit for the servers to get setup
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    std::vector<bool> clients_complete;
+    for (unsigned i = 0; i < NUM_SERVERS; i++) {
+        clients_complete.push_back(false);
+        std::thread client_thread([&client, &clients_complete, i] {
+            int fd = client->setup_connection("server", i + 1);
+            for (int j = 0; j < 10; j++) {
+                client->write_to_server(fd, std::to_string(j));
+                std::string msg = client->read_from_server(fd);
+                assert(msg == std::to_string(j));
+
+                // Add a delay to ensure that messages are interleaved
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            clients_complete[i] = true;
+        });
+        client_thread.detach();
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    for (unsigned i = 0; i < NUM_SERVERS; i++) {
+        assert(clients_complete[i]);
+        assert(servers_complete[i]);
+    }
+});
+
+testing::register_test server_after_client("mock_tcp.server_after_client",
+    "Tests that even if a server calls accept_connection after a client calls setup_connection, it works",
+    3, [] (logger::log_level level)
+{
+    environment_group env_group(true);
+    unique_ptr<environment> client_env = env_group.get_env();
+    unique_ptr<environment> server_env = env_group.get_env();
+    client_env->get<configuration>()->set_hostname("client");
+    server_env->get<configuration>()->set_hostname("server");
+    client_env->get<logger_factory>()->configure(level);
+    server_env->get<logger_factory>()->configure(level);
+
+    unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
+    unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
+
+    // Start the server in its own thread
+    bool server_complete = false;
+    std::thread server_thread([&server, &server_complete] {
+        server->setup_server(1234);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+        int fd = server->accept_connection();
+
+        for (int i = 0; i < 10; i++) {
+            std::string msg = server->read_from_client(fd);
+            assert(msg == std::to_string(i));
+            server->write_to_client(fd, std::to_string(i));
+        }
+        server_complete = true;
+    });
+    server_thread.detach();
+
+    bool client_complete = false;
+    std::thread client_thread([&client, &client_complete] {
+        int fd = client->setup_connection("server", 1234);
+        for (int i = 0; i < 10; i++) {
+            client->write_to_server(fd, std::to_string(i));
+            std::string msg = client->read_from_server(fd);
+            assert(msg == std::to_string(i));
+        }
+        client_complete = true;
+    });
+    client_thread.detach();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    assert(client_complete && server_complete);
+});
+
 testing::register_test closing_connection("mock_tcp.closing_connection",
     "Tests that closing connections behaves as expected",
     9, [] (logger::log_level level)

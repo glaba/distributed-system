@@ -18,7 +18,7 @@ class udp_client {
 public:
     virtual ~udp_client() {}
     // Sends a UDP packet to the specified destination
-    virtual void send(std::string host, int port, char *msg, unsigned length) = 0;
+    virtual void send(std::string host, int port, std::string msg) = 0;
 };
 
 class udp_factory {

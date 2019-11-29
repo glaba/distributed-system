@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     // Arguments for command: member ...
     std::string local_hostname;
     bool is_first_node;
-    uint16_t port;
+    int port;
     logger::log_level log_level = logger::log_level::level_off;
     // Arguments for subcommand: member test ...
     std::string test_prefix;
@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     }
 
     if (test_parser->was_invoked()) {
-        testing::run_tests(test_prefix, log_level, true);
+        testing::run_tests(test_prefix, log_level, log_level != logger::log_level::level_off);
         return 0;
     }
 

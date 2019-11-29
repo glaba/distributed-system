@@ -109,7 +109,7 @@ int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf
 }
 
 // Sends a packet to the specified destination
-void mock_udp_factory::mock_udp_port_coordinator::send(string dest, char *msg, unsigned length) {
+void mock_udp_factory::mock_udp_port_coordinator::send(string dest, const char *msg, unsigned length) {
     std::lock_guard<std::mutex> guard(msg_mutex);
     assert(msg != nullptr);
 
@@ -176,7 +176,7 @@ int mock_udp_factory::mock_udp_coordinator::recv(string hostname, int port, char
 }
 
 // A wrapper that multiplexes the send call to the correct mock_udp_port_coordinator
-void mock_udp_factory::mock_udp_coordinator::send(string dest, int port, char *msg, unsigned length) {
+void mock_udp_factory::mock_udp_coordinator::send(string dest, int port, const char *msg, unsigned length) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         // There is no one listening
@@ -197,24 +197,24 @@ void mock_udp_factory::mock_udp_coordinator::stop_server(string hostname, int po
 }
 
 // Sends a UDP packet to the specified destination
-void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, unsigned length) {
+void mock_udp_factory::mock_udp_client::send(string dest, int port, std::string msg) {
     if (static_cast<double>(std::rand() % RAND_MAX) / RAND_MAX >= drop_probability) {
         if (show_packets) {
-            std::string log_msg = "[Delivered " +
-                std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
+            std::string log_msg = "[Delivered on port " +
+                std::to_string(port) + "] " +
                 hostname + " -> " + dest + " - ";
-            for (unsigned i = 0; i < length; i++) {
+            for (unsigned i = 0; i < msg.length(); i++) {
                 log_msg += std::to_string(msg[i]) + " ";
             }
             lg->info(log_msg);
         }
-        coordinator->send(dest, port, msg, length);
+        coordinator->send(dest, port, msg.c_str(), msg.length());
     }
     else if (show_packets) {
-        std::string log_msg = "[Dropped " +
-            std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
+        std::string log_msg = "[Dropped on port " +
+            std::to_string(port) + "] " +
             hostname + " -> " + dest + " - ";
-        for (unsigned i = 0; i < length; i++) {
+        for (unsigned i = 0; i < msg.length(); i++) {
             log_msg += std::to_string(msg[i]) + " ";
         }
         lg->info(log_msg);

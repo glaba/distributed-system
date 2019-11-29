@@ -13,7 +13,7 @@ public:
     using field = std::variant<uint32_t, std::string>;
 
     void add_field(field f);
-    std::unique_ptr<char[]> serialize(unsigned &length);
+    std::string serialize();
 
     static void write_uint32_to_char_buf(uint32_t n, char *buf);
 private:

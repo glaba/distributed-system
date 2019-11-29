@@ -54,8 +54,8 @@ hb_message::hb_message(char *buf_, unsigned length_) {
     }
 }
 
-// Serializes the message and returns a buffer containing the message, along with the length
-unique_ptr<char[]> hb_message::serialize(unsigned &length) {
+// Serializes the message and returns a string containing the message
+std::string hb_message::serialize() {
     serializer ser;
 
     ser.add_field(id);
@@ -85,8 +85,7 @@ unique_ptr<char[]> hb_message::serialize(unsigned &length) {
         }
     }
 
-
-    return ser.serialize(length);
+    return ser.serialize();
 }
 
 // Makes this message a join request, as opposed to a regular heartbeat message

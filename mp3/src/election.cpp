@@ -502,10 +502,9 @@ void election_impl::client_thread_function() {
                 std::string dest = std::get<0>(m);
                 election_message msg = std::get<1>(m);
 
-                unsigned length;
-                unique_ptr<char[]> buf = msg.serialize(length);
+                std::string msg_str = msg.serialize();
 
-                client->send(dest, config->get_election_port(), buf.get(), length);
+                client->send(dest, config->get_election_port(), msg_str);
             }
         }
 

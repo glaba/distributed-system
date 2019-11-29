@@ -39,8 +39,8 @@ public:
     // Gets the list of nodes that joined
     std::vector<member> get_joined_nodes();
 
-    // Serializes the message and returns a buffer containing the message, along with the length
-    std::unique_ptr<char[]> serialize(unsigned &length);
+    // Serializes the message and returns a string containing the message
+    std::string serialize();
 
 private:
     const int JOIN_REQUEST_ID = 0;

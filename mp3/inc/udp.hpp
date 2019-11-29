@@ -46,7 +46,7 @@ public:
     udp_client_impl(environment &env) : lg(env.get<logger_factory>()->get_logger("udp_client")) {}
     ~udp_client_impl() {}
 
-    void send(string host, int port, char *msg, unsigned length);
+    void send(string host, int port, std::string msg);
 private:
     // Creates a UDP connection to a given host and port.
     // Returns a socket fd to the host, otherwise -1 on failure.
