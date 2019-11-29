@@ -1,129 +1,81 @@
-#include "member.h"
 #include "heartbeater.h"
 #include "udp.h"
 #include "logging.h"
 #include "member_list.h"
 #include "test.h"
+#include "cli.h"
+#include "environment.h"
 
 #include <chrono>
 #include <thread>
+#include <memory>
 
-bool testing = false;
-
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
-        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer);
+using std::unique_ptr;
+using std::make_unique;
 
 int main(int argc, char **argv) {
-    std::string introducer = "";
-    bool is_introducer = false;
-    std::string local_hostname = "";
-    uint16_t port = DEFAULT_PORT;
-    bool testing = false;
-    bool verbose = false;
+    // Arguments for command: member ...
+    std::string local_hostname;
+    bool is_first_node;
+    uint16_t port;
+    logger::log_level log_level = logger::log_level::level_off;
+    // Arguments for subcommand: member test ...
+    std::string test_prefix;
 
-    if (process_params(argc, argv, &introducer, &local_hostname, &port, &testing, &verbose, &is_introducer)) {
+    // Setup CLI arguments and options
+    cli_parser.add_required_option("h", "hostname", "The hostname of this node that other nodes can use", &local_hostname);
+    cli_parser.add_option("f", "Indicates whether or not we are the first node in the group", &is_first_node);
+    cli_parser.add_required_option("p", "port", "The UDP port to use for heartbeating", [&port] (std::string str) {
+        try {
+            port = std::stoi(str);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    });
+    std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
+        if (str == "OFF") {
+            log_level = logger::log_level::level_off;
+        } else if (str == "INFO") {
+            log_level = logger::log_level::level_info;
+        } else if (str == "DEBUG") {
+            log_level = logger::log_level::level_debug;
+        } else if (str == "TRACE") {
+            log_level = logger::log_level::level_trace;
+        } else {
+            return false;
+        }
+        return true;
+    };
+    cli_parser.add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
+
+    cli_command *test_parser = cli_parser.add_subcommand("test");
+    test_parser->add_option("p", "prefix", "The prefix of the tests to run. By default all tests will be run", &test_prefix);
+    test_parser->add_option("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", log_level_parser);
+
+    // Run CLI parser and exit on failure
+    if (!cli_parser.parse("member", argc, argv)) {
         return 1;
     }
 
-    logger *lg = new logger("", verbose);
-
-    if (testing) {
-        int retval = run_tests(lg);
-        delete lg;
-        return retval;
-    }
-
-    udp_client_intf *udp_client_inst = new udp_client(lg);
-    udp_server_intf *udp_server_inst = new udp_server(lg);
-    member_list *mem_list = new member_list(local_hostname, lg);
-
-    heartbeater_intf *hb;
-    if (introducer == "none") {
-        hb = new heartbeater<true>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
-    } else {
-        hb = new heartbeater<false>(mem_list, lg, udp_client_inst, udp_server_inst, local_hostname, port);
-    }
-
-    hb->start();
-
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-
-    return 0;
-}
-
-void print_help() {
-    std::cout << "Usage: member [test | -i <introducer> -h <hostname> -p <port>] -v" << std::endl << std::endl;
-    std::cout << "Option\tMeaning" << std::endl;
-    std::cout << " -h\tThe hostname of this machine that other members can use" << std::endl;
-    std::cout << " -i\tIntroducer hostname or \"none\" if this is the first introducer" << std::endl;
-    std::cout << " -n\tThis machine is an introducer" << std::endl;
-    std::cout << " -p\tThe port to use" << std::endl;
-    std::cout << " -v\tEnable verbose logging" << std::endl;
-}
-
-int print_invalid() {
-    std::cout << "Invalid arguments" << std::endl;
-    print_help();
-    return 1;
-}
-
-int process_params(int argc, char **argv, std::string *introducer, std::string *local_hostname,
-        uint16_t *port, bool *testing, bool *verbose, bool *is_introducer) {
-    if (argc == 1)
-        return print_invalid();
-
-    if (std::string(argv[1]) == "test") {
-        *testing = true;
-
-        if (argc >= 3 && std::string(argv[2]) == "-v")
-            *verbose = true;
-
+    if (test_parser->was_invoked()) {
+        testing::run_tests(test_prefix, log_level, true);
         return 0;
     }
 
-    for (int i = 1; i < argc; i++) {
-        // The introducer
-        if (std::string(argv[i]) == "-i") {
-            if (i + 1 < argc) {
-                *introducer = std::string(argv[i + 1]);
-            } else return print_invalid();
-            i++;
-        // The port to use
-        } else if (std::string(argv[i]) == "-p") {
-            // Parse the port number from the next argument and fail if it's bad
-            if (i + 1 < argc) {
-                try {
-                    *port = std::stoi(argv[i + 1]);
-                } catch (...) {
-                    std::cout << "Invalid port number" << std::endl;
-                    return print_invalid();
-                }
-            } else return print_invalid();
-            i++;
-        // The hostname
-        } else if (std::string(argv[i]) == "-h") {
-            if (i + 1 < argc) {
-                *local_hostname = std::string(argv[i + 1]);
-            }
-            i++;
-        // Whether or not to use verbose logging
-        } else if (std::string(argv[i]) == "-v") {
-            *verbose = true;
-        } else if (std::string(argv[i]) == "-n") {
-            *is_introducer = true;
-        } else return print_invalid();
-    }
+    if (!test_parser->was_invoked()) {
+        environment env(false);
+        env.get<configuration>()->set_hostname(local_hostname);
+        env.get<configuration>()->set_hb_port(port);
+        env.get<configuration>()->set_first_node(is_first_node);
+        env.get<logger_factory>()->configure(log_level);
 
-    if (*introducer == "") {
-        std::cout << "Option -i required" << std::endl;
-        return 1;
-    }
+        // Start up the heartbeater
+        env.get<heartbeater>()->start();
 
-    if (*local_hostname == "") {
-        std::cout << "Option -h required" << std::endl;
-        return 1;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
     }
 
     return 0;

@@ -15,6 +15,9 @@ public:
     // Returns a vector of all the items in the queue without decrementing the redundancy
     std::vector<T> peek();
 
+    // Removes all the elements from the queue
+    void clear();
+
     // Returns the number of elements in the queue
     unsigned size() {
         return data.size();

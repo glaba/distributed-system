@@ -1,12 +1,15 @@
 #pragma once
 
 #include "logging.h"
+#include "environment.h"
+#include "configuration.h"
 
 #include <string>
 #include <vector>
 #include <list>
 #include <chrono>
 #include <ctime>
+#include <memory>
 
 using namespace std::chrono;
 
@@ -22,8 +25,9 @@ typedef struct member {
 class member_list {
 public:
     // Initialize the member list with the local hostname
-    member_list(std::string local_hostname_, logger *lg_) :
-        local_hostname(local_hostname_), lg(lg_) {}
+    member_list(environment &env) :
+        local_hostname(env.get<configuration>()->get_hostname()),
+        lg(env.get<logger_factory>()->get_logger("member_list")) {}
 
     ~member_list() {
         node *next;
@@ -47,7 +51,7 @@ public:
     uint32_t num_members();
     // Whether or not we are in the member list
     bool joined_list();
-    // Gets a list of all the members (to be used by introducer)
+    // Gets a list of all the members
     std::vector<member> get_members();
     // Gets the successor to the node with the given ID
     // Returns a member with ID 0 if the given ID was not found
@@ -60,6 +64,6 @@ private:
 
     node *head = nullptr;
 
-    std::string local_hostname = "";
-    logger *lg;
+    std::string local_hostname;
+    std::unique_ptr<logger> lg;
 };

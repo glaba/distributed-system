@@ -1,38 +1,25 @@
 #pragma once
 
+#include <memory>
 #include <string>
-#include <cstdio>
-#include <fstream>
-#include <mutex>
 
 class logger {
 public:
-    logger(std::string log_file_path_, std::string prefix_, bool verbose_)
-        : use_stdout(false), log_file_path((log_file_path_ == "") ? "/dev/null" : log_file_path_),
-          prefix(prefix_), verbose(verbose_), log_stream(log_file_path) {}
+    enum log_level {
+        level_off, level_info, level_debug, level_trace
+    };
 
-    logger(std::string prefix_, bool verbose_)
-        : use_stdout(true), prefix(prefix_), verbose(verbose_) {}
+    virtual ~logger() {}
 
-    // Adds a log line to the log file
-    void log(std::string data);
-    // Adds a verbose log line to the log file if verbose logging is enabled
-    void log_v(std::string data);
+    virtual void info(std::string data) = 0;
+    virtual void debug(std::string data) = 0;
+    virtual void trace(std::string data) = 0;
+};
 
-    bool using_stdout() {
-        return use_stdout;
-    }
-
-    bool is_verbose() {
-        return verbose;
-    }
-private:
-    bool use_stdout;
-    std::string log_file_path;
-    std::string prefix;
-    bool verbose;
-
-    static std::mutex log_mutex;
-
-    std::ofstream log_stream;
+class logger_factory {
+public:
+    virtual void configure(logger::log_level level_, std::string log_file_path_) = 0;
+    virtual void configure(logger::log_level level_) = 0;
+    virtual void include_hostname() = 0;
+    virtual std::unique_ptr<logger> get_logger(std::string prefix) = 0;
 };

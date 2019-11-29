@@ -20,7 +20,7 @@
 
 class sdfs_client {
 public:
-    sdfs_client(std::string protocol_port, tcp_client client, logger *lg, election *el, heartbeater_intf *hb) :
+    sdfs_client(int protocol_port, tcp_client client, logger *lg, election *el, heartbeater_intf *hb) :
         protocol_port(protocol_port), client(client), lg(lg), el(el), hb(hb) {}
 
     void start();
@@ -85,7 +85,7 @@ private:
     std::string get_file_location(std::vector<std::string> members, std::string filename);
     std::vector<member> get_file_destinations(std::string filename);
 
-    std::string protocol_port;
+    int protocol_port;
 
     tcp_client client;
     logger *lg;

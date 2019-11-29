@@ -36,7 +36,7 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
     else
         prev->next = new_node;
 
-    lg->log("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
+    lg->debug("Added member at " + hostname + " with id " + std::to_string(id) + " at local time " +
         std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count())  + " to membership list");
 
     assert(num_members() - original_size == 1);
@@ -70,8 +70,8 @@ void member_list::remove_member(uint32_t id) {
             } else {
                 prev->next = cur->next;
             }
+            lg->debug("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
             delete cur;
-            lg->log("Removed member at " + cur->m.hostname + " from list with id " + std::to_string(id));
             break;
         }
 
@@ -124,7 +124,7 @@ std::vector<member> member_list::get_neighbors() {
 
     // Get the 2 predecessors
     node *prev_2[2] = {nullptr, nullptr};
-    node *us;
+    node *us = head;
     cur = head;
     while (cur != nullptr) {
         if (cur->m.hostname == local_hostname) {
@@ -199,7 +199,7 @@ bool member_list::joined_list() {
     return false;
 }
 
-// Gets a list of all the members (to be used by introducer)
+// Gets a list of all the members
 std::vector<member> member_list::get_members() {
     std::vector<member> list;
     for (node *cur = head; cur != nullptr; cur = cur->next) {

@@ -5,13 +5,48 @@
 #include <iostream>
 #include <cassert>
 #include <cstdlib>
+#include <chrono>
 
-udp_client_intf *mock_udp_factory::get_mock_udp_client(string hostname, bool show_packets, double drop_probability) {
-    return new mock_udp_client(hostname, show_packets, drop_probability, coordinator);
+using namespace std::chrono;
+using std::unique_ptr;
+using std::make_unique;
+
+unique_ptr<udp_client> mock_udp_factory::get_udp_client() {
+    return get_udp_client(config->get_hostname());
 }
 
-udp_server_intf *mock_udp_factory::get_mock_udp_server(string hostname) {
-    return new mock_udp_server(hostname, coordinator);
+unique_ptr<udp_server> mock_udp_factory::get_udp_server() {
+    return get_udp_server(config->get_hostname());
+}
+
+std::unique_ptr<service_state> mock_udp_factory::init_state() {
+    mock_udp_state *state = new mock_udp_state();
+    state->coordinator = std::make_unique<mock_udp_coordinator>();
+    return std::unique_ptr<service_state>(state);
+}
+
+void mock_udp_factory::reinitialize(environment &env_) {
+    env = &env_;
+    config = env->get<configuration>();
+}
+
+unique_ptr<udp_client> mock_udp_factory::get_udp_client(string hostname) {
+    mock_udp_coordinator *coordinator;
+    access_state([&coordinator] (service_state *state) {
+        coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
+    });
+
+    return make_unique<mock_udp_client>(hostname, show_packets, drop_probability,
+        coordinator, env->get<logger_factory>()->get_logger("mock_udp_client"));
+}
+
+unique_ptr<udp_server> mock_udp_factory::get_udp_server(string hostname) {
+    mock_udp_coordinator *coordinator;
+    access_state([&coordinator] (service_state *state) {
+        coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
+    });
+
+    return make_unique<mock_udp_server>(hostname, coordinator);
 }
 
 // Notifies the coordinator that the server is now started
@@ -22,7 +57,7 @@ void mock_udp_factory::mock_udp_port_coordinator::start_server(string hostname) 
         assert(false && "start_server has already been called");
     }
 
-    msg_queues[hostname] = std::queue<std::tuple<char*, unsigned>>();
+    msg_queues[hostname] = std::queue<std::tuple<unique_ptr<char[]>, unsigned>>();
     notify_flags[hostname] = nullptr;
 }
 
@@ -52,15 +87,14 @@ int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf
         assert(false && "recv should not be called before start_server");
     }
 
-    std::queue<std::tuple<char*, unsigned>> &messages = msg_queues[hostname];
+    std::queue<std::tuple<unique_ptr<char[]>, unsigned>> &messages = msg_queues[hostname];
     if (messages.size() == 0) {
         return 0;
     }
 
-    std::tuple<char*, unsigned> msg = messages.front();
-    messages.pop();
+    std::tuple<unique_ptr<char[]>, unsigned> &msg = messages.front();
 
-    char *msg_buf = std::get<0>(msg);
+    char *msg_buf = std::get<0>(msg).get();
     unsigned actual_length = std::get<1>(msg);
     assert(msg_buf != nullptr);
 
@@ -69,7 +103,7 @@ int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf
         buf[i] = msg_buf[i];
     }
 
-    delete[] msg_buf;
+    messages.pop();
 
     return static_cast<int>(i);
 }
@@ -84,12 +118,12 @@ void mock_udp_factory::mock_udp_port_coordinator::send(string dest, char *msg, u
         return;
     }
 
-    char *msg_buf = new char[length];
+    unique_ptr<char[]> msg_buf = make_unique<char[]>(length);
     for (unsigned i = 0; i < length; i++) {
         msg_buf[i] = msg[i];
     }
 
-    msg_queues[dest].push(std::make_tuple(msg_buf, length));
+    msg_queues[dest].push(std::make_tuple(std::move(msg_buf), length));
 
     if (notify_flags[dest] != nullptr) {
         *notify_flags[dest] = true;
@@ -102,16 +136,10 @@ void mock_udp_factory::mock_udp_port_coordinator::stop_server(string hostname) {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
     if (msg_queues.find(hostname) == msg_queues.end()) {
-        assert(false && "Cannot call stop_server before stop_server is called");
+        assert(false && "Cannot call stop_server before start_server is called");
     }
 
-    std::queue<std::tuple<char*, unsigned>> &messages = msg_queues[hostname];
-
-    // Clear the queue and free allocated memory
-    while (messages.size() > 0) {
-        delete[] std::get<0>(messages.front());
-        messages.pop();
-    }
+    // Clear the queue, which should automatically free all memory
     msg_queues.erase(hostname);
 
     // The recv wrapper in mock_udp_server should automatically return at this point
@@ -121,7 +149,7 @@ void mock_udp_factory::mock_udp_port_coordinator::stop_server(string hostname) {
 void mock_udp_factory::mock_udp_coordinator::start_server(string hostname, int port) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
-        coordinators[port] = new mock_udp_port_coordinator();
+        coordinators[port] = std::make_unique<mock_udp_port_coordinator>();
     }
 
     coordinators[port]->start_server(hostname);
@@ -176,9 +204,9 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
                 std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
                 hostname + " -> " + dest + " - ";
             for (unsigned i = 0; i < length; i++) {
-                log_msg += std::to_string(log_msg[i]) + " ";
+                log_msg += std::to_string(msg[i]) + " ";
             }
-            lg->log_v(log_msg);
+            lg->info(log_msg);
         }
         coordinator->send(dest, port, msg, length);
     }
@@ -187,9 +215,9 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, char *msg, u
             std::to_string(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()) + "] " +
             hostname + " -> " + dest + " - ";
         for (unsigned i = 0; i < length; i++) {
-            log_msg += std::to_string(log_msg[i]) + " ";
+            log_msg += std::to_string(msg[i]) + " ";
         }
-        lg->log_v(log_msg);
+        lg->info(log_msg);
     }
 }
 
@@ -238,3 +266,5 @@ int mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) {
         return coordinator->recv(hostname, port, buf, length);
     }
 }
+
+register_test_service<udp_factory, mock_udp_factory> register_mock_udp_factory;

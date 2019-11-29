@@ -92,7 +92,7 @@ int sdfs_server::put_operation(int client, std::string filename) {
     // send the client the success message
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
 
-    lg->log("successful completion of put request for file " + filename);
+    lg->info("successful completion of put request for file " + filename);
     return 0;
 }
 
@@ -104,7 +104,7 @@ int sdfs_server::get_operation(int client, std::string filename) {
     // #define SDFS_DIR "~/.sdfs"
     // if (sdfs_server::send_file_over_socket(client, filename) == -1) return -1;
 
-    lg->log("successful completion of get request for file " + filename);
+    lg->info("successful completion of get request for file " + filename);
     return 0;
 }
 
@@ -120,7 +120,7 @@ int sdfs_server::delete_operation(int client, std::string filename) {
     // send success reponse
     if (server.write_to_client(client, SDFS_SUCCESS_MSG) == -1) return -1;
 
-    lg->log("successful completion of delete request for file " + filename);
+    lg->info("successful completion of delete request for file " + filename);
     return 0;
 }
 
@@ -137,7 +137,7 @@ int sdfs_server::ls_operation(int client, std::string filename) {
         if (server.write_to_client(client, SDFS_FAILURE_MSG) == -1) return -1;
     }
 
-    lg->log("successful completion of ls request for file " + filename);
+    lg->info("successful completion of ls request for file " + filename);
     return 0;
 }
 

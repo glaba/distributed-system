@@ -186,7 +186,7 @@ std::string sdfs_client::ls_operation_wr(std::string hostname, std::string sdfs_
     // hostname refers to master hostname
     int socket;
     if ((socket = client.setup_connection(hostname, protocol_port)) == -1) return SDFS_FAILURE_MSG;
-    std::string put_mn_msg = "mn delete " + sdfs_filename;
+    std::string put_mn_msg = "mn ls " + sdfs_filename;
     if (client.write_to_server(socket, put_mn_msg) == -1) return SDFS_FAILURE_MSG;
 
     // get the mems and close the mn socket

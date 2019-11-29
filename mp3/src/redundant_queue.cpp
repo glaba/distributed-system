@@ -46,6 +46,12 @@ std::vector<T> redundant_queue<T>::peek() {
     return ret;
 }
 
+template <typename T>
+void redundant_queue<T>::clear() {
+    std::lock_guard<std::mutex> guard(data_mutex);
+    data.clear();
+}
+
 // Force the compiler to compile the required templates
 template class redundant_queue<uint32_t>;
 template class redundant_queue<member>;

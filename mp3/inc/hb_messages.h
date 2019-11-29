@@ -3,6 +3,7 @@
 #include "member_list.h"
 
 #include <vector>
+#include <memory>
 
 class hb_message {
 public:
@@ -11,6 +12,13 @@ public:
 
     // Creates an message that will be empty by default
     hb_message(uint32_t id_) : id(id_) {}
+
+    // Makes this message a join request, as opposed to a regular heartbeat message
+    void make_join_request(member us);
+    // Returns true if this message is a join request
+    bool is_join_request();
+    // Get the member that is requesting to join the group
+    member get_join_request();
 
     // Sets the list of failed nodes to the given list of nodes
     void set_failed_nodes(std::vector<uint32_t> nodes);
@@ -21,10 +29,6 @@ public:
 
     // Returns true if the deserialized message is not malformed
     bool is_well_formed();
-    // Returns the reason why the message is malformed
-    std::string why_malformed() {
-        return malformed_reason;
-    }
 
     // Gets the ID of the node that produced the message
     uint32_t get_id();
@@ -36,10 +40,14 @@ public:
     std::vector<member> get_joined_nodes();
 
     // Serializes the message and returns a buffer containing the message, along with the length
-    char *serialize(unsigned &length);
+    std::unique_ptr<char[]> serialize(unsigned &length);
 
 private:
-    std::string malformed_reason = "";
+    const int JOIN_REQUEST_ID = 0;
+    const int NORMAL_HEARTBEAT_ID = 1;
+
+    bool join_request = false;
+    member join_request_member; // The member that is requesting to join the group
     uint32_t id; // The ID of the node that produced the message
     std::vector<uint32_t> failed_nodes;
     std::vector<uint32_t> left_nodes;

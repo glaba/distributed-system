@@ -1,27 +1,28 @@
 #include "udp.h"
+#include "udp.hpp"
 
 #include <unistd.h>
 
 extern int errno;
 
 // Starts the server on the given port
-void udp_server::start_server(int port) {
+void udp_server_impl::start_server(int port) {
     server_fd = create_udp_server(port);
 }
 
 // Stops the server
-void udp_server::stop_server() {
+void udp_server_impl::stop_server() {
     close(server_fd);
 }
 
 // Wrapper function around recvfrom that handles errors
-int udp_server::recv(char *buf, unsigned length) {
+int udp_server_impl::recv(char *buf, unsigned length) {
     struct sockaddr_in client_sa;
     socklen_t client_len = sizeof(client_sa);
 
     int msg_size = recvfrom(server_fd, buf, length, 0, (struct sockaddr*)&client_sa, &client_len);
     if (msg_size < 0) {
-        lg->log_v("Unexpected error in receiving UDP packet, errno " + std::to_string(errno));
+        lg->trace("Unexpected error in receiving UDP packet, errno " + std::to_string(errno));
     }
 
     return msg_size;
@@ -29,7 +30,7 @@ int udp_server::recv(char *buf, unsigned length) {
 
 // Creates fd to receive incoming messages sent via UDP
 // Returns a socket fd, otherwise -1 on failure.
-int udp_server::create_udp_server(int port) {
+int udp_server_impl::create_udp_server(int port) {
     int server_fd;
     struct sockaddr_in server_sa;
 
@@ -52,7 +53,7 @@ int udp_server::create_udp_server(int port) {
 }
 
 // Sends a UDP packet to the specified destination
-void udp_client::send(string host, int port, char *msg, unsigned length) {
+void udp_client_impl::send(string host, int port, char *msg, unsigned length) {
     udp_client_info conn = create_udp_client(host, std::to_string(port));
     if (conn.client_socket == -1) return;
 
@@ -63,7 +64,7 @@ void udp_client::send(string host, int port, char *msg, unsigned length) {
 
 // Creates a UDP connection to a given host and port.
 // Returns a socket fd to the host, otherwise crashes on failure.
-udp_client_info udp_client::create_udp_client(string host, string port) {
+udp_client_info udp_client_impl::create_udp_client(string host, string port) {
     int client_socket;
     udp_client_info ret;
 
@@ -78,7 +79,7 @@ udp_client_info udp_client::create_udp_client(string host, string port) {
     int s = getaddrinfo(host.c_str(), port.c_str(), &info, &res);
     if (s != 0) {
         // get the error using gai
-        lg->log_v("getaddrinfo failed for host " + host + " on port " + port);
+        lg->debug("getaddrinfo failed for host " + host + " on port " + port);
         ret.client_socket = -1;
         return ret;
     }
@@ -95,3 +96,5 @@ udp_client_info udp_client::create_udp_client(string host, string port) {
     ret.addr = *(res->ai_addr);
     return ret;
 }
+
+register_service<udp_factory, udp_factory_impl> register_udp_factory;
