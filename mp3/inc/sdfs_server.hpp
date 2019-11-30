@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sdfs_client.h"
+#include "sdfs_server.h"
 #include "sdfs_message.h"
 #include "election.h"
 #include "logging.h"
@@ -9,23 +9,24 @@
 #include "environment.h"
 
 // Defining the return value for failed operations
-#define SDFS_CLIENT_FAILURE -1
+#define SDFS_SERVER_FAILURE -1
 // Defining the return value for successful operations
-#define SDFS_CLIENT_SUCCESS 0
+#define SDFS_SERVER_SUCCESS 0
 
-class sdfs_client_impl : public sdfs_client, public service_impl<sdfs_client_impl> {
+class sdfs_server_impl : public sdfs_server, public service_impl<sdfs_server_impl> {
 public:
-    sdfs_client_impl(environment &env);
+    sdfs_server_impl(environment &env);
 
     void start();
     void stop();
 
-    int put_operation(int socket, std::string local_filename, std::string sdfs_filename);
-    int get_operation(int socket, std::string local_filename, std::string sdfs_filename);
+private:
+    // functions to handle major sdfs operations
+    int put_operation(int socket, std::string sdfs_filename);
+    int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
-    int store_operation();
-private:
+
     // Services that we depend on
     std::unique_ptr<logger> lg;
     std::unique_ptr<tcp_client> client;
