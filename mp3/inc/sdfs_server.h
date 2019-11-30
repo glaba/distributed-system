@@ -1,7 +1,5 @@
 #pragma once
 
-#include "member_list.h"
-
 #include <string>
 
 class sdfs_server {
