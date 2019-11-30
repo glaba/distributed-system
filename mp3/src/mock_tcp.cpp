@@ -156,7 +156,8 @@ int mock_tcp_factory::mock_tcp_server::accept_connection() {
                 char accept_msg[5];
                 accept_msg[0] = accept_magic_byte;
                 serializer::write_uint32_to_char_buf(id, accept_msg + 1);
-                client->send(client_hostname + "->" + hostname + "_client", port, std::string(accept_msg, 5));
+                client->send(client_hostname + std::to_string(client_id) + "->" + hostname + "_client", port,
+                    std::string(accept_msg, 5));
 
                 // We will use the client ID as the FD for the fake socket
                 return client_id;
@@ -176,7 +177,9 @@ void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
     char closed_msg[5];
     closed_msg[0] = close_magic_byte;
     serializer::write_uint32_to_char_buf(id, closed_msg + 1);
-    client->send(client_hostnames[client_socket] + "->" + hostname + "_client", port, std::string(closed_msg, 5));
+    uint32_t client_id = client_socket;
+    client->send(client_hostnames[client_socket] + std::to_string(client_id) + "->" + hostname + "_client",
+        port, std::string(closed_msg, 5));
 
     // Delete all information
     delete_connection(client_socket);
@@ -228,7 +231,9 @@ ssize_t mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, std::s
     serializer::write_uint32_to_char_buf(id, msg.get() + 1);
     std::strncpy(msg.get() + 5, data.c_str(), data.size());
 
-    client->send(client_hostnames[client_fd] + "->" + hostname + "_client", port, std::string(msg.get(), 5 + data.size()));
+    uint32_t client_id = client_fd;
+    client->send(client_hostnames[client_fd] + std::to_string(client_id) + "->" + hostname + "_client",
+        port, std::string(msg.get(), 5 + data.size()));
     return data.size();
 }
 
@@ -262,8 +267,8 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
         // Each connection just pretends to be a different UDP host entirely
         server_hostnames[server_id] = host;
         server_ports[server_id] = port;
-        clients[server_id] = factory->get_udp_client(hostname + "->" + host + "_client");
-        servers[server_id] = factory->get_udp_server(hostname + "->" + host + "_client");
+        clients[server_id] = factory->get_udp_client(hostname + std::to_string(id) + "->" + host + "_client");
+        servers[server_id] = factory->get_udp_server(hostname + std::to_string(id) + "->" + host + "_client");
         servers[server_id]->start_server(port);
 
         // Send connection initiation message to server

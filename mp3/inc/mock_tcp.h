@@ -15,6 +15,7 @@
 #include <atomic>
 #include <tuple>
 #include <thread>
+#include <random>
 
 class mock_tcp_state : public service_state {
 public:
@@ -103,7 +104,8 @@ private:
     class mock_tcp_client : public tcp_client {
     public:
         mock_tcp_client(mock_udp_factory *factory_, string hostname_)
-            : factory(factory_), hostname(hostname_), id(std::hash<std::string>()(hostname_)) {}
+            : factory(factory_), hostname(hostname_), mt(std::chrono::system_clock::now().time_since_epoch().count()),
+              id(mt()) {}
         ~mock_tcp_client();
 
         int setup_connection(std::string host, int port);
@@ -118,6 +120,9 @@ private:
         std::unordered_map<uint32_t, std::unique_ptr<udp_server>> servers;
         std::unordered_map<uint32_t, std::unique_ptr<udp_client>> clients;
         string hostname;
+
+        // RNG to generate the ID and the ID itself
+        std::mt19937 mt;
         uint32_t id;
 
         // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue

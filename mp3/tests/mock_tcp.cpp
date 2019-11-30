@@ -414,3 +414,74 @@ testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
         assert(clients_complete[i]);
     }
 });
+
+testing::register_test n_clients_same_machine_one_server("mock_tcp.n_clients_same_machine_one_server",
+    "Tests passing messages between multiple TCP clients on the same machine and a single TCP server",
+    6, [] (logger::log_level level)
+{
+    const int NUM_CLIENTS = 5;
+
+    environment_group env_group(true);
+    unique_ptr<environment> client_env = env_group.get_env();
+    unique_ptr<environment> server_env = env_group.get_env();
+
+    client_env->get<configuration>()->set_hostname("client");
+    client_env->get<logger_factory>()->configure(level);
+    server_env->get<configuration>()->set_hostname("server");
+    server_env->get<logger_factory>()->configure(level);
+
+    unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
+    std::vector<unique_ptr<tcp_client>> clients;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(client_env->get<tcp_factory>()->get_tcp_client());
+    }
+
+    // Start the server in its own thread
+    std::thread server_thread([&server, NUM_CLIENTS] {
+        server->setup_server(1234);
+
+        for (int i = 0; i < NUM_CLIENTS; i++) {
+            int fd = server->accept_connection();
+
+            // Spin off a thread for each client
+            std::thread client_thread([&server, fd] {
+                for (int j = 0; j < 10; j++) {
+                    std::string msg = server->read_from_client(fd);
+                    assert(msg == std::to_string(j));
+                    server->write_to_client(fd, std::to_string(j));
+                }
+            });
+            client_thread.detach();
+        }
+    });
+    server_thread.detach();
+
+    // Wait a bit for the server to set up
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // Start the clients in their own thread
+    std::vector<bool> clients_complete;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients_complete.push_back(false);
+        std::thread client_thread([&clients, i, &clients_complete] {
+            int fd = clients[i]->setup_connection("server", 1234);
+
+            for (int j = 0; j < 10; j++) {
+                clients[i]->write_to_server(fd, std::to_string(j));
+                std::string msg = clients[i]->read_from_server(fd);
+                assert(msg == std::to_string(j));
+            }
+
+            clients[i]->close_connection(fd);
+            clients_complete[i] = true;
+        });
+        client_thread.detach();
+    }
+
+    // Wait for all communication to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
+    for (unsigned i = 0; i < clients_complete.size(); i++) {
+        assert(clients_complete[i]);
+    }
+});

@@ -17,7 +17,7 @@ public:
     virtual bool is_first_node() = 0;
     virtual int get_hb_port() = 0;
     virtual int get_election_port() = 0;
-    virtual void get_sdfs_internal_port() = 0;
-    virtual void get_sdfs_master_port() = 0;
+    virtual int get_sdfs_internal_port() = 0;
+    virtual int get_sdfs_master_port() = 0;
     virtual std::string get_sdfs_dir() = 0;
 };
