@@ -46,7 +46,7 @@ public:
         sdfs_filename = filename;
     }
 
-    std::string get_type() {
+    msg_type get_type() {
         return type;
     }
 
@@ -60,4 +60,4 @@ public:
 private:
     msg_type type;
     std::string sdfs_filename; // sdfs filename for certain ops (LS, DEL)
-}
+};

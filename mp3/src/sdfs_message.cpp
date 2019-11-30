@@ -6,7 +6,7 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
     deserializer des(buf, length);
 
     try {
-        type = static_cash<msg_type>(des.get_int());
+        type = static_cast<msg_type>(des.get_int());
 
         switch (type) {
             case msg_type::put:
@@ -20,14 +20,14 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
             default:
                 throw "Unknown type";
         }
-    } catch (....) {
+    } catch (...) {
         type = msg_type::empty;
         sdfs_filename = "";
         return;
     }
 }
 
-sdfs_message::serializer() {
+std::string sdfs_message::serialize() {
     // do some serialization here
     if (type == msg_type::empty) {
         return "";
