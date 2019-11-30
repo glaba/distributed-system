@@ -40,10 +40,10 @@ public:
     void set_sdfs_internal_port(int port_) {
         sdfs_internal_port = port_;
     }
-    int get_sdfs_master_port() {
+    int get_sdfs_internal_port() {
         return sdfs_internal_port;
     }
-    void set_sdfs_internal_port(int port_) {
+    void set_sdfs_master_port(int port_) {
         sdfs_master_port = port_;
     }
     int get_sdfs_master_port() {
