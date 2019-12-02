@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include <iostream>
+#include <functional>
 
 using std::unique_ptr;
 using std::make_unique;
@@ -14,47 +15,24 @@ cli_command *cli_command::add_subcommand(string command) {
     return subcommands[command].get();
 }
 
-void cli_command::add_argument(string short_desc, string description, string *result) {
+template <typename T>
+void cli_command::add_argument(string short_desc, string description, T *result) {
     arguments.push_back(result);
     argument_descriptions.push_back(description);
     argument_short_descriptions.push_back(short_desc);
 }
 
-void cli_command::add_argument(string short_desc, string description, std::function<bool(string)> callback) {
-    arguments.push_back(callback);
-    argument_descriptions.push_back(description);
-    argument_short_descriptions.push_back(short_desc);
-}
-
-void cli_command::add_option(string flag, string description, bool *result) {
-    options[flag] = result;
-    option_descriptions[flag] = description;
-    option_required[flag] = false;
-}
-
-void cli_command::add_option(string flag, string short_desc, string description, string *result) {
+template <typename T>
+void cli_command::add_option(string flag, string short_desc, string description, T *result) {
     options[flag] = result;
     option_descriptions[flag] = description;
     option_short_descriptions[flag] = short_desc;
     option_required[flag] = false;
 }
 
-void cli_command::add_option(string flag, string short_desc, string description, std::function<bool(string)> callback) {
-    options[flag] = callback;
-    option_descriptions[flag] = description;
-    option_short_descriptions[flag] = short_desc;
-    option_required[flag] = false;
-}
-
-void cli_command::add_required_option(string flag, string short_desc, string description, string *result) {
+template <typename T>
+void cli_command::add_required_option(string flag, string short_desc, string description, T *result) {
     options[flag] = result;
-    option_descriptions[flag] = description;
-    option_short_descriptions[flag] = short_desc;
-    option_required[flag] = true;
-}
-
-void cli_command::add_required_option(string flag, string short_desc, string description, std::function<bool(string)> callback) {
-    options[flag] = callback;
     option_descriptions[flag] = description;
     option_short_descriptions[flag] = short_desc;
     option_required[flag] = true;
@@ -90,8 +68,17 @@ bool cli_command::parse(string command, int argc, char **argv) {
                 *std::get<string*>(arguments[i]) = cur_arg;
             }
 
-            if (std::holds_alternative<std::function<bool(string)>>(arguments[i])) {
-                std::function<bool(string)> callback = std::get<std::function<bool(string)>>(arguments[i]);
+            if (std::holds_alternative<int*>(arguments[i])) {
+                try {
+                    *std::get<int*>(arguments[i]) = std::stoi(cur_arg);
+                } catch (...) {
+                    std::cout << "Invalid format for argument " << argument_short_descriptions[i] << "!" << std::endl << std::endl;
+                    goto help;
+                }
+            }
+
+            if (std::holds_alternative<std::function<bool(string)>*>(arguments[i])) {
+                std::function<bool(string)> callback = *std::get<std::function<bool(string)>*>(arguments[i]);
 
                 if (!callback(cur_arg)) {
                     std::cout << "Invalid format for argument " << argument_short_descriptions[i] << "!" << std::endl << std::endl;
@@ -109,10 +96,14 @@ bool cli_command::parse(string command, int argc, char **argv) {
             if (std::holds_alternative<string*>(option.second)) {
                 *std::get<string*>(option.second) = "";
             }
+
+            if (std::holds_alternative<int*>(option.second)) {
+                *std::get<int*>(option.second) = 0;
+            }
         }
 
         // Then parse the options one by one
-        std::unordered_set<std::string> parsed_options;
+        std::unordered_set<string> parsed_options;
         while (argc != 0) {
             string cur_arg = string(argv[0]);
             argc--; argv++;
@@ -142,29 +133,36 @@ bool cli_command::parse(string command, int argc, char **argv) {
                 parsed_options.insert(flag);
             }
 
+            // We expect an argument for the rest of the types
+            if (argc == 0) {
+                std::cout << "Expected argument for option " << cur_arg << std::endl << std::endl;
+                goto help;
+            }
+
             // If it's a string option, make sure the argument is there and store the result
             if (std::holds_alternative<string*>(options[flag])) {
-                if (argc == 0) {
-                    std::cout << "Expected argument for option " << cur_arg << std::endl << std::endl;
-                    goto help;
-                }
-
                 *std::get<string*>(options[flag]) = string(argv[0]);
                 argc--; argv++;
                 parsed_options.insert(flag);
             }
 
-            // If it's a callback option, make sure the argument is there and call the callback
-            if (std::holds_alternative<std::function<bool(string)>>(options[flag])) {
-                if (argc == 0) {
-                    std::cout << "Expected argument for option " << cur_arg << std::endl << std::endl;
+            if (std::holds_alternative<int*>(options[flag])) {
+                try {
+                    *std::get<int*>(options[flag]) = std::stoi(argv[0]);
+                    argc--; argv++;
+                    parsed_options.insert(flag);
+                } catch (...) {
+                    std::cout << "Invalid format for option " << cur_arg << std::endl << std::endl;
                     goto help;
                 }
+            }
 
+            // If it's a callback option, make sure the argument is there and call the callback
+            if (std::holds_alternative<std::function<bool(string)>*>(options[flag])) {
                 string arg = string(argv[0]);
                 argc--; argv++;
 
-                std::function<bool(string)> callback = std::get<std::function<bool(string)>>(options[flag]);
+                std::function<bool(string)> callback = *std::get<std::function<bool(string)>*>(options[flag]);
 
                 // If the callback function returns false, warn the user that it's invalid
                 if (!callback(arg)) {
@@ -226,3 +224,16 @@ help:
 
     return false;
 }
+
+template void cli_command::add_argument(string short_desc, string description, int *result);
+template void cli_command::add_argument(string short_desc, string description, string *result);
+template void cli_command::add_argument(string short_desc, string description, std::function<bool(string)> *result);
+
+template void cli_command::add_option(string flag, string short_desc, string description, bool *result);
+template void cli_command::add_option(string flag, string short_desc, string description, int *result);
+template void cli_command::add_option(string flag, string short_desc, string description, string *result);
+template void cli_command::add_option(string flag, string short_desc, string description, std::function<bool(string)> *result);
+
+template void cli_command::add_required_option(string flag, string short_desc, string description, int *result);
+template void cli_command::add_required_option(string flag, string short_desc, string description, string *result);
+template void cli_command::add_required_option(string flag, string short_desc, string description, std::function<bool(string)> *result);
