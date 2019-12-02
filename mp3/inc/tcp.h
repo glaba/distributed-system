@@ -3,6 +3,7 @@
 #include <memory>
 
 #define MAX_CLIENTS 10
+#define CHUNK_SIZE 4096
 
 class tcp_server {
 public:

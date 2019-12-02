@@ -66,6 +66,73 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     return total;
 }
 
+ssize_t tcp_utils::write_file_to_socket(int socket, std::string filename) {
+    int fd;
+    struct stat fd_stats;
+
+    if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
+    if (fstat(fd, &fd_stats) < 0) return -1;
+
+    char *contents;
+    if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    // write total size of file to socket
+    if ((write_message_size(socket, fd_stats.st_size)) == -1) return -1;
+
+    size_t pos = 0;
+    size_t num_to_write;
+    ssize_t num_written;
+    size_t bytes_left = fd_stats.st_size;
+    while (bytes_left > 0) {
+        // write file in CHUNK_SIZE chunks
+        num_to_write = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
+        if ((num_written = write_all_to_socket(socket,
+                        contents + pos, num_to_write)) == -1) return -1;
+
+        pos += num_written;
+        bytes_left -= num_written;
+    }
+
+    munmap(contents, fd_stats.st_size);
+    return fd_stats.st_size;
+}
+
+ssize_t tcp_utils::read_file_from_socket(int socket, std::string filename) {
+    int fd;
+
+    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
+
+    // read total size of file from socket
+    ssize_t size = get_message_size(socket);
+
+    // write byte at last location
+    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
+    if (write(fd, "", 1) != 1) return -1;
+
+    // mmap and read file from socket
+    char *contents;
+    if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    size_t pos = 0;
+    size_t num_to_read;
+    ssize_t num_read;
+    size_t bytes_left = size;
+    while (bytes_left > 0) {
+        // read file in CHUNK_SIZE chunks
+        num_to_read = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
+        if ((num_read = read_all_from_socket(socket,
+                        contents + pos, num_to_read)) == -1) return -1;
+
+        pos += num_read;
+        bytes_left -= num_read;
+    }
+
+    munmap(contents, size);
+    return size;
+}
+
 void tcp_server_impl::setup_server(int port) {
     // Set up the server_fd
     struct addrinfo info, *res;

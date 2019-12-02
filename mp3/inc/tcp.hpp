@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <netdb.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -36,6 +39,14 @@ public:
     // Attempts to write all count bytes from buffer to socket.
     // Returns the number of bytes written, 0 if socket is disconnected, or -1 on failure.
     ssize_t write_all_to_socket(int socket, const char *buffer, size_t count);
+
+    // Attempts to write entire file over socket
+    // Returns the number of bytes written
+    ssize_t write_file_to_socket(int socket, std::string filename);
+
+    // Attempts to read entire file over socket
+    // Returns the number of bytes read
+    ssize_t read_file_from_socket(int socket, std::string filename);
 };
 
 class tcp_server_impl : public tcp_server, public tcp_utils {
