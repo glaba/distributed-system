@@ -23,6 +23,12 @@ public:
     // Writes the specified number of bytes to the given socket
     // Returns number of bytes written, 0 on socket disconnect, and -1 on failure
     virtual ssize_t write_to_client(int client, std::string data) = 0;
+    // Attempts to write entire file over socket
+    // Returns the number of bytes written
+    virtual ssize_t write_file_to_socket(int socket, std::string filename) = 0;
+    // Attempts to read entire file over socket
+    // Returns the number of bytes read
+    virtual ssize_t read_file_from_socket(int socket, std::string filename) = 0;
 };
 
 class tcp_client {
@@ -39,6 +45,12 @@ public:
     virtual ssize_t write_to_server(int socket, std::string data) = 0;
     // Cleans up the connection on the given socket
     virtual void close_connection(int socket) = 0;
+    // Attempts to write entire file over socket
+    // Returns the number of bytes written
+    virtual ssize_t write_file_to_socket(int socket, std::string filename) = 0;
+    // Attempts to read entire file over socket
+    // Returns the number of bytes read
+    virtual ssize_t read_file_from_socket(int socket, std::string filename) = 0;
 };
 
 class tcp_factory {

@@ -16,6 +16,9 @@ public:
     // Creates a message from a buffer
     sdfs_message(char *buf, unsigned length);
 
+    // Creates a message from a filename
+    sdfs_message(std::string sdfs_filename_) : sdfs_filename(sdfs_filename_) {}
+
     // Sets the message to be a put message
     void set_type_put(std::string filename) {
         type = msg_type::put;

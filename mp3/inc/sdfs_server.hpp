@@ -8,6 +8,10 @@
 #include "service.h"
 #include "environment.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 // Defining the return value for failed operations
 #define SDFS_SERVER_FAILURE -1
 // Defining the return value for successful operations
@@ -26,6 +30,11 @@ private:
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
+
+    int send_client_ack(int socket);
+
+    int del_file(std::string sdfs_filename);
+    bool file_exists(std::string sdfs_filename);
 
     // Services that we depend on
     std::unique_ptr<logger> lg;
