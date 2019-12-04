@@ -52,6 +52,12 @@ public:
     int get_sdfs_master_port() {
         return sdfs_master_port;
     }
+    void set_maple_master_port(int port_) {
+        maple_master_port = port_;
+    }
+    int get_maple_master_port() {
+        return maple_master_port;
+    }
     // Sets the directory that all files for the program will be stored in
     // Assumes that the directory exist and is empty
     void set_dir(std::string dir_) {
@@ -79,6 +85,7 @@ protected:
     int election_port;
     int sdfs_internal_port;
     int sdfs_master_port;
+    int maple_master_port;
     std::string dir;
     std::string sdfs_dir;
 

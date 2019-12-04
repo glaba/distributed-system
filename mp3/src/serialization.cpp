@@ -99,7 +99,7 @@ void deserializer::done() {
     }
 }
 
-uint32_t deserializer::read_uint32_from_char_buf(char *buf) {
+uint32_t deserializer::read_uint32_from_char_buf(const char *buf) {
     uint32_t retval = 0;
     retval += (buf[0] & 0xFF);
     retval += (buf[1] & 0xFF) << 8;

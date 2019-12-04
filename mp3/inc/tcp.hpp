@@ -3,6 +3,7 @@
 #include "tcp.h"
 #include "environment.h"
 #include "service.h"
+#include "logging.h"
 
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -51,6 +52,7 @@ public:
 
 class tcp_server_impl : public tcp_server, public tcp_utils {
 public:
+    tcp_server_impl(std::unique_ptr<logger> lg_): lg(std::move(lg_)) {}
     void setup_server(int port);
     void stop_server();
     int accept_connection();
@@ -58,23 +60,29 @@ public:
     std::string read_from_client(int client);
     ssize_t write_to_client(int client, std::string data);
 private:
+    std::unique_ptr<logger> lg;
     int server_fd;
     std::queue<std::string> messages;
 };
 
 class tcp_client_impl : public tcp_client, public tcp_utils {
 public:
-    tcp_client_impl(void);
+    tcp_client_impl(std::unique_ptr<logger> lg_) : lg(std::move(lg_)) {}
     int setup_connection(std::string host, int port);
     void close_connection(int socket);
     std::string read_from_server(int socket);
     ssize_t write_to_server(int socket, std::string data);
+private:
+    std::unique_ptr<logger> lg;
 };
 
 class tcp_factory_impl : public tcp_factory, public service_impl<tcp_factory_impl> {
 public:
-    tcp_factory_impl(environment &env) {}
+    tcp_factory_impl(environment &env) : lg_fac(env.get<logger_factory>()) {}
 
     std::unique_ptr<tcp_client> get_tcp_client();
     std::unique_ptr<tcp_server> get_tcp_server();
+
+private:
+    logger_factory *lg_fac;
 };

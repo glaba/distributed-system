@@ -7,11 +7,11 @@ using std::unique_ptr;
 using std::make_unique;
 
 unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client() {
-    return unique_ptr<tcp_client>(new tcp_client_impl());
+    return unique_ptr<tcp_client>(new tcp_client_impl(lg_fac->get_logger("tcp_client")));
 }
 
 unique_ptr<tcp_server> tcp_factory_impl::get_tcp_server() {
-    return unique_ptr<tcp_server>(new tcp_server_impl());
+    return unique_ptr<tcp_server>(new tcp_server_impl(lg_fac->get_logger("tcp_server")));
 }
 
 ssize_t tcp_utils::get_message_size(int socket) {
@@ -84,14 +84,14 @@ void tcp_server_impl::setup_server(int port) {
     int s = getaddrinfo(NULL, std::to_string(port).c_str(), &info, &res);
     if (s != 0) {
         // Get the error using gai
-        std::cerr << "gai failed " << gai_strerror(s) << std::endl;
+        lg->info("getaddrinfo failed -- " + std::string(gai_strerror(s)));
         free(res);
         exit(1);
     }
 
     // Bind server socket to port and address
     if (bind(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        perror("bind failed");
+        lg->info("bind failed -- " + std::string(strerror(errno)));
         free(res);
         exit(1);
     }
@@ -99,7 +99,7 @@ void tcp_server_impl::setup_server(int port) {
 
     // Set up listening for clients
     if (listen(fd, MAX_CLIENTS) != 0) {
-        perror("listen failed");
+        lg->info("listen failed -- " + std::string(strerror(errno)));
         exit(1);
     }
 
@@ -144,8 +144,6 @@ ssize_t tcp_server_impl::write_to_client(int client, std::string data) {
     return write_all_to_socket(client, data.c_str(), data.length());
 }
 
-tcp_client_impl::tcp_client_impl(void) {}
-
 int tcp_client_impl::setup_connection(std::string host, int port) {
     struct addrinfo info, *res;
     memset(&info, 0, sizeof(info));
@@ -156,21 +154,21 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     int s = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &info, &res);
     if (s != 0) {
         // Get the error using gai
-        std::cerr << "gai failed " << gai_strerror(s) << std::endl;
+        lg->info("getaddrinfo failed -- " + std::string(gai_strerror(s)));
         return -1;
     }
 
     // Get a socket for the client
     int client_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (client_socket == -1) {
-        perror("socket failed");
+        lg->info("socket failed -- " + std::string(strerror(errno)));
         return -1;
     }
 
     // Connect the client to the server
     int connected = connect(client_socket, res->ai_addr, res->ai_addrlen);
     if (connected == -1) {
-        perror("connect failed");
+        lg->info("connect failed -- " + std::string(strerror(errno)));
         return -1;
     }
 

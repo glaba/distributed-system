@@ -51,6 +51,9 @@ public:
                 std::lock_guard<std::recursive_mutex> guard_registry(is_test_env ? test_service_registry_mutex : service_registry_mutex);
                 auto &registry = is_test_env ? test_service_registry : service_registry;
 
+                if (!registry[id]) {
+                    assert(false && "Requested service which does not exist");
+                }
                 svc = registry[id](*this);
             }
 
