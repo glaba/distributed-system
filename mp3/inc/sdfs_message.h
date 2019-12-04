@@ -86,6 +86,6 @@ public:
 
 private:
     msg_type type;
-    std::string hostname;      // sdfs hostname for certain ops (MN_PUT, MN_GET)
+    std::string sdfs_hostname; // sdfs hostname for certain ops (MN_PUT, MN_GET)
     std::string sdfs_filename; // sdfs filename for certain ops (LS, DEL)
 };
