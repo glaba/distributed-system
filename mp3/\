@@ -22,8 +22,6 @@ void sdfs_client_impl::stop() {
 }
 
 int sdfs_client_impl::put_operation(int socket, std::string local_filename, std::string sdfs_filename) {
-    // SEND PUT REQUEST TO THE MASTER NODE AND RECEIVE RESPONSE
-
     return SDFS_CLIENT_SUCCESS;
 }
 

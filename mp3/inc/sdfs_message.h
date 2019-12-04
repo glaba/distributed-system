@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, put, get, del, ls, ack
+        empty, mn_put, mn_get, put, get, del, ls, ack, success, fail
     };
 
     // Creates a message from a buffer
@@ -18,6 +18,18 @@ public:
 
     // Creates a message from a filename
     sdfs_message(std::string sdfs_filename_) : sdfs_filename(sdfs_filename_) {}
+
+    // Sets the message to be a mn_put message
+    void set_type_mn_put(std::string filename) {
+        type = msg_type::mn_put;
+        sdfs_filename = filename;
+    }
+
+    // Sets the message to be a mn_get message
+    void set_type_mn_get(std::string filename) {
+        type = msg_type::mn_get;
+        sdfs_filename = filename;
+    }
 
     // Sets the message to be a put message
     void set_type_put(std::string filename) {
@@ -43,6 +55,18 @@ public:
         sdfs_filename = "";
     }
 
+    // Sets the message to be an success message
+    void set_type_success(std::string filename) {
+        type = msg_type::success;
+        sdfs_filename = "";
+    }
+
+    // Sets the message to be an fail message
+    void set_type_fail(std::string filename) {
+        type = msg_type::fail;
+        sdfs_filename = "";
+    }
+
     // Sets the message to be an ls message
     void set_type_ls(std::string filename) {
         type = msg_type::ls;
@@ -62,5 +86,6 @@ public:
 
 private:
     msg_type type;
+    std::string hostname;      // sdfs hostname for certain ops (MN_PUT, MN_GET)
     std::string sdfs_filename; // sdfs filename for certain ops (LS, DEL)
 };

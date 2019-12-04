@@ -8,7 +8,6 @@ public:
     virtual void start() = 0;
     // Stops all client logic for the filesystem
     virtual void stop() = 0;
-    /*
     // handles a put request over the specified socket
     virtual int put_operation(int socket, std::string local_filename, std::string sdfs_filename) = 0;
     // handles a get request over the specified socket
@@ -19,5 +18,4 @@ public:
     virtual int ls_operation(int socket, std::string sdfs_filename) = 0;
     // handles a store request
     virtual int store_operation() = 0;
-    */
 };

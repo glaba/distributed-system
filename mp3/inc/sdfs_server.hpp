@@ -37,6 +37,7 @@ private:
     bool file_exists(std::string sdfs_filename);
 
     // Services that we depend on
+    election *el;
     std::unique_ptr<logger> lg;
     std::unique_ptr<tcp_client> client;
     std::unique_ptr<tcp_server> server;
