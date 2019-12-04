@@ -19,6 +19,9 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
             case msg_type::mn_get:
                 sdfs_hostname = des.get_string();
                 break;
+            case msg_type::mn_ls:
+                data = des.get_string();
+                break;
             case msg_type::ack:
             case msg_type::fail:
             case msg_type::success:
@@ -29,6 +32,7 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
     } catch (...) {
         type = msg_type::empty;
         sdfs_filename = "";
+        sdfs_hostname = "";
         return;
     }
 }
@@ -53,6 +57,9 @@ std::string sdfs_message::serialize() {
         case msg_type::mn_get:
             ser.add_field(sdfs_hostname);
             break;
+        case msg_type::mn_ls:
+            ser.add_field(data);
+            break;
         case msg_type::ack:
         case msg_type::fail:
         case msg_type::success:
@@ -62,4 +69,38 @@ std::string sdfs_message::serialize() {
     }
 
     return ser.serialize();
+}
+
+std::string sdfs_message::get_type_as_string() {
+    if (type == msg_type::empty) {
+        return "";
+    }
+
+    std::string ret = "";
+    switch (type) {
+        case msg_type::put:
+            ret = "put"; break;
+        case msg_type::get:
+            ret = "get"; break;
+        case msg_type::del:
+            ret = "del"; break;
+        case msg_type::ls:
+            ret = "ls"; break;
+        case msg_type::ack:
+            ret = "ack"; break;
+        case msg_type::fail:
+            ret = "fail"; break;
+        case msg_type::success:
+            ret = "success"; break;
+        case msg_type::mn_put:
+            ret = "mn_put"; break;
+        case msg_type::mn_get:
+            ret = "mn_get"; break;
+        case msg_type::mn_ls:
+            ret = "mn_ls"; break;
+        default:
+           break;
+    }
+
+    return ret;
 }

@@ -8,6 +8,8 @@
 #include "service.h"
 #include "environment.h"
 
+#include <string.h>
+
 // Defining the return value for failed operations
 #define SDFS_CLIENT_FAILURE -1
 // Defining the return value for successful operations
@@ -26,6 +28,9 @@ public:
     int ls_operation(int socket, std::string sdfs_filename);
     int store_operation();
 private:
+    int send_request(int socket, sdfs_message sdfs_msg);
+    int receive_response(int socket, sdfs_message *sdfs_msg);
+
     // Services that we depend on
     election *el;
     std::unique_ptr<logger> lg;

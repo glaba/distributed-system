@@ -28,19 +28,20 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
     lg->info("server received request from client to put " + sdfs_filename);
 
     // @TODO: determine if i should use acks for put
-
     // RECEIVE THE FILE FROM THE CLIENT
     if (server->read_file_from_socket(socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
 
     // @TODO: MAYBE ADD RESPONSE TO CLIENT (probably fine for client to use write response though)
+    // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES
     return SDFS_SERVER_SUCCESS;
 }
 
 int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
-    // @TODO: determine if i should use acks for get
     // the client has made a get request to master
     // and the master has approved the client request
-    lg->info("server received requeste from client to get " + sdfs_filename);
+    lg->info("server received request from client to get " + sdfs_filename);
+
+    // @TODO: determine if i should use acks for get
     // RECEIVE THE FILE FROM THE CLIENT
     if (server->write_file_to_socket(socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
 
@@ -51,7 +52,10 @@ int sdfs_server_impl::del_operation(int socket, std::string sdfs_filename) {
     // the client has made a dele request to master
     // and the master has approved the client request
     lg->info("server received request from client to get " + sdfs_filename);
+
     if (del_file(sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
+
+    // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES (or just use a store-like op)
     return SDFS_SERVER_SUCCESS;
 }
 
@@ -80,8 +84,8 @@ int sdfs_server_impl::del_file(std::string sdfs_filename) {
 
 int sdfs_server_impl::send_client_ack(int socket) {
     lg->trace("server is sending ack to client");
-    sdfs_message ack_message("");
-    ack_message.set_type_ack("");
+    sdfs_message ack_message;
+    ack_message.set_type_ack();
     std::string msg = ack_message.serialize();
     return server->write_to_client(socket, msg);
 }

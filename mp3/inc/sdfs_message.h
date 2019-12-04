@@ -10,25 +10,30 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, put, get, del, ls, ack, success, fail
+        empty, mn_put, mn_get, mn_ls, put, get, del, ls, ack, success, fail
     };
 
     // Creates a message from a buffer
     sdfs_message(char *buf, unsigned length);
 
-    // Creates a message from a filename
-    sdfs_message(std::string sdfs_filename_) : sdfs_filename(sdfs_filename_) {}
+    // Creates a message with no attributes or type
+    sdfs_message() : type(), sdfs_hostname(), sdfs_filename() {}
 
     // Sets the message to be a mn_put message
-    void set_type_mn_put(std::string filename) {
+    void set_type_mn_put(std::string hostname) {
         type = msg_type::mn_put;
-        sdfs_filename = filename;
+        sdfs_hostname = hostname;
     }
 
     // Sets the message to be a mn_get message
-    void set_type_mn_get(std::string filename) {
+    void set_type_mn_get(std::string hostname) {
         type = msg_type::mn_get;
-        sdfs_filename = filename;
+        sdfs_hostname = hostname;
+    }
+
+    // Sets the message to be a mn_ls message
+    void set_type_mn_ls() {
+        type = msg_type::mn_ls;
     }
 
     // Sets the message to be a put message
@@ -50,21 +55,18 @@ public:
     }
 
     // Sets the message to be an ack message
-    void set_type_ack(std::string filename) {
+    void set_type_ack() {
         type = msg_type::ack;
-        sdfs_filename = "";
     }
 
     // Sets the message to be an success message
-    void set_type_success(std::string filename) {
+    void set_type_success() {
         type = msg_type::success;
-        sdfs_filename = "";
     }
 
     // Sets the message to be an fail message
-    void set_type_fail(std::string filename) {
+    void set_type_fail() {
         type = msg_type::fail;
-        sdfs_filename = "";
     }
 
     // Sets the message to be an ls message
@@ -81,11 +83,22 @@ public:
         return sdfs_filename;
     }
 
+    std::string get_sdfs_hostname() {
+        return sdfs_hostname;
+    }
+
+    std::string get_data() {
+        return data;
+    }
+
+    std::string get_type_as_string();
+
     // Serializes the message and returns a string containing the message
     std::string serialize();
 
 private:
     msg_type type;
+    std::string data;          // data for certain ops (MN_LS)
     std::string sdfs_hostname; // sdfs hostname for certain ops (MN_PUT, MN_GET)
-    std::string sdfs_filename; // sdfs filename for certain ops (LS, DEL)
+    std::string sdfs_filename; // sdfs filename for certain ops (PUT, GET, LS, DEL)
 };
