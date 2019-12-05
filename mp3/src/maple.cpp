@@ -65,6 +65,6 @@ int main(int argc, char **argv) {
     if (env.get<maple_client>()->run_job(maple_master, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir)) {
         std::cout << "Maple job successfully completed" << std::endl;
     } else {
-        std::cout << "Maple job failed to complete" << std::endl;
+        std::cout << "Maple job failed to complete: " + env.get<maple_client>()->get_error() << std::endl;
     }
 }

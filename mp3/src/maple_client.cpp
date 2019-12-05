@@ -11,6 +11,10 @@ maple_client_impl::maple_client_impl(environment &env)
     , client(env.get<tcp_factory>()->get_tcp_client())
     , lg(env.get<logger_factory>()->get_logger("maple_client")) {}
 
+std::string maple_client_impl::get_error() {
+    return error;
+}
+
 bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_maples,
     string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
 {
@@ -26,7 +30,10 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
 
     // Send the data to the master node
     int fd = client->setup_connection(maple_master, config->get_maple_port());
-    client->write_to_server(fd, msg.serialize());
+    if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
+        error = "Specified node is not running";
+        return false;
+    }
 
     // Get the results of the job
     string response = client->read_from_server(fd);
@@ -41,6 +48,7 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
 
     if (!response_msg.is_well_formed() || response_msg.get_msg_type() != maple_message::maple_msg_type::JOB_END) {
         lg->info("Received invalid response from Maple master");
+        error = "Maple master node is behaving unexpectedly";
         return false;
     }
 
@@ -49,6 +57,7 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
         return true;
     } else {
         lg->info("Maple job failed to run successfully");
+        error = "Provided maple_exe failed to run correctly on Maple nodes";
         return false;
     }
 }

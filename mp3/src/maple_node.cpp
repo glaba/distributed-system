@@ -56,6 +56,7 @@ void maple_node_impl::server_thread_function() {
 
             // We only handle messages of the type ASSIGN_JOB
             if (!msg.is_well_formed() || msg.get_msg_type() != maple_message::maple_msg_type::ASSIGN_JOB) {
+                lg->debug("Received malformed message from master, meaning master has most likely crashed");
                 return;
             }
 
@@ -122,14 +123,13 @@ void maple_node_impl::run_job(int job_id) {
         // TODO: For now, store key value pairs outputted by maple_exe in memory
         std::unordered_map<string, std::vector<string>> kv_pairs;
 
-        lg->info("Running command " + maple_exe_path + " " + cur_file_path);
+        lg->info("[Job " + std::to_string(job_id) + "] Running command " + maple_exe_path + " " + cur_file_path);
         unsigned retry_count = 0;
-        bool exit = false;
-        while (!run_command(maple_exe_path + " " + cur_file_path, [this, &exit, &kv_pairs] (string line) {
+        while (!run_command(maple_exe_path + " " + cur_file_path, [this, &kv_pairs] (string line) {
                 // The input has the format "<key> <value>", where <key> doesn't contain spaces and <value> doesn't contain \n
                 size_t space_index = line.find(" ");
                 if (space_index == string::npos) {
-                    lg->debug("Invalid format returned by executable");
+                    lg->debug("[Job " + std::to_string(job_id) + "] Invalid format returned by executable");
                     return false;
                 }
                 string key = line.substr(0, space_index);
@@ -141,11 +141,11 @@ void maple_node_impl::run_job(int job_id) {
             kv_pairs.clear();
 
             if (retry_count++ > MAX_NUM_RETRIES) {
-                lg->info("Giving up on job " + std::to_string(job_id) + " after " + std::to_string(MAX_NUM_RETRIES) +
-                    " failed attempts to run \"" + maple_exe_path + " " + cur_file_path + "\", exiting");
+                lg->info("[Job " + std::to_string(job_id) + "] Giving up on job " + std::to_string(job_id) + " after " +
+                    std::to_string(MAX_NUM_RETRIES) + " failed attempts to run \"" + maple_exe_path + " " + cur_file_path + "\", exiting");
                 return;
             }
-            lg->debug("Failed to run program for job " + std::to_string(job_id) + " on input file " + cur_file_path + ", retrying");
+            lg->debug("[Job " + std::to_string(job_id) + "] Failed to run program on input file " + cur_file_path + ", retrying");
         }
 
         for (auto const &[key, vals] : kv_pairs) {
@@ -158,6 +158,7 @@ void maple_node_impl::run_job(int job_id) {
                 while (master_hostname == "") {
                     el->get_master_node([&master_hostname] (member master, bool succeeded) {
                         if (succeeded) {
+                            lg->trace("[Job " + std::to_string(job_id) + "] Got master node at " + master.hostname + " from election");
                             master_hostname = master.hostname;
                         }
                     });
@@ -174,16 +175,18 @@ void maple_node_impl::run_job(int job_id) {
 
                 // Connect to the master and send the message, and wait for either a yes or no response
                 int fd = client->setup_connection(master_hostname, config->get_maple_port());
-                if (fd < 0) {
+                if (fd < 0 || client->write_to_server(fd, msg_str) <= 0) {
+                    lg->debug("[Job " + std::to_string(job_id) + "] Request to append key " + key + " failed to send to master");
                     continue; // Master has gone down, poll on election
                 }
 
-                if (client->write_to_server(fd, msg_str) <= 0) continue;
                 string response_str = client->read_from_server(fd);
 
                 maple_message response(response_str.c_str(), response_str.length());
                 if (!response.is_well_formed() || response.get_msg_type() != maple_message::maple_msg_type::APPEND_PERM) {
-                    continue; // Master has gone down or has gone crazy
+                    lg->debug("[Job " + std::to_string(job_id) + "] Lost connection with master node while " +
+                        "requesting permission to append key " + key);
+                    continue; // Master has gone down, poll on election
                 }
 
                 got_permission = (response.get_msg_data<maple_append_perm>().allowed != 0);
@@ -194,6 +197,10 @@ void maple_node_impl::run_job(int job_id) {
 
                 // TODO: Append values to file with name intermediate_filename using sdfs_client
                 //  with metadata key=maple, value=cur_file
+
+                lg->info("Appended values for key " + key + " to SDFS in file " + intermediate_filename);
+            } else {
+                lg->info("Not appending values for key " + key);
             }
         }
     }
