@@ -29,7 +29,7 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
 
     // @TODO: determine if i should use acks for put
     // RECEIVE THE FILE FROM THE CLIENT
-    if (server->read_file_from_socket(socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
+    if (tcp_file_transfer::read_file_from_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
 
     // @TODO: MAYBE ADD RESPONSE TO CLIENT (probably fine for client to use write response though)
     // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES
@@ -43,7 +43,7 @@ int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
 
     // @TODO: determine if i should use acks for get
     // RECEIVE THE FILE FROM THE CLIENT
-    if (server->write_file_to_socket(socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
+    if (tcp_file_transfer::write_file_to_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_SERVER_FAILURE;
 
     return SDFS_SERVER_SUCCESS;
 }

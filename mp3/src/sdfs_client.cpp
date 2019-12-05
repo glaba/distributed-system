@@ -28,7 +28,7 @@ int sdfs_client_impl::put_operation(int socket, std::string local_filename, std:
     // SEND THE PUT REQUEST AND THEN SEND THE FILE
     sdfs_message put_msg; put_msg.set_type_put(sdfs_filename);
     if (send_request(socket, put_msg) == -1) return SDFS_CLIENT_FAILURE;
-    if (client->write_file_to_socket(socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
+    if (tcp_file_transfer::write_file_to_socket(client.get(), socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
 
     // @TODO: determine if i want to use success messages from the node to the client
     return SDFS_CLIENT_SUCCESS;
@@ -41,7 +41,7 @@ int sdfs_client_impl::get_operation(int socket, std::string local_filename, std:
     // SEND THE GET REQUEST AND THEN RECEIVE THE FILE
     sdfs_message get_msg; get_msg.set_type_get(sdfs_filename);
     if (send_request(socket, get_msg) == -1) return SDFS_CLIENT_FAILURE;
-    if (client->read_file_from_socket(socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
+    if (tcp_file_transfer::read_file_from_socket(client.get(), socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
 
     // @TODO: determine if i want to use success messages from the node to the client
     return SDFS_CLIENT_SUCCESS;

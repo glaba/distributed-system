@@ -66,73 +66,6 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     return total;
 }
 
-ssize_t tcp_utils::write_file_to_socket(int socket, std::string filename) {
-    int fd;
-    struct stat fd_stats;
-
-    if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
-    if (fstat(fd, &fd_stats) < 0) return -1;
-
-    char *contents;
-    if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
-
-    // write total size of file to socket
-    if ((write_message_size(socket, fd_stats.st_size)) == -1) return -1;
-
-    size_t pos = 0;
-    size_t num_to_write;
-    ssize_t num_written;
-    size_t bytes_left = fd_stats.st_size;
-    while (bytes_left > 0) {
-        // write file in CHUNK_SIZE chunks
-        num_to_write = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
-        if ((num_written = write_all_to_socket(socket,
-                        contents + pos, num_to_write)) == -1) return -1;
-
-        pos += num_written;
-        bytes_left -= num_written;
-    }
-
-    munmap(contents, fd_stats.st_size);
-    return fd_stats.st_size;
-}
-
-ssize_t tcp_utils::read_file_from_socket(int socket, std::string filename) {
-    int fd;
-
-    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
-
-    // read total size of file from socket
-    ssize_t size = get_message_size(socket);
-
-    // write byte at last location
-    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
-    if (write(fd, "", 1) != 1) return -1;
-
-    // mmap and read file from socket
-    char *contents;
-    if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
-
-    size_t pos = 0;
-    size_t num_to_read;
-    ssize_t num_read;
-    size_t bytes_left = size;
-    while (bytes_left > 0) {
-        // read file in CHUNK_SIZE chunks
-        num_to_read = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
-        if ((num_read = read_all_from_socket(socket,
-                        contents + pos, num_to_read)) == -1) return -1;
-
-        pos += num_read;
-        bytes_left -= num_read;
-    }
-
-    munmap(contents, size);
-    return size;
-}
-
 void tcp_server_impl::setup_server(int port) {
     // Set up the server_fd
     struct addrinfo info, *res;
@@ -194,7 +127,7 @@ void tcp_server_impl::close_connection(int client_socket) {
 
 std::string tcp_server_impl::read_from_client(int client) {
     ssize_t message_size;
-    if ((message_size = tcp_utils::get_message_size(client)) == -1)
+    if ((message_size = get_message_size(client)) == -1)
         return "";
 
     unique_ptr<char[]> buf = make_unique<char[]>(message_size);
@@ -246,7 +179,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
 
 std::string tcp_client_impl::read_from_server(int socket) {
     ssize_t message_size;
-    if ((message_size = tcp_utils::get_message_size(socket)) == -1)
+    if ((message_size = get_message_size(socket)) == -1)
         return "";
 
     unique_ptr<char[]> buf = make_unique<char[]>(message_size);
@@ -270,3 +203,151 @@ void tcp_client_impl::close_connection(int socket) {
 }
 
 register_service<tcp_factory, tcp_factory_impl> register_tcp_factory;
+
+// these wrappers unfortunately exist as an echo of design problems that would take a lot of effort to fix
+// in summary, i need my file transfer utilities to be mockable, meaning it only calls the already mocked
+// functions in tcp_client and tcp_server (read and write). i wrote this code using stuff from tcp_utils
+// which is using raw read and write calls (because utils is basically just helpers for the main tcp classes)
+ssize_t tcp_file_transfer::write_file_to_socket(tcp_client *client, int socket, std::string filename) {
+    int fd;
+    struct stat fd_stats;
+
+    if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
+    if (fstat(fd, &fd_stats) < 0) return -1;
+
+    char *contents;
+    if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    // write total size of file to socket
+    if ((client->write_to_server(socket, std::to_string(fd_stats.st_size))) == -1) return -1;
+
+    size_t pos = 0;
+    size_t num_to_write;
+    ssize_t num_written;
+    size_t bytes_left = fd_stats.st_size;
+    while (bytes_left > 0) {
+        // write file in CHUNK_SIZE chunks
+        num_to_write = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
+        std::string data(contents + pos, num_to_write);
+        // virtual ssize_t write_to_server(int socket, std::string data) = 0;
+
+        if ((num_written = client->write_to_server(socket, data)) == -1) return -1;
+
+        pos += num_written;
+        bytes_left -= num_written;
+    }
+
+    munmap(contents, fd_stats.st_size);
+    return fd_stats.st_size;
+}
+
+ssize_t tcp_file_transfer::write_file_to_socket(tcp_server *server, int socket, std::string filename) {
+    int fd;
+    struct stat fd_stats;
+
+    if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
+    if (fstat(fd, &fd_stats) < 0) return -1;
+
+    char *contents;
+    if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    // write total size of file to socket
+    if ((server->write_to_client(socket, std::to_string(fd_stats.st_size))) == -1) return -1;
+
+    size_t pos = 0;
+    size_t num_to_write;
+    ssize_t num_written;
+    size_t bytes_left = fd_stats.st_size;
+    while (bytes_left > 0) {
+        // write file in CHUNK_SIZE chunks
+        num_to_write = bytes_left > CHUNK_SIZE ? CHUNK_SIZE : bytes_left;
+        std::string data(contents + pos, num_to_write);
+        // virtual ssize_t write_to_server(int socket, std::string data) = 0;
+
+        if ((num_written = server->write_to_client(socket, data)) == -1) return -1;
+
+        pos += num_written;
+        bytes_left -= num_written;
+    }
+
+    munmap(contents, fd_stats.st_size);
+    return fd_stats.st_size;
+}
+
+ssize_t tcp_file_transfer::read_file_from_socket(tcp_client *client, int socket, std::string filename) {
+    int fd;
+
+    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
+
+    // read total size of file from socket
+    std::string size_str;
+    if ((size_str = client->read_from_server(socket)) == "") return -1;
+    size_t size = std::stoul(size_str);
+
+    // write byte at last location
+    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
+    if (write(fd, "", 1) != 1) return -1;
+
+    // mmap and read file from socket
+    char *contents;
+    if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    size_t pos = 0;
+    size_t num_read;
+    size_t bytes_left = size;
+    std::string data;
+    while (bytes_left > 0) {
+        // read file in CHUNK_SIZE chunks
+        if ((data = client->read_from_server(socket)) == "") return -1;
+
+        num_read = data.length();
+        memcpy(contents + pos, data.c_str(), num_read);
+
+        pos += num_read;
+        bytes_left -= num_read;
+    }
+
+    munmap(contents, size);
+    return size;
+}
+
+ssize_t tcp_file_transfer::read_file_from_socket(tcp_server *server, int socket, std::string filename) {
+    int fd;
+
+    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
+
+    // read total size of file from socket
+    std::string size_str;
+    if ((size_str = server->read_from_client(socket)) == "") return -1;
+    size_t size = std::stoul(size_str);
+
+    // write byte at last location
+    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
+    if (write(fd, "", 1) != 1) return -1;
+
+    // mmap and read file from socket
+    char *contents;
+    if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
+            (caddr_t) -1) return -1;
+
+    size_t pos = 0;
+    size_t num_read;
+    size_t bytes_left = size;
+    std::string data;
+    while (bytes_left > 0) {
+        // read file in CHUNK_SIZE chunks
+        if ((data = server->read_from_client(socket)) == "") return -1;
+
+        num_read = data.length();
+        memcpy(contents + pos, data.c_str(), num_read);
+
+        pos += num_read;
+        bytes_left -= num_read;
+    }
+
+    munmap(contents, size);
+    return size;
+}

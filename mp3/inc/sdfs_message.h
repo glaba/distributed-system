@@ -32,8 +32,9 @@ public:
     }
 
     // Sets the message to be a mn_ls message
-    void set_type_mn_ls() {
+    void set_type_mn_ls(std::string payload) {
         type = msg_type::mn_ls;
+        data = payload;
     }
 
     // Sets the message to be a put message
