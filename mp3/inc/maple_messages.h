@@ -3,23 +3,43 @@
 #include <string>
 #include <variant>
 #include <cassert>
+#include <vector>
 
-struct maple_start_job_data {
+struct maple_start_job {
     std::string maple_exe;
     int num_maples;
     std::string sdfs_intermediate_filename_prefix;
     std::string sdfs_src_dir;
 };
 
-struct maple_job_end_data {
+struct maple_job_end {
     int succeeded;
+};
+
+struct maple_assign_job {
+    int job_id;
+    std::string maple_exe;
+    std::vector<std::string> input_files;
+    std::string sdfs_intermediate_filename_prefix;
+};
+
+struct maple_request_append_perm {
+    int job_id;
+    std::string key;
+};
+
+struct maple_append_perm {
+    int allowed;
 };
 
 class maple_message {
 public:
     enum maple_msg_type {
-        START_JOB, // -> maple_start_job_data
-        JOB_END, // -> maple_job_end_data
+        START_JOB,
+        JOB_END,
+        ASSIGN_JOB,
+        REQUEST_APPEND_PERM,
+        APPEND_PERM,
         INVALID
     };
 
@@ -60,5 +80,5 @@ private:
     void set_msg_type();
 
     maple_msg_type msg_type;
-    std::variant<maple_start_job_data, maple_job_end_data> data;
+    std::variant<maple_start_job, maple_job_end, maple_assign_job, maple_request_append_perm, maple_append_perm> data;
 };

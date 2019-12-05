@@ -57,7 +57,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     port = port_;
-    id = std::hash<std::string>()(hostname + std::to_string(port));
+    id = static_cast<int32_t>(std::hash<std::string>()(hostname + std::to_string(port))) & 0x7FFFFFFF;
 
     client = factory->get_udp_client(hostname + "_server");
     server = factory->get_udp_server(hostname + "_server");
@@ -138,7 +138,7 @@ void mock_tcp_factory::mock_tcp_server::stop_server() {
 }
 
 int mock_tcp_factory::mock_tcp_server::accept_connection() {
-    while (true) {
+    while (running.load()) {
         { // Atomic block to poll the queue
             std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
@@ -166,6 +166,8 @@ int mock_tcp_factory::mock_tcp_server::accept_connection() {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+
+    return -1;
 }
 
 void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
@@ -257,7 +259,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
     { // Atomic block to access various data structures
         std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-        server_id = std::hash<std::string>()(host + std::to_string(port));
+        server_id = static_cast<int32_t>(std::hash<std::string>()(host + std::to_string(port))) & 0x7FFFFFFF;
 
         // Check that we don't already have a connection open to this server
         if (server_hostnames.find(server_id) != server_hostnames.find(server_id)) {

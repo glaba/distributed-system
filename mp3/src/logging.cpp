@@ -11,14 +11,14 @@ using std::make_unique;
 std::mutex logger_factory_impl::log_mutex;
 
 template <logger::log_level level>
-void logger_factory_impl::stdout_logger<level>::log(std::string data) {
+void logger_factory_impl::stdout_logger<level>::log(std::string data, std::string log_level_char) {
     std::lock_guard<std::mutex> guard(log_mutex);
 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t tt = std::chrono::system_clock::to_time_t(now);
 
     std::string msg = std::string("[") + std::strtok(ctime(&tt), "\n") + std::string("] ") +
-        prefix + std::string(": ") + data;
+        log_level_char + " " + prefix + std::string(": ") + data;
 
     std::cout << msg << std::endl;
 }
@@ -26,31 +26,31 @@ void logger_factory_impl::stdout_logger<level>::log(std::string data) {
 template <logger::log_level level>
 void logger_factory_impl::stdout_logger<level>::info(std::string data) {
     if (level == level_info || level == level_debug || level == level_trace) {
-        log(data);
+        log(data, "I");
     }
 }
 
 template <logger::log_level level>
 void logger_factory_impl::stdout_logger<level>::debug(std::string data) {
     if (level == level_debug || level == level_trace) {
-        log(data);
+        log(data, "D");
     }
 }
 
 template <logger::log_level level>
 void logger_factory_impl::stdout_logger<level>::trace(std::string data) {
     if (level == level_trace) {
-        log(data);
+        log(data, "T");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::file_logger<level>::log(std::string data) {
+void logger_factory_impl::file_logger<level>::log(std::string data, std::string log_level_char) {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t tt = std::chrono::system_clock::to_time_t(now);
 
     std::string msg = std::string("[") + std::strtok(ctime(&tt), "\n") + std::string("] ") +
-        prefix + std::string(": ") + data;
+        log_level_char + " " + prefix + std::string(": ") + data;
 
     log_stream << msg << std::endl;
 }
@@ -58,21 +58,21 @@ void logger_factory_impl::file_logger<level>::log(std::string data) {
 template <logger::log_level level>
 void logger_factory_impl::file_logger<level>::info(std::string data) {
     if (level == level_info || level == level_debug || level == level_trace) {
-        log(data);
+        log(data, "I");
     }
 }
 
 template <logger::log_level level>
 void logger_factory_impl::file_logger<level>::debug(std::string data) {
     if (level == level_debug || level == level_trace) {
-        log(data);
+        log(data, "D");
     }
 }
 
 template <logger::log_level level>
 void logger_factory_impl::file_logger<level>::trace(std::string data) {
     if (level == level_trace) {
-        log(data);
+        log(data, "T");
     }
 }
 

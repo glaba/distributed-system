@@ -1,0 +1,233 @@
+#include "maple_node.h"
+#include "maple_node.hpp"
+#include "environment.h"
+#include "maple_messages.h"
+#include "serialization.h"
+#include "member_list.h"
+
+#include <stdlib.h>
+#include <algorithm>
+#include <unordered_map>
+
+#define MAX_NUM_RETRIES 5
+
+using std::string;
+
+maple_node_impl::maple_node_impl(environment &env)
+    : sdfsc(nullptr /* Left as nullptr until sdfs_client is implemented */)
+    , lg(env.get<logger_factory>()->get_logger("maple_node"))
+    , config(env.get<configuration>())
+    , client(env.get<tcp_factory>()->get_tcp_client())
+    , server(env.get<tcp_factory>()->get_tcp_server())
+    , el(env.get<election>()) {}
+
+void maple_node_impl::start() {
+    lg->info("Starting Maple node");
+    running = true;
+
+    std::thread server_thread([this] {server_thread_function();});
+    server_thread.detach();
+}
+
+void maple_node_impl::stop() {
+    running = false;
+    server->stop_server();
+}
+
+void maple_node_impl::server_thread_function() {
+    server->setup_server(config->get_maple_port());
+
+    while (true) {
+        // Wait for the master node to connect to us and assign us work
+        int fd = server->accept_connection();
+
+        if (!running.load()) {
+            lg->debug("Exiting server");
+        }
+
+        if (fd < 0) {
+            continue;
+        }
+
+        std::thread client_thread([this, fd] {
+            // Get the message from the master and parse it
+            string msg_str = server->read_from_client(fd);
+            maple_message msg(msg_str.c_str(), msg_str.length());
+
+            // We only handle messages of the type ASSIGN_JOB
+            if (!msg.is_well_formed() || msg.get_msg_type() != maple_message::maple_msg_type::ASSIGN_JOB) {
+                return;
+            }
+
+            maple_assign_job data = msg.get_msg_data<maple_assign_job>();
+
+            { // Start an atomic block to access the job_states map
+                std::lock_guard<std::mutex> guard(job_states_mutex);
+
+                int job_id = data.job_id;
+                bool already_running = (job_states.find(job_id) != job_states.end());
+
+                job_states[job_id].maple_exe = data.maple_exe;
+                job_states[job_id].sdfs_intermediate_filename_prefix = data.sdfs_intermediate_filename_prefix;
+
+                // Add all the files in the assignment to the list of files we need to process, ignoring duplicates
+                std::vector<string> &files = job_states[job_id].files;
+                for (string file : data.input_files) {
+                    if (std::find(files.begin(), files.end(), file) == files.end()) {
+                        files.push_back(file);
+                    }
+                }
+
+                // Spin up a thread to process the job if it isn't already running
+                if (!already_running) {
+                    std::thread job_thread([this, job_id] {run_job(job_id);});
+                    job_thread.detach();
+                }
+            }
+
+            // Close the connection with the client
+            server->close_connection(fd);
+        });
+        client_thread.detach();
+    }
+}
+
+void maple_node_impl::run_job(int job_id) {
+    job_state state;
+
+    { // Safely get the job state
+        std::lock_guard<std::mutex> guard(job_states_mutex);
+        state = job_states[job_id];
+    }
+
+    // TODO: download maple_exe from the SDFS
+    string maple_exe_path = "";
+
+    while (true) {
+        string cur_file;
+        { // Pop an item from the list of input files and exit the loop if we are done
+            std::lock_guard<std::mutex> guard(job_states_mutex);
+            if (job_states[job_id].files.size() == 0) {
+                // Remove the entry from the job_states map
+                job_states.erase(job_id);
+                break;
+            }
+            cur_file = job_states[job_id].files.back();
+            job_states[job_id].files.pop_back();
+        }
+
+        // TODO: download cur_file from the SDFS
+        string cur_file_path = "";
+
+        // TODO: For now, store key value pairs outputted by maple_exe in memory
+        std::unordered_map<string, std::vector<string>> kv_pairs;
+
+        lg->info("Running command " + maple_exe_path + " " + cur_file_path);
+        unsigned retry_count = 0;
+        bool exit = false;
+        while (!run_command(maple_exe_path + " " + cur_file_path, [this, &exit, &kv_pairs] (string line) {
+                // The input has the format "<key> <value>", where <key> doesn't contain spaces and <value> doesn't contain \n
+                size_t space_index = line.find(" ");
+                if (space_index == string::npos) {
+                    lg->debug("Invalid format returned by executable");
+                    return false;
+                }
+                string key = line.substr(0, space_index);
+                string value = line.substr(space_index + 1);
+                kv_pairs[key].push_back(value);
+                return true;
+            }))
+        {
+            kv_pairs.clear();
+
+            if (retry_count++ > MAX_NUM_RETRIES) {
+                lg->info("Giving up on job " + std::to_string(job_id) + " after " + std::to_string(MAX_NUM_RETRIES) +
+                    " failed attempts to run \"" + maple_exe_path + " " + cur_file_path + "\", exiting");
+                return;
+            }
+            lg->debug("Failed to run program for job " + std::to_string(job_id) + " on input file " + cur_file_path + ", retrying");
+        }
+
+        for (auto const &[key, vals] : kv_pairs) {
+            // Ask maple_master for permission to append
+            bool got_permission = false;
+
+            while (true) {
+                // First, get the master hostname from the election service
+                string master_hostname = "";
+                while (master_hostname == "") {
+                    el->get_master_node([&master_hostname] (member master, bool succeeded) {
+                        if (succeeded) {
+                            master_hostname = master.hostname;
+                        }
+                    });
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                }
+
+                // Then, construct the message request permission to append
+                maple_request_append_perm msg_data;
+                msg_data.job_id = job_id;
+                msg_data.key = key;
+                maple_message msg;
+                msg.set_msg_data(msg_data);
+                string msg_str = msg.serialize();
+
+                // Connect to the master and send the message, and wait for either a yes or no response
+                int fd = client->setup_connection(master_hostname, config->get_maple_port());
+                if (fd < 0) {
+                    continue; // Master has gone down, poll on election
+                }
+
+                if (client->write_to_server(fd, msg_str) <= 0) continue;
+                string response_str = client->read_from_server(fd);
+
+                maple_message response(response_str.c_str(), response_str.length());
+                if (!response.is_well_formed() || response.get_msg_type() != maple_message::maple_msg_type::APPEND_PERM) {
+                    continue; // Master has gone down or has gone crazy
+                }
+
+                got_permission = (response.get_msg_data<maple_append_perm>().allowed != 0);
+            }
+
+            if (got_permission) {
+                string intermediate_filename = state.sdfs_intermediate_filename_prefix + "_" + key;
+
+                // TODO: Append values to file with name intermediate_filename using sdfs_client
+                //  with metadata key=maple, value=cur_file
+            }
+        }
+    }
+}
+
+bool maple_node_impl::run_command(string command, std::function<bool(string)> callback) {
+    char buffer[1024];
+    FILE *stream = popen(command.c_str(), "r");
+    if (stream) {
+        string cur_line = "";
+        while (!feof(stream)) {
+            size_t bytes_read = fread(static_cast<void*>(buffer), 1, 1024, stream);
+            if (bytes_read == 1024 || feof(stream)) {
+                int len;
+                for (len = 0; len < 1024 && buffer[len] != '\n'; len++);
+
+                cur_line += string(buffer, len);
+
+                // Check if we encountered a \n, which means we should call the callback
+                if (len < 1024 && buffer[len] == '\n') {
+                    if (!callback(cur_line)) {
+                        lg->debug("Callback has indicated failure");
+                        return false;
+                    }
+                    cur_line = "";
+                }
+            } else {
+                lg->debug("Error occurred while processing output of command");
+            }
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+register_auto<maple_node, maple_node_impl> register_maple_node;

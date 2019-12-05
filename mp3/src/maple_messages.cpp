@@ -9,7 +9,7 @@ maple_message::maple_message(const char *buf, unsigned length) {
 
         switch (msg_type) {
             case START_JOB: {
-                maple_start_job_data d;
+                maple_start_job d;
                 d.maple_exe = des.get_string();
                 d.num_maples = des.get_int();
                 d.sdfs_intermediate_filename_prefix = des.get_string();
@@ -18,8 +18,33 @@ maple_message::maple_message(const char *buf, unsigned length) {
                 break;
             }
             case JOB_END: {
-                maple_job_end_data d;
+                maple_job_end d;
                 d.succeeded = des.get_int();
+                data = d;
+                break;
+            }
+            case ASSIGN_JOB: {
+                maple_assign_job d;
+                d.job_id = des.get_int();
+                d.maple_exe = des.get_string();
+                int num_input_files = des.get_int();
+                for (int i = 0; i < num_input_files; i++) {
+                    d.input_files.push_back(des.get_string());
+                }
+                d.sdfs_intermediate_filename_prefix = des.get_string();
+                data = d;
+                break;
+            }
+            case REQUEST_APPEND_PERM: {
+                maple_request_append_perm d;
+                d.job_id = des.get_int();
+                d.key = des.get_string();
+                data = d;
+                break;
+            }
+            case APPEND_PERM: {
+                maple_append_perm d;
+                d.allowed = des.get_int();
                 data = d;
                 break;
             }
@@ -40,7 +65,7 @@ std::string maple_message::serialize() {
 
     switch (msg_type) {
         case START_JOB: {
-            maple_start_job_data d = std::get<maple_start_job_data>(data);
+            maple_start_job d = std::get<maple_start_job>(data);
             ser.add_field(d.maple_exe);
             ser.add_field(d.num_maples);
             ser.add_field(d.sdfs_intermediate_filename_prefix);
@@ -48,8 +73,30 @@ std::string maple_message::serialize() {
             break;
         }
         case JOB_END: {
-            maple_job_end_data d = std::get<maple_job_end_data>(data);
+            maple_job_end d = std::get<maple_job_end>(data);
             ser.add_field(d.succeeded);
+            break;
+        }
+        case ASSIGN_JOB: {
+            maple_assign_job d = std::get<maple_assign_job>(data);
+            ser.add_field(d.job_id);
+            ser.add_field(d.maple_exe);
+            ser.add_field(d.input_files.size());
+            for (unsigned i = 0; i < d.input_files.size(); i++) {
+                ser.add_field(d.input_files[i]);
+            }
+            ser.add_field(d.sdfs_intermediate_filename_prefix);
+            break;
+        }
+        case REQUEST_APPEND_PERM: {
+            maple_request_append_perm d = std::get<maple_request_append_perm>(data);
+            ser.add_field(d.job_id);
+            ser.add_field(d.key);
+            break;
+        }
+        case APPEND_PERM: {
+            maple_append_perm d = std::get<maple_append_perm>(data);
+            ser.add_field(d.allowed);
             break;
         }
         default: assert(false && "Invalid memory type provided, meaning memory corruption has occurred");
@@ -59,6 +106,10 @@ std::string maple_message::serialize() {
 }
 
 void maple_message::set_msg_type() {
-    if (std::holds_alternative<maple_start_job_data>(data)) msg_type = START_JOB;
+    if      (std::holds_alternative<maple_start_job>(data))           msg_type = START_JOB;
+    else if (std::holds_alternative<maple_job_end>(data))             msg_type = JOB_END;
+    else if (std::holds_alternative<maple_assign_job>(data))          msg_type = ASSIGN_JOB;
+    else if (std::holds_alternative<maple_request_append_perm>(data)) msg_type = REQUEST_APPEND_PERM;
+    else if (std::holds_alternative<maple_append_perm>(data))         msg_type = APPEND_PERM;
     else assert(false && "Invalid message data provided");
 }

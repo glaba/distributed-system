@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     string maple_master;
     int sdfs_internal_port = 1234;
     int sdfs_master_port = 1235;
-    int maple_master_port = 1236;
+    int maple_port = 1236;
     logger::log_level log_level = logger::log_level::level_off;
 
     cli_parser.add_argument<string>("maple_exe", "The path to the executable which performs map on individual files", &maple_exe);
@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     cli_parser.add_required_option<string>("h", "maple_master", "The hostname of the master node in the cluster", &maple_master);
     cli_parser.add_option<int>("ip", "port", "The TCP port used for communication between nodes in SDFS (default 1234)", &sdfs_internal_port);
     cli_parser.add_option<int>("mp", "port", "The TCP port used for communication between clients and the master node in SDFS (default 1235)", &sdfs_master_port);
-    cli_parser.add_option<int>("p", "port", "The TCP port used for communication with the Maple master (default 1236)", &maple_master_port);
+    cli_parser.add_option<int>("p", "port", "The TCP port used for communication with the Maple master (default 1236)", &maple_port);
 
     std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
         if (str == "OFF") {
@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     configuration *config = env.get<configuration>();
     config->set_sdfs_internal_port(sdfs_internal_port);
     config->set_sdfs_master_port(sdfs_master_port);
-    config->set_maple_master_port(maple_master_port);
+    config->set_maple_port(maple_port);
 
     env.get<logger_factory>()->configure(log_level);
     if (env.get<maple_client>()->run_job(maple_master, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir)) {

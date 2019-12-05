@@ -17,7 +17,7 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
     // TODO: put maple_exe into SDFS using sdfs_client
 
     maple_message msg;
-    maple_start_job_data data;
+    maple_start_job data;
     data.maple_exe = maple_exe;
     data.num_maples = num_maples;
     data.sdfs_intermediate_filename_prefix = sdfs_intermediate_filename_prefix;
@@ -25,11 +25,18 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
     msg.set_msg_data(data);
 
     // Send the data to the master node
-    int fd = client->setup_connection(maple_master, config->get_maple_master_port());
+    int fd = client->setup_connection(maple_master, config->get_maple_port());
     client->write_to_server(fd, msg.serialize());
 
     // Get the results of the job
     string response = client->read_from_server(fd);
+
+    // Check if the connection was closed unexpectedly
+    if (response.length() == 0) {
+        // In this case, the master has failed and the job should continue
+        // TODO: implement reconnecting to the new master and continuing the job
+    }
+
     maple_message response_msg(response.c_str(), response.length());
 
     if (!response_msg.is_well_formed() || response_msg.get_msg_type() != maple_message::maple_msg_type::JOB_END) {
@@ -37,7 +44,7 @@ bool maple_client_impl::run_job(string maple_master, string maple_exe, int num_m
         return false;
     }
 
-    if (response_msg.get_msg_data<maple_job_end_data>().succeeded) {
+    if (response_msg.get_msg_data<maple_job_end>().succeeded) {
         lg->info("Maple job completed successfully");
         return true;
     } else {

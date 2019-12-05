@@ -44,7 +44,7 @@ protected:
         void trace(std::string data);
 
     private:
-        void log(std::string data);
+        void log(std::string data, std::string log_level_char);
 
         std::string prefix;
     };
@@ -60,7 +60,7 @@ protected:
         void trace(std::string data);
 
     private:
-        void log(std::string data);
+        void log(std::string data, std::string log_level_char);
 
         std::string prefix;
         std::ofstream log_stream;

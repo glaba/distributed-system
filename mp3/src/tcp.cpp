@@ -107,7 +107,8 @@ void tcp_server_impl::setup_server(int port) {
 }
 
 void tcp_server_impl::stop_server() {
-    // Close socket and clear queue
+    // Close socket
+    shutdown(server_fd, SHUT_RDWR);
     close(server_fd);
 }
 

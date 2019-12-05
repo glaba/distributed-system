@@ -83,7 +83,7 @@ private:
         std::unique_ptr<udp_server> server;
         std::unique_ptr<udp_client> client;
         string hostname;
-        uint32_t id;
+        int id;
         int port;
 
         // Thread which reads UDP messages and pushes them into the correct queue
@@ -123,7 +123,7 @@ private:
 
         // RNG to generate the ID and the ID itself
         std::mt19937 mt;
-        uint32_t id;
+        int id;
 
         // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue
         std::unordered_map<uint32_t, std::thread> msg_threads;
