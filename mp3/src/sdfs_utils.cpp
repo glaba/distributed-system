@@ -1,11 +1,16 @@
 #include "sdfs_utils.hpp"
 
+
+#include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+
+extern int errno;
 
 int sdfs_utils::send_message(tcp_client *client, int socket, sdfs_message sdfs_msg) {
     std::string msg = sdfs_msg.serialize();
@@ -54,18 +59,18 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
     if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
     if (fstat(fd, &fd_stats) < 0) return -1;
 
-    flock(fd, LOCK_SH);
+    if (acquire_lock(fd, LOCK_SH) == -1) return -1;
 
     char *contents;
     if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
             (caddr_t) -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
     // write total size of file to socket
     if ((client->write_to_server(socket, std::to_string(fd_stats.st_size))) == -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -80,7 +85,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
         // virtual ssize_t write_to_server(int socket, std::string data) = 0;
 
         if ((num_written = client->write_to_server(socket, data)) == -1) {
-            flock(fd, LOCK_UN);
+            release_lock(fd);
             return -1;
         }
 
@@ -89,7 +94,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
     }
 
     munmap(contents, fd_stats.st_size);
-    flock(fd, LOCK_UN);
+    release_lock(fd);
 
     return fd_stats.st_size;
 }
@@ -101,18 +106,18 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
     if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
     if (fstat(fd, &fd_stats) < 0) return -1;
 
-    flock(fd, LOCK_SH);
+    if (acquire_lock(fd, LOCK_SH) == -1) return -1;
 
     char *contents;
     if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
             (caddr_t) -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
     // write total size of file to socket
     if ((server->write_to_client(socket, std::to_string(fd_stats.st_size))) == -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -127,7 +132,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
         // virtual ssize_t write_to_server(int socket, std::string data) = 0;
 
         if ((num_written = server->write_to_client(socket, data)) == -1) {
-            flock(fd, LOCK_UN);
+            release_lock(fd);
             return -1;
         }
 
@@ -136,7 +141,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
     }
 
     munmap(contents, fd_stats.st_size);
-    flock(fd, LOCK_UN);
+    release_lock(fd);
 
     return fd_stats.st_size;
 }
@@ -146,12 +151,12 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
 
     if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
 
-    flock(fd, LOCK_EX);
+    if (acquire_lock(fd, LOCK_EX) == -1) return -1;
 
     // read total size of file from socket
     std::string size_str;
     if ((size_str = client->read_from_server(socket)) == "") {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -159,11 +164,11 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
 
     // write byte at last location
     if (lseek(fd, size - 1, SEEK_SET) == -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
     if (write(fd, "", 1) != 1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -171,7 +176,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     char *contents;
     if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
             (caddr_t) -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -182,7 +187,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     while (bytes_left > 0) {
         // read file in CHUNK_SIZE chunks
         if ((data = client->read_from_server(socket)) == "") {
-            flock(fd, LOCK_UN);
+            release_lock(fd);
             return -1;
         }
 
@@ -194,7 +199,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     }
 
     munmap(contents, size);
-    flock(fd, LOCK_UN);
+    release_lock(fd);
 
     return size;
 }
@@ -204,23 +209,23 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
 
     if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
 
-    flock(fd, LOCK_SH);
+    if (acquire_lock(fd, LOCK_EX) == -1) return -1;
 
     // read total size of file from socket
     std::string size_str;
     if ((size_str = server->read_from_client(socket)) == "") {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
     size_t size = std::stoul(size_str);
 
     // write byte at last location
     if (lseek(fd, size - 1, SEEK_SET) == -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
     if (write(fd, "", 1) != 1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -228,7 +233,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
     char *contents;
     if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
             (caddr_t) -1) {
-        flock(fd, LOCK_UN);
+        release_lock(fd);
         return -1;
     }
 
@@ -239,7 +244,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
     while (bytes_left > 0) {
         // read file in CHUNK_SIZE chunks
         if ((data = server->read_from_client(socket)) == "") {
-            flock(fd, LOCK_UN);
+            release_lock(fd);
             return -1;
         }
 
@@ -251,7 +256,19 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
     }
 
     munmap(contents, size);
-    flock(fd, LOCK_UN);
+    release_lock(fd);
 
     return size;
+}
+
+int sdfs_utils::acquire_lock(int fd, int operation) {
+    while (flock(fd, operation) == -1) {
+        // check errno
+        if (errno != EINTR) return -1;
+    }
+    return 0;
+}
+
+int sdfs_utils::release_lock(int fd) {
+    flock(fd, LOCK_UN);
 }
