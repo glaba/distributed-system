@@ -54,8 +54,16 @@ public:
     void set_dir(std::string dir_) {
         dir = dir_;
     }
+    std::string get_dir() {
+        return dir;
+    }
     void set_sdfs_subdir(std::string subdir) {
-        sdfs_dir = dir + "/" + subdir;
+        sdfs_dir = dir + subdir + "/";
+        // Create the directory
+        if (mkdir(sdfs_dir.c_str(), ACCESSPERMS) != 0) {
+            std::cerr << "Could not create SDFS subdirectory, exiting" << std::endl;
+            exit(1);
+        }
     }
     std::string get_sdfs_dir() {
         return sdfs_dir;
@@ -82,7 +90,7 @@ public:
         // Create our own subdirectory within this directory only for files within this environment
         std::mt19937 mt(std::chrono::system_clock::now().time_since_epoch().count());
         std::string subdir = "test" + std::to_string(mt());
-        if (mkdir((dir_ + subdir).c_str(), 700) != 0) {
+        if (mkdir((dir_ + subdir).c_str(), ACCESSPERMS) != 0) {
             std::cerr << "Invalid directory provided, exiting" << std::endl;
             exit(1);
         }
