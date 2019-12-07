@@ -44,6 +44,8 @@ int sdfs_utils::receive_message(tcp_server *server, int socket, sdfs_message *sd
     return SDFS_SUCCESS;
 }
 
+/* @TODO: ADD THREAD-SAFE ACCESS VIA FLOCK TO ALL WRITES AND READS OF A FILE */
+
 ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::string filename) {
     int fd;
     struct stat fd_stats;
