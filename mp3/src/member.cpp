@@ -14,6 +14,7 @@ using std::unique_ptr;
 using std::make_unique;
 using std::string;
 using callback = std::function<bool(string)>;
+using none = std::monostate;
 
 int main(int argc, char **argv) {
     // Arguments for command: member ...
@@ -22,12 +23,13 @@ int main(int argc, char **argv) {
     int port;
     logger::log_level log_level = logger::log_level::level_off;
     // Arguments for subcommand: member test ...
+    int parallelism;
     string test_prefix;
 
     // Setup CLI arguments and options
-    cli_parser.add_required_option<string>("h", "hostname", "The hostname of this node that other nodes can use", &local_hostname);
-    cli_parser.add_option<bool>("f", "first_node", "Indicates whether or not we are the first node in the group", &is_first_node);
-    cli_parser.add_required_option<int>("p", "port", "The UDP port to use for heartbeating", &port);
+    cli_parser.add_required_option<>("h", "hostname", "The hostname of this node that other nodes can use", &local_hostname);
+    cli_parser.add_option<>("f", "first_node", "Indicates whether or not we are the first node in the group", &is_first_node);
+    cli_parser.add_required_option<>("p", "port", "The UDP port to use for heartbeating", &port);
     std::function<bool(string)> log_level_parser = [&log_level] (string str) {
         if (str == "OFF") {
             log_level = logger::log_level::level_off;
@@ -42,11 +44,12 @@ int main(int argc, char **argv) {
         }
         return true;
     };
-    cli_parser.add_option<callback>("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", &log_level_parser);
+    cli_parser.add_option<callback, none>("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", &log_level_parser);
 
     cli_command *test_parser = cli_parser.add_subcommand("test");
-    test_parser->add_option<string>("p", "prefix", "The prefix of the tests to run. By default all tests will be run", &test_prefix);
-    test_parser->add_option<callback>("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", &log_level_parser);
+    test_parser->add_option<>("j", "parallelism", "The number of threads to use if there is no logging", &parallelism, 1);
+    test_parser->add_option<>("p", "prefix", "The prefix of the tests to run. By default all tests will be run", &test_prefix);
+    test_parser->add_option<callback, none>("l", "log_level", "The logging level to use: either OFF, INFO, DEBUG, or TRACE", &log_level_parser);
 
     // Run CLI parser and exit on failure
     if (!cli_parser.parse("member", argc, argv)) {
@@ -54,7 +57,7 @@ int main(int argc, char **argv) {
     }
 
     if (test_parser->was_invoked()) {
-        testing::run_tests(test_prefix, log_level, log_level != logger::log_level::level_off);
+        testing::run_tests(test_prefix, log_level, parallelism, true);
         return 0;
     }
 

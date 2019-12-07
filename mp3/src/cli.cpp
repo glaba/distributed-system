@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <iostream>
 #include <functional>
+#include <cassert>
 
 using std::unique_ptr;
 using std::make_unique;
@@ -11,31 +12,9 @@ using std::string;
 cli_command cli_parser;
 
 cli_command *cli_command::add_subcommand(string command) {
+    assert(command != "help" && "help is a reserved subcommand");
     subcommands[command] = make_unique<cli_command>();
     return subcommands[command].get();
-}
-
-template <typename T>
-void cli_command::add_argument(string short_desc, string description, T *result) {
-    arguments.push_back(result);
-    argument_descriptions.push_back(description);
-    argument_short_descriptions.push_back(short_desc);
-}
-
-template <typename T>
-void cli_command::add_option(string flag, string short_desc, string description, T *result) {
-    options[flag] = result;
-    option_descriptions[flag] = description;
-    option_short_descriptions[flag] = short_desc;
-    option_required[flag] = false;
-}
-
-template <typename T>
-void cli_command::add_required_option(string flag, string short_desc, string description, T *result) {
-    options[flag] = result;
-    option_descriptions[flag] = description;
-    option_short_descriptions[flag] = short_desc;
-    option_required[flag] = true;
 }
 
 bool cli_command::parse(string command, int argc, char **argv) {
@@ -46,6 +25,11 @@ bool cli_command::parse(string command, int argc, char **argv) {
 
         // First, check if the next string is a subcommand
         if (argc > 0) {
+            // help is a special subcommand
+            if (string(argv[0]) == "help") {
+                print_help(command);
+                return false;
+            }
             for (auto &subcommand : subcommands) {
                 if (subcommand.first == string(argv[0])) {
                     return subcommand.second->parse(command + " " + subcommand.first, argc, argv);
@@ -87,18 +71,18 @@ bool cli_command::parse(string command, int argc, char **argv) {
             }
         }
 
-        // First, set all options to their default empty values
+        // First, set all options to their default values
         for (auto option : options) {
             if (std::holds_alternative<bool*>(option.second)) {
-                *std::get<bool*>(option.second) = false;
+                *std::get<bool*>(option.second) = std::get<bool>(option_defaults[option.first]);
             }
 
             if (std::holds_alternative<string*>(option.second)) {
-                *std::get<string*>(option.second) = "";
+                *std::get<string*>(option.second) = std::get<string>(option_defaults[option.first]);
             }
 
             if (std::holds_alternative<int*>(option.second)) {
-                *std::get<int*>(option.second) = 0;
+                *std::get<int*>(option.second) = std::get<int>(option_defaults[option.first]);
             }
         }
 
@@ -187,6 +171,12 @@ bool cli_command::parse(string command, int argc, char **argv) {
     }
 
 help:
+    print_help(command);
+
+    return false;
+}
+
+void cli_command::print_help(std::string command) {
     std::cout << "Usage: " << command << " ";
 
     // Print all the arguments
@@ -213,27 +203,20 @@ help:
             std::cout << "       [" << command << " " << it->first << " ...]" << std::endl;
         }
     }
+    std::cout << std::endl;
 
     // Print the descriptions of the arguments and options
     for (unsigned i = 0; i < arguments.size(); i++) {
         std::cout << " <" << argument_short_descriptions[i] << ">\t" << argument_descriptions[i] << std::endl;
     }
     for (auto option : options) {
-        std::cout << " -" << option.first << "\t\t" << option_descriptions[option.first] << std::endl;
+        std::cout << " -" << option.first << "\t\t" << option_descriptions[option.first];
+        if (std::holds_alternative<bool>(option_defaults[option.first]))
+            std::cout << " (default: " << std::get<bool>(option_defaults[option.first]) << ")";
+        if (std::holds_alternative<int>(option_defaults[option.first]))
+            std::cout << " (default: " << std::get<int>(option_defaults[option.first]) << ")";
+        if (std::holds_alternative<std::string>(option_defaults[option.first]))
+            std::cout << " (default: \"" << std::get<std::string>(option_defaults[option.first]) << "\")";
+        std::cout << std::endl;
     }
-
-    return false;
 }
-
-template void cli_command::add_argument(string short_desc, string description, int *result);
-template void cli_command::add_argument(string short_desc, string description, string *result);
-template void cli_command::add_argument(string short_desc, string description, std::function<bool(string)> *result);
-
-template void cli_command::add_option(string flag, string short_desc, string description, bool *result);
-template void cli_command::add_option(string flag, string short_desc, string description, int *result);
-template void cli_command::add_option(string flag, string short_desc, string description, string *result);
-template void cli_command::add_option(string flag, string short_desc, string description, std::function<bool(string)> *result);
-
-template void cli_command::add_required_option(string flag, string short_desc, string description, int *result);
-template void cli_command::add_required_option(string flag, string short_desc, string description, string *result);
-template void cli_command::add_required_option(string flag, string short_desc, string description, std::function<bool(string)> *result);

@@ -140,8 +140,6 @@ testing::register_test server_after_client("mock_tcp.server_after_client",
     client_env->get<logger_factory>()->configure(level);
     server_env->get<logger_factory>()->configure(level);
 
-    dynamic_cast<mock_tcp_factory*>(client_env->get<tcp_factory>())->show_packets();
-    dynamic_cast<mock_tcp_factory*>(server_env->get<tcp_factory>())->show_packets();
     unique_ptr<tcp_client> client = client_env->get<tcp_factory>()->get_tcp_client();
     unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
 
