@@ -12,6 +12,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+
 
 #include <cstring>
 
@@ -32,7 +34,9 @@ private:
     int ls_operation(int socket, std::string sdfs_filename);
 
     int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);
+    int send_master_files(int socket);
 
+    std::string get_files();
     int del_file(std::string sdfs_filename);
     bool file_exists(std::string sdfs_filename);
 

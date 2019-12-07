@@ -57,7 +57,6 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
     // RECEIVE THE FILE FROM THE CLIENT
     if (sdfs_utils::read_file_from_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
 
-    // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES
     return SDFS_SUCCESS;
 }
 
@@ -79,7 +78,6 @@ int sdfs_server_impl::del_operation(int socket, std::string sdfs_filename) {
 
     if (del_file(sdfs_filename) == -1) return SDFS_FAILURE;
 
-    // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES (or just use a store-like op)
     return SDFS_SUCCESS;
 }
 
@@ -88,7 +86,6 @@ int sdfs_server_impl::ls_operation(int socket, std::string sdfs_filename) {
     // and the master has approved the client request
     lg->info("server received request from client to ls " + sdfs_filename);
 
-    // @TODO: ADD FILE EXISTS / NOT EXISTS MESSAGE (or just use a generic failure / success)
     bool exists = file_exists(sdfs_filename);
 
     // SEND RESPONSE OVER SOCKET
@@ -113,6 +110,34 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     if (sdfs_utils::write_file_to_socket(client.get(), internal_socket, local_filename) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
+}
+
+int sdfs_server_impl::send_master_files(int socket) {
+    // @TODO: register this as a callback that occurs in a loop (in a separate thread)
+    //        waiting to be run any time a new master is elected as the leader
+    std::string files = get_files();
+
+    // SEND THE FILES TO THE MASTER
+    sdfs_message files_msg;
+    files_msg.set_type_files(config->get_hostname(), files);
+    if (sdfs_utils::send_message(client.get(), socket, files_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+
+    return SDFS_SUCCESS;
+}
+
+std::string sdfs_server_impl::get_files() {
+    // local operation to ls sdfs directory
+    DIR *dirp = opendir(config->get_sdfs_dir().c_str());
+    struct dirent *dp;
+
+    std::string files;
+    while ((dp = readdir(dirp)) != NULL) {
+        files += dp->d_name;
+        files += "\n";
+    }
+
+    closedir(dirp);
+    return files;
 }
 
 bool sdfs_server_impl::file_exists(std::string sdfs_filename) {

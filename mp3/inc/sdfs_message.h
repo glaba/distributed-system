@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, put, get, del, ls, rep, ack, success, fail
+        empty, mn_put, mn_get, mn_ls, put, get, del, ls, rep, ack, files, success, fail
     };
 
     // Creates a message from a buffer
@@ -75,6 +75,13 @@ public:
     // Sets the message to be an fail message
     void set_type_fail() {
         type = msg_type::fail;
+    }
+
+    // Sets the message to be a files message
+    void set_type_files(std::string hostname, std::string files) {
+        type = msg_type::files;
+        sdfs_hostname = hostname;
+        data = files;
     }
 
     // Sets the message to be an ls message

@@ -13,6 +13,7 @@
 
 #include <string>
 #include <cstring>
+#include <sstream>
 #include <algorithm>
 #include <unordered_map>
 
@@ -34,6 +35,8 @@ private:
 
     // used to replicate a given file
     int rep_operation(int socket, std::string hostname, std::string sdfs_filename);
+    // used to receive a list of files over a socket
+    int files_operation(int socket, std::string hostname, std::string data);
 
     bool sdfs_file_exists(std::string sdfs_filename);
     std::vector<std::string> get_hostnames();

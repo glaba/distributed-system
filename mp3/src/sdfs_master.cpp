@@ -171,6 +171,20 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     return SDFS_SUCCESS;
 }
 
+int sdfs_master_impl::files_operation(int socket, std::string hostname, std::string data) {
+    std::stringstream ss(data);
+    std::string filename;
+
+    if (data != "") {
+        while (std::getline(ss, filename, '\n')) {
+            (*file_to_hostnames)[filename].push_back(hostname);
+            (*hostname_to_files)[hostname].push_back(filename);
+        }
+    }
+
+    return SDFS_SUCCESS;
+}
+
 bool sdfs_master_impl::sdfs_file_exists(std::string sdfs_filename) {
     return file_to_hostnames->find(sdfs_filename) == file_to_hostnames->end();
 }

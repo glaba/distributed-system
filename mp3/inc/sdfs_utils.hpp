@@ -20,6 +20,6 @@ public:
     static ssize_t write_file_to_socket(tcp_server *server, int socket, std::string filename);
     static ssize_t read_file_from_socket(tcp_server *server, int socket, std::string filename);
 private:
-    int acquire_lock(int fd, int operation);
-    int release_lock(int fd);
+    static int acquire_lock(int fd, int operation);
+    static int release_lock(int fd);
 };
