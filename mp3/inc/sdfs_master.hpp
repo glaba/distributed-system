@@ -3,6 +3,8 @@
 #include "sdfs_master.h"
 #include "sdfs_message.h"
 #include "sdfs_utils.hpp"
+#include "member_list.h"
+#include "heartbeater.h"
 #include "election.h"
 #include "logging.h"
 #include "tcp.h"
@@ -11,12 +13,10 @@
 
 #include <string>
 #include <cstring>
+#include <algorithm>
 #include <unordered_map>
 
-// Defining the return value for failed operations
-#define SDFS_MASTER_FAILURE -1
-// Defining the return value for successful operations
-#define SDFS_MASTER_SUCCESS 0
+#define NUM_REPLICAS 4
 
 class sdfs_master_impl : public sdfs_master, public service_impl<sdfs_master_impl> {
 public:
@@ -32,10 +32,15 @@ private:
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
 
+    // used to replicate a given file
+    int rep_operation(int socket, std::string hostname, std::string sdfs_filename);
+
     bool sdfs_file_exists(std::string sdfs_filename);
+    std::vector<std::string> get_hostnames();
 
     // Services that we depend on
     election *el;
+    heartbeater *hb;
     std::unique_ptr<logger> lg;
     std::unique_ptr<tcp_client> client;
     std::unique_ptr<tcp_server> server;

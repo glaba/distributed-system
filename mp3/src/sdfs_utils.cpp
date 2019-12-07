@@ -1,6 +1,7 @@
 #include "sdfs_utils.hpp"
 
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -53,12 +54,20 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
     if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
     if (fstat(fd, &fd_stats) < 0) return -1;
 
+    flock(fd, LOCK_SH);
+
     char *contents;
     if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
+            (caddr_t) -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     // write total size of file to socket
-    if ((client->write_to_server(socket, std::to_string(fd_stats.st_size))) == -1) return -1;
+    if ((client->write_to_server(socket, std::to_string(fd_stats.st_size))) == -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     size_t pos = 0;
     size_t num_to_write;
@@ -70,13 +79,18 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
         std::string data(contents + pos, num_to_write);
         // virtual ssize_t write_to_server(int socket, std::string data) = 0;
 
-        if ((num_written = client->write_to_server(socket, data)) == -1) return -1;
+        if ((num_written = client->write_to_server(socket, data)) == -1) {
+            flock(fd, LOCK_UN);
+            return -1;
+        }
 
         pos += num_written;
         bytes_left -= num_written;
     }
 
     munmap(contents, fd_stats.st_size);
+    flock(fd, LOCK_UN);
+
     return fd_stats.st_size;
 }
 
@@ -87,12 +101,20 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
     if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
     if (fstat(fd, &fd_stats) < 0) return -1;
 
+    flock(fd, LOCK_SH);
+
     char *contents;
     if ((contents = (char *) mmap(0, fd_stats.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
+            (caddr_t) -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     // write total size of file to socket
-    if ((server->write_to_client(socket, std::to_string(fd_stats.st_size))) == -1) return -1;
+    if ((server->write_to_client(socket, std::to_string(fd_stats.st_size))) == -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     size_t pos = 0;
     size_t num_to_write;
@@ -104,13 +126,18 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
         std::string data(contents + pos, num_to_write);
         // virtual ssize_t write_to_server(int socket, std::string data) = 0;
 
-        if ((num_written = server->write_to_client(socket, data)) == -1) return -1;
+        if ((num_written = server->write_to_client(socket, data)) == -1) {
+            flock(fd, LOCK_UN);
+            return -1;
+        }
 
         pos += num_written;
         bytes_left -= num_written;
     }
 
     munmap(contents, fd_stats.st_size);
+    flock(fd, LOCK_UN);
+
     return fd_stats.st_size;
 }
 

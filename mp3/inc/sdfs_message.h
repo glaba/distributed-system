@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, put, get, del, ls, ack, success, fail
+        empty, mn_put, mn_get, mn_ls, put, get, del, ls, rep, ack, success, fail
     };
 
     // Creates a message from a buffer
@@ -35,6 +35,13 @@ public:
     void set_type_mn_ls(std::string payload) {
         type = msg_type::mn_ls;
         data = payload;
+    }
+
+    // Sets the message to be a rep message
+    void set_type_rep(std::string hostname, std::string filename) {
+        type = msg_type::rep;
+        sdfs_hostname = hostname;
+        sdfs_filename = filename;
     }
 
     // Sets the message to be a put message

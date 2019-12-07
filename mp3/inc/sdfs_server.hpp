@@ -31,6 +31,8 @@ private:
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
 
+    int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);
+
     int del_file(std::string sdfs_filename);
     bool file_exists(std::string sdfs_filename);
 
