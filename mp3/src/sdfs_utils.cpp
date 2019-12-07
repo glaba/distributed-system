@@ -146,19 +146,34 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
 
     if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
 
+    flock(fd, LOCK_EX);
+
     // read total size of file from socket
     std::string size_str;
-    if ((size_str = client->read_from_server(socket)) == "") return -1;
+    if ((size_str = client->read_from_server(socket)) == "") {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
+
     size_t size = std::stoul(size_str);
 
     // write byte at last location
-    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
-    if (write(fd, "", 1) != 1) return -1;
+    if (lseek(fd, size - 1, SEEK_SET) == -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
+    if (write(fd, "", 1) != 1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     // mmap and read file from socket
     char *contents;
     if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
+            (caddr_t) -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     size_t pos = 0;
     size_t num_read;
@@ -166,7 +181,10 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     std::string data;
     while (bytes_left > 0) {
         // read file in CHUNK_SIZE chunks
-        if ((data = client->read_from_server(socket)) == "") return -1;
+        if ((data = client->read_from_server(socket)) == "") {
+            flock(fd, LOCK_UN);
+            return -1;
+        }
 
         num_read = data.length();
         memcpy(contents + pos, data.c_str(), num_read);
@@ -176,6 +194,8 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     }
 
     munmap(contents, size);
+    flock(fd, LOCK_UN);
+
     return size;
 }
 
@@ -184,19 +204,33 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
 
     if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
 
+    flock(fd, LOCK_SH);
+
     // read total size of file from socket
     std::string size_str;
-    if ((size_str = server->read_from_client(socket)) == "") return -1;
+    if ((size_str = server->read_from_client(socket)) == "") {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
     size_t size = std::stoul(size_str);
 
     // write byte at last location
-    if (lseek(fd, size - 1, SEEK_SET) == -1) return -1;
-    if (write(fd, "", 1) != 1) return -1;
+    if (lseek(fd, size - 1, SEEK_SET) == -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
+    if (write(fd, "", 1) != 1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     // mmap and read file from socket
     char *contents;
     if ((contents = (char *) mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) ==
-            (caddr_t) -1) return -1;
+            (caddr_t) -1) {
+        flock(fd, LOCK_UN);
+        return -1;
+    }
 
     size_t pos = 0;
     size_t num_read;
@@ -204,7 +238,10 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
     std::string data;
     while (bytes_left > 0) {
         // read file in CHUNK_SIZE chunks
-        if ((data = server->read_from_client(socket)) == "") return -1;
+        if ((data = server->read_from_client(socket)) == "") {
+            flock(fd, LOCK_UN);
+            return -1;
+        }
 
         num_read = data.length();
         memcpy(contents + pos, data.c_str(), num_read);
@@ -214,5 +251,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::s
     }
 
     munmap(contents, size);
+    flock(fd, LOCK_UN);
+
     return size;
 }
