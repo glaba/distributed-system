@@ -28,7 +28,6 @@ int sdfs_client_impl::put_operation(std::string local_filename, std::string sdfs
     // master node correspondence to get the internal hostname
     std::string hostname;
     hostname = put_operation_master(master_socket, local_filename, sdfs_filename);
-    client->close_connection(master_socket);
 
     int internal_socket;
     if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return SDFS_FAILURE;
@@ -37,7 +36,17 @@ int sdfs_client_impl::put_operation(std::string local_filename, std::string sdfs
     int ret = put_operation_internal(internal_socket, local_filename, sdfs_filename);
     client->close_connection(internal_socket);
 
-    // @TODO: report back to master with status (remove above close connection too)
+    // report back to master with status (remove above close connection too)
+    // create success/fail message
+    sdfs_message res;
+    if (ret == SDFS_SUCCESS) {
+        res.set_type_success();
+    } else {
+        res.set_type_fail();
+    }
+
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    client->close_connection(master_socket);
 
     return ret;
 }
@@ -58,7 +67,17 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
     int ret = get_operation_internal(internal_socket, local_filename, sdfs_filename);
     client->close_connection(internal_socket);
 
-    // @TODO: report back to master with status (remove above close connection too)
+    // report back to master with status (remove above close connection too)
+    // create success/fail message
+    sdfs_message res;
+    if (ret == SDFS_SUCCESS) {
+        res.set_type_success();
+    } else {
+        res.set_type_fail();
+    }
+
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    client->close_connection(master_socket);
 
     return ret;
 }

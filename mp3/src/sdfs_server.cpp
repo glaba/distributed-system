@@ -18,6 +18,7 @@ void sdfs_server_impl::start() {
 
 void sdfs_server_impl::stop() {
     // @TODO: ADD LOGIC TO STOP ACCEPTING CONNECTIONS
+    // @TODO: ALSO REMOVE ALL FILES HERE
     return;
 }
 
@@ -50,11 +51,9 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
     // and the master has approved the client request
     lg->info("server received request from client to put " + sdfs_filename);
 
-    // @TODO: determine if i should use acks for put
     // RECEIVE THE FILE FROM THE CLIENT
     if (sdfs_utils::read_file_from_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
 
-    // @TODO: MAYBE ADD RESPONSE TO CLIENT (probably fine for client to use write response though)
     // @TODO: ADD FUNCTIONALITY OF UPDATING A LIST OF FILES
     return SDFS_SUCCESS;
 }
@@ -64,7 +63,6 @@ int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
     // and the master has approved the client request
     lg->info("server received request from client to get " + sdfs_filename);
 
-    // @TODO: determine if i should use acks for get
     // RECEIVE THE FILE FROM THE CLIENT
     if (sdfs_utils::write_file_to_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
 
