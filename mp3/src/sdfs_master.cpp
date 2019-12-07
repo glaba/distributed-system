@@ -115,7 +115,11 @@ int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
         if (client->setup_connection(host, config->get_sdfs_internal_port()) != -1) {
             sdfs_utils::send_message(client.get(), socket, sdfs_msg);
             client->close_connection(socket);
+            (*hostname_to_files)[host].erase(
+                    std::remove((*hostname_to_files)[host].begin(), (*hostname_to_files)[host].end(), sdfs_filename),
+                    (*hostname_to_files)[host].end());
         }
+        (*file_to_hostnames).erase(sdfs_filename);
     }
 
     return SDFS_SUCCESS;
@@ -161,6 +165,9 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     sdfs_message response;
     if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
     if (response.get_type() == sdfs_message::msg_type::success) {
+        // UPDATE RECORDS AND RETURN
+        (*file_to_hostnames)[sdfs_filename].push_back(hostname);
+        (*hostname_to_files)[hostname].push_back(sdfs_filename);
         return SDFS_SUCCESS;
     } else if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
