@@ -26,10 +26,10 @@ public:
     void start();
     void stop();
 
-    int put_operation(int socket, std::string local_filename, std::string sdfs_filename);
-    int get_operation(int socket, std::string local_filename, std::string sdfs_filename);
-    int del_operation(int socket, std::string sdfs_filename);
-    int ls_operation(int socket, std::string sdfs_filename);
+    int put_operation(std::string local_filename, std::string sdfs_filename);
+    int get_operation(std::string local_filename, std::string sdfs_filename);
+    int del_operation(std::string sdfs_filename);
+    int ls_operation(std::string sdfs_filename);
 
     int store_operation();
 private:

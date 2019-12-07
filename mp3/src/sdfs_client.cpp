@@ -21,7 +21,7 @@ void sdfs_client_impl::stop() {
     return;
 }
 
-int sdfs_client_impl::put_operation(int socket, std::string local_filename, std::string sdfs_filename) {
+int sdfs_client_impl::put_operation(std::string local_filename, std::string sdfs_filename) {
     int master_socket;
     if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
 
@@ -42,7 +42,7 @@ int sdfs_client_impl::put_operation(int socket, std::string local_filename, std:
     return ret;
 }
 
-int sdfs_client_impl::get_operation(int socket, std::string local_filename, std::string sdfs_filename) {
+int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs_filename) {
     int master_socket;
     if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
 
@@ -63,7 +63,7 @@ int sdfs_client_impl::get_operation(int socket, std::string local_filename, std:
     return ret;
 }
 
-int sdfs_client_impl::del_operation(int socket, std::string sdfs_filename) {
+int sdfs_client_impl::del_operation(std::string sdfs_filename) {
     int master_socket;
     if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
 
@@ -74,7 +74,7 @@ int sdfs_client_impl::del_operation(int socket, std::string sdfs_filename) {
     return status;
 }
 
-int sdfs_client_impl::ls_operation(int socket, std::string sdfs_filename) {
+int sdfs_client_impl::ls_operation(std::string sdfs_filename) {
     int master_socket;
     if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
 
