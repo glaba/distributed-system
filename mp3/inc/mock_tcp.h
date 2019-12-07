@@ -123,7 +123,7 @@ private:
 
         // RNG to generate the ID and the ID itself
         std::mt19937 mt;
-        int id;
+        uint32_t id;
 
         // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue
         std::unordered_map<uint32_t, std::thread> msg_threads;

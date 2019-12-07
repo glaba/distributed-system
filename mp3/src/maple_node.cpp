@@ -19,10 +19,13 @@ maple_node_impl::maple_node_impl(environment &env)
     , config(env.get<configuration>())
     , client(env.get<tcp_factory>()->get_tcp_client())
     , server(env.get<tcp_factory>()->get_tcp_server())
-    , el(env.get<election>()) {}
+    , el(env.get<election>())
+    , mm(env.get<maple_master>()) {}
 
 void maple_node_impl::start() {
     lg->info("Starting Maple node");
+    el->start();
+    mm->start();
     running = true;
 
     std::thread server_thread([this] {server_thread_function();});
@@ -35,7 +38,7 @@ void maple_node_impl::stop() {
 }
 
 void maple_node_impl::server_thread_function() {
-    server->setup_server(config->get_maple_port());
+    server->setup_server(config->get_maple_internal_port());
 
     while (true) {
         // Wait for the master node to connect to us and assign us work
@@ -125,7 +128,7 @@ void maple_node_impl::run_job(int job_id) {
 
         lg->info("[Job " + std::to_string(job_id) + "] Running command " + maple_exe_path + " " + cur_file_path);
         unsigned retry_count = 0;
-        while (!run_command(maple_exe_path + " " + cur_file_path, [this, &kv_pairs] (string line) {
+        while (!run_command(maple_exe_path + " " + cur_file_path, [this, &kv_pairs, job_id] (string line) {
                 // The input has the format "<key> <value>", where <key> doesn't contain spaces and <value> doesn't contain \n
                 size_t space_index = line.find(" ");
                 if (space_index == string::npos) {
@@ -140,7 +143,7 @@ void maple_node_impl::run_job(int job_id) {
         {
             kv_pairs.clear();
 
-            if (retry_count++ > MAX_NUM_RETRIES) {
+            if (retry_count++ >= MAX_NUM_RETRIES) {
                 lg->info("[Job " + std::to_string(job_id) + "] Giving up on job " + std::to_string(job_id) + " after " +
                     std::to_string(MAX_NUM_RETRIES) + " failed attempts to run \"" + maple_exe_path + " " + cur_file_path + "\", exiting");
                 return;
@@ -155,26 +158,17 @@ void maple_node_impl::run_job(int job_id) {
             while (true) {
                 // First, get the master hostname from the election service
                 string master_hostname = "";
-                while (master_hostname == "") {
-                    el->get_master_node([&master_hostname] (member master, bool succeeded) {
-                        if (succeeded) {
-                            lg->trace("[Job " + std::to_string(job_id) + "] Got master node at " + master.hostname + " from election");
-                            master_hostname = master.hostname;
-                        }
-                    });
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                }
+                el->wait_master_node([this, &master_hostname, job_id] (member master) {
+                    lg->debug("[Job " + std::to_string(job_id) + "] Got master node at " + master.hostname + " from election");
+                    master_hostname = master.hostname;
+                });
 
                 // Then, construct the message request permission to append
-                maple_request_append_perm msg_data;
-                msg_data.job_id = job_id;
-                msg_data.key = key;
-                maple_message msg;
-                msg.set_msg_data(msg_data);
+                maple_message msg(maple_request_append_perm{job_id, config->get_hostname(), cur_file, key});
                 string msg_str = msg.serialize();
 
                 // Connect to the master and send the message, and wait for either a yes or no response
-                int fd = client->setup_connection(master_hostname, config->get_maple_port());
+                int fd = client->setup_connection(master_hostname, config->get_maple_master_port());
                 if (fd < 0 || client->write_to_server(fd, msg_str) <= 0) {
                     lg->debug("[Job " + std::to_string(job_id) + "] Request to append key " + key + " failed to send to master");
                     continue; // Master has gone down, poll on election
@@ -203,6 +197,26 @@ void maple_node_impl::run_job(int job_id) {
                 lg->info("Not appending values for key " + key);
             }
         }
+
+        while (true) {
+            string master_hostname = "";
+            el->wait_master_node([&master_hostname] (member master) {
+                master_hostname = master.hostname;
+            });
+
+            // Inform the master node that the file is complete
+            maple_message msg(maple_file_done{job_id, config->get_hostname(), cur_file});
+
+            int fd = client->setup_connection(master_hostname, config->get_maple_master_port());
+            if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
+                client->close_connection(fd);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                continue; // Master node has gone down or is not ready yet
+            }
+            client->close_connection(fd);
+            break;
+        }
     }
 }
 
@@ -214,18 +228,27 @@ bool maple_node_impl::run_command(string command, std::function<bool(string)> ca
         while (!feof(stream)) {
             size_t bytes_read = fread(static_cast<void*>(buffer), 1, 1024, stream);
             if (bytes_read == 1024 || feof(stream)) {
-                int len;
-                for (len = 0; len < 1024 && buffer[len] != '\n'; len++);
+                cur_line += string(buffer, bytes_read);
 
-                cur_line += string(buffer, len);
-
-                // Check if we encountered a \n, which means we should call the callback
-                if (len < 1024 && buffer[len] == '\n') {
-                    if (!callback(cur_line)) {
-                        lg->debug("Callback has indicated failure");
-                        return false;
+                while (true) {
+                    int newline_pos = -1;
+                    for (size_t i = 0; i < cur_line.length(); i++) {
+                        if (cur_line.at(i) == '\n') {
+                            newline_pos = i;
+                            break;
+                        }
                     }
-                    cur_line = "";
+
+                    // Check if we encountered a \n, which means we should call the callback
+                    if (newline_pos >= 0) {
+                        if (!callback(cur_line.substr(0, newline_pos))) {
+                            lg->debug("Callback has indicated failure");
+                            return false;
+                        }
+                        cur_line = cur_line.substr(newline_pos + 1);
+                    } else {
+                        break;
+                    }
                 }
             } else {
                 lg->debug("Error occurred while processing output of command");

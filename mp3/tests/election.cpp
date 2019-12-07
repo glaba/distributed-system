@@ -36,7 +36,6 @@ testing::register_test election_test("election.failover",
     for (int i = 0; i < NUM_NODES; i++) {
         hbs.push_back(envs[i]->get<heartbeater>());
     }
-    hbs[0]->start();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -49,7 +48,6 @@ testing::register_test election_test("election.failover",
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     for (unsigned i = 1; i < NUM_NODES; i++) {
-        hbs[i]->start();
         hbs[i]->join_group("h0");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
@@ -126,7 +124,6 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
     for (int i = 0; i < NUM_NODES; i++) {
         hbs.push_back(envs[i]->get<heartbeater>());
     }
-    hbs[0]->start();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -139,7 +136,6 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     for (unsigned i = 1; i < NUM_NODES; i++) {
-        hbs[i]->start();
         hbs[i]->join_group("h0");
         hbs[i]->on_fail([] (member m) {
             if (m.hostname != "h0") {

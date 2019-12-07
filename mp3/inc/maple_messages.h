@@ -12,6 +12,10 @@ struct maple_start_job {
     std::string sdfs_src_dir;
 };
 
+struct maple_not_master {
+    std::string master_node; // When this is set to "", there is no master
+};
+
 struct maple_job_end {
     int succeeded;
 };
@@ -25,6 +29,8 @@ struct maple_assign_job {
 
 struct maple_request_append_perm {
     int job_id;
+    std::string hostname; // The hostname of the node sending the message
+    std::string file;
     std::string key;
 };
 
@@ -32,14 +38,26 @@ struct maple_append_perm {
     int allowed;
 };
 
+struct maple_file_done {
+    int job_id;
+    std::string hostname;
+    std::string file;
+};
+
 class maple_message {
 public:
+    using msg_data = std::variant<
+        maple_start_job, maple_not_master, maple_job_end,
+        maple_assign_job, maple_request_append_perm, maple_append_perm, maple_file_done>;
+
     enum maple_msg_type {
         START_JOB,
+        NOT_MASTER,
         JOB_END,
         ASSIGN_JOB,
         REQUEST_APPEND_PERM,
         APPEND_PERM,
+        FILE_DONE,
         INVALID
     };
 
@@ -47,7 +65,10 @@ public:
     maple_message(const char *buf, unsigned length);
 
     // Creates an empty message
-    maple_message() : msg_type(INVALID) {}
+    maple_message(msg_data d) {
+        data = d;
+        set_msg_type();
+    }
 
     // Returns true if the deserialized message is not malformed
     bool is_well_formed() {
@@ -66,12 +87,6 @@ public:
         return std::get<T>(data);
     }
 
-    template <typename T> // T is the type of the data
-    void set_msg_data(T data_) {
-        data = data_;
-        set_msg_type();
-    }
-
     // Serializes the message and returns a string containing the message
     std::string serialize();
 
@@ -80,5 +95,5 @@ private:
     void set_msg_type();
 
     maple_msg_type msg_type;
-    std::variant<maple_start_job, maple_job_end, maple_assign_job, maple_request_append_perm, maple_append_perm> data;
+    msg_data data;
 };

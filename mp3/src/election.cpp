@@ -30,6 +30,11 @@ election_impl::election_impl(environment &env)
 
 // Starts keeping track of the master node and running elections
 void election_impl::start() {
+    if (running.load()) {
+        return;
+    }
+
+    hb->start();
     lg->info("Starting election");
 
     running = true;

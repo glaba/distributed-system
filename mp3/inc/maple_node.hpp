@@ -10,6 +10,7 @@
 #include "configuration.h"
 #include "sdfs_client.h"
 #include "election.h"
+#include "maple_master.h"
 
 #include <memory>
 #include <atomic>
@@ -49,4 +50,5 @@ private:
     std::unique_ptr<tcp_client> client;
     std::unique_ptr<tcp_server> server;
     election *el;
+    maple_master *mm;
 };

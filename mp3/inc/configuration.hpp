@@ -22,8 +22,8 @@ public:
     std::string get_hostname() {
         return hostname;
     }
-    void set_first_node(bool first_node_) {
-        first_node = first_node_;
+    void set_first_node(bool is_first_node_) {
+        first_node = is_first_node_;
     }
     bool is_first_node() {
         return first_node;
@@ -52,11 +52,17 @@ public:
     int get_sdfs_master_port() {
         return sdfs_master_port;
     }
-    void set_maple_port(int port_) {
-        maple_port = port_;
+    void set_maple_internal_port(int port_) {
+        maple_internal_port = port_;
     }
-    int get_maple_port() {
-        return maple_port;
+    int get_maple_internal_port() {
+        return maple_internal_port;
+    }
+    void set_maple_master_port(int port_) {
+        maple_master_port = port_;
+    }
+    int get_maple_master_port() {
+        return maple_master_port;
     }
     // Sets the directory that all files for the program will be stored in
     // Assumes that the directory exist and is empty
@@ -85,7 +91,8 @@ protected:
     int election_port;
     int sdfs_internal_port;
     int sdfs_master_port;
-    int maple_port;
+    int maple_internal_port;
+    int maple_master_port;
     std::string dir;
     std::string sdfs_dir;
 
