@@ -2,6 +2,7 @@
 
 #include "sdfs_client.h"
 #include "sdfs_message.h"
+#include "sdfs_utils.hpp"
 #include "election.h"
 #include "logging.h"
 #include "tcp.h"
@@ -28,9 +29,6 @@ public:
     int ls_operation(int socket, std::string sdfs_filename);
     int store_operation();
 private:
-    int send_request(int socket, sdfs_message sdfs_msg);
-    int receive_response(int socket, sdfs_message *sdfs_msg);
-
     // Services that we depend on
     election *el;
     std::unique_ptr<logger> lg;

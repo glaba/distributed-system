@@ -27,11 +27,11 @@ int sdfs_client_impl::put_operation(int socket, std::string local_filename, std:
 
     // SEND THE PUT REQUEST AND THEN SEND THE FILE
     sdfs_message put_msg; put_msg.set_type_put(sdfs_filename);
-    if (send_request(socket, put_msg) == -1) return SDFS_CLIENT_FAILURE;
-    if (tcp_file_transfer::write_file_to_socket(client.get(), socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
+    if (sdfs_utils::send_message(client.get(), socket, put_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::write_file_to_socket(client.get(), socket, local_filename) == -1) return SDFS_FAILURE;
 
     // @TODO: determine if i want to use success messages from the node to the client
-    return SDFS_CLIENT_SUCCESS;
+    return SDFS_SUCCESS;
 }
 
 int sdfs_client_impl::get_operation(int socket, std::string local_filename, std::string sdfs_filename) {
@@ -40,11 +40,11 @@ int sdfs_client_impl::get_operation(int socket, std::string local_filename, std:
 
     // SEND THE GET REQUEST AND THEN RECEIVE THE FILE
     sdfs_message get_msg; get_msg.set_type_get(sdfs_filename);
-    if (send_request(socket, get_msg) == -1) return SDFS_CLIENT_FAILURE;
-    if (tcp_file_transfer::read_file_from_socket(client.get(), socket, local_filename) == -1) return SDFS_CLIENT_FAILURE;
+    if (sdfs_utils::send_message(client.get(), socket, get_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::read_file_from_socket(client.get(), socket, local_filename) == -1) return SDFS_FAILURE;
 
     // @TODO: determine if i want to use success messages from the node to the client
-    return SDFS_CLIENT_SUCCESS;
+    return SDFS_SUCCESS;
 }
 
 int sdfs_client_impl::del_operation(int socket, std::string sdfs_filename) {
@@ -53,11 +53,11 @@ int sdfs_client_impl::del_operation(int socket, std::string sdfs_filename) {
 
     // RECEIVE THE SUCCESS/FAIL RESPONSE FROM THE MASTER NODE
     sdfs_message sdfs_msg;
-    receive_response(socket, &sdfs_msg);
+    if (sdfs_utils::receive_message(client.get(), socket, &sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
 
-    if (sdfs_msg.get_type() != sdfs_message::msg_type::success) return SDFS_CLIENT_FAILURE;
+    if (sdfs_msg.get_type() != sdfs_message::msg_type::success) return SDFS_FAILURE;
 
-    return SDFS_CLIENT_SUCCESS;
+    return SDFS_SUCCESS;
 }
 
 int sdfs_client_impl::ls_operation(int socket, std::string sdfs_filename) {
@@ -66,40 +66,17 @@ int sdfs_client_impl::ls_operation(int socket, std::string sdfs_filename) {
 
     // RECEIVE THE LS RESPONSE FROM THE MASTER NODE
     sdfs_message sdfs_msg;
-    receive_response(socket, &sdfs_msg);
+    if (sdfs_utils::receive_message(client.get(), socket, &sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
 
-    if (sdfs_msg.get_type() != sdfs_message::msg_type::mn_ls) return SDFS_CLIENT_FAILURE;
+    if (sdfs_msg.get_type() != sdfs_message::msg_type::mn_ls) return SDFS_FAILURE;
 
     // @TODO: manage the response of the ls operation here (sdfs_msg.get_data())
 
-    return SDFS_CLIENT_SUCCESS;
+    return SDFS_SUCCESS;
 }
 
 int sdfs_client_impl::store_operation() {
-    return SDFS_CLIENT_SUCCESS;
-}
-
-int sdfs_client_impl::send_request(int socket, sdfs_message sdfs_msg) {
-    lg->trace("client is sending request of type " + sdfs_msg.get_type_as_string());
-
-    std::string msg = sdfs_msg.serialize();
-    return client->write_to_server(socket, msg);
-}
-
-int sdfs_client_impl::receive_response(int socket, sdfs_message *sdfs_msg) {
-    // receive response over socket
-    std::string response;
-    if ((response = client->read_from_server(socket)) == "") return SDFS_CLIENT_FAILURE;
-
-    // determine if response was valid sdfs_message
-    char response_cstr[response.length() + 1];
-    strncpy(response_cstr, response.c_str(), response.length() + 1);
-    *sdfs_msg = sdfs_message(response_cstr, strlen(response_cstr));
-    if (sdfs_msg->get_type() == sdfs_message::msg_type::empty) return SDFS_CLIENT_FAILURE;
-
-    lg->trace("client received response of type " + sdfs_msg->get_type_as_string());
-
-    return SDFS_CLIENT_SUCCESS;
+    return SDFS_SUCCESS;
 }
 
 register_auto<sdfs_client, sdfs_client_impl> register_sdfs_client;

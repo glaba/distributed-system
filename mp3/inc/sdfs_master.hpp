@@ -2,6 +2,7 @@
 
 #include "sdfs_master.h"
 #include "sdfs_message.h"
+#include "sdfs_utils.hpp"
 #include "election.h"
 #include "logging.h"
 #include "tcp.h"
@@ -30,9 +31,6 @@ private:
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
-
-    int send_message(int socket, sdfs_message sdfs_msg);
-    int receive_message(int socket, sdfs_message *sdfs_msg);
 
     bool sdfs_file_exists(std::string sdfs_filename);
 

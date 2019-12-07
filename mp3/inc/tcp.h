@@ -41,15 +41,6 @@ public:
     virtual void close_connection(int socket) = 0;
 };
 
-class tcp_file_transfer {
-public:
-    // these utilities wrappers are so mocking can still work for file transfer
-    static ssize_t write_file_to_socket(tcp_client *client, int socket, std::string filename);
-    static ssize_t read_file_from_socket(tcp_client *client, int socket, std::string filename);
-    static ssize_t write_file_to_socket(tcp_server *server, int socket, std::string filename);
-    static ssize_t read_file_from_socket(tcp_server *server, int socket, std::string filename);
-};
-
 class tcp_factory {
 public:
     virtual std::unique_ptr<tcp_client> get_tcp_client() = 0;
