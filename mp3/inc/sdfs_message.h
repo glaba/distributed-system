@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, put, get, del, ls, rep, ack, files, success, fail
+        empty, mn_put, mn_get, mn_ls, put, get, del, ls, append, rep, ack, files, success, fail
     };
 
     // Creates a message from a buffer

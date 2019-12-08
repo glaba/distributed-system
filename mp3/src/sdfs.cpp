@@ -1,8 +1,12 @@
-#include "cli.h"
+#include "heartbeater.h"
+#include "udp.h"
 #include "logging.h"
-#include "environment.h"
-#include "configuration.h"
+#include "member_list.h"
 #include "test.h"
+#include "cli.h"
+#include "environment.h"
+#include "sdfs_client.h"
+#include "sdfs_server.h"
 
 #include <string>
 #include <chrono>
@@ -113,8 +117,8 @@ int main(int argc, char **argv) {
         env.get<logger_factory>()->configure(log_level);
 
         // Start up SDFS services
-        // env.get<sdfs_client>()->start();
-        // env.get<sdfs_server>()->start();
+        env.get<sdfs_client>()->start();
+        env.get<sdfs_server>()->start();
 
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));

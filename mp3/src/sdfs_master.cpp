@@ -26,6 +26,13 @@ void sdfs_master_impl::stop() {
     return;
 }
 
+void sdfs_master_impl::handle_failures(member failed_node) {
+    // first, iterate through list of files this host has
+    //        and for each file remove this host from that file's list
+    //        and find a suitable host to replicate that file at (call rep op using known host of file)
+    // second, clean up the hosts dictionary by removing this hostname
+}
+
 int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
     // RECEIVED PUT REQUEST FROM CLIENT
     lg->info("master received client put request for " + sdfs_filename);

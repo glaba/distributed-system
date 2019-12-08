@@ -32,6 +32,8 @@ private:
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
+    int get_metadata_operation(int socket, std::string sdfs_filename);
+    int append_operation(int socket, int index, std::string sdfs_filename);
 
     int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);
     int send_master_files(int socket);

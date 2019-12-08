@@ -99,7 +99,7 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     // GET INTERNAL SOCKET TO HOSTNAME
     // @TODO: WHAT HAPPENS IF I FAIL - WILL THE MASTER INDEFINITELY WAIT FOR A RESPONSE?
     int internal_socket;
-    if ((internal_socket = client->setup_connection(sdfs_hostname, config->get_sdfs_internal_port()))== -1) return SDFS_FAILURE;
+    if ((internal_socket = client->setup_connection(sdfs_hostname, config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
 
     std::string local_filename = config->get_sdfs_dir() + sdfs_filename;
 
@@ -109,6 +109,16 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     if (sdfs_utils::send_message(client.get(), internal_socket, put_msg) == SDFS_FAILURE) return SDFS_FAILURE;
     if (sdfs_utils::write_file_to_socket(client.get(), internal_socket, local_filename) == -1) return SDFS_FAILURE;
 
+    return SDFS_SUCCESS;
+}
+
+int sdfs_server_impl::get_metadata_operation(int socket, std::string sdfs_filename) {
+    // @TODO: implement
+    return SDFS_SUCCESS;
+}
+
+int sdfs_server_impl::append_operation(int socket, int index, std::string sdfs_filename) {
+    // @TODO: implement
     return SDFS_SUCCESS;
 }
 
