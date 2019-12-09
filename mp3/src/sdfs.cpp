@@ -126,7 +126,9 @@ int main(int argc, char **argv) {
         env.get<sdfs_master>()->start();
         // env.get<sdfs_client>()->get_operation("my_file", "test");
         env.get<sdfs_client>()->put_operation("files/md", "test");
+        env.get<sdfs_client>()->get_operation("files/test_copy", "test");
         env.get<sdfs_client>()->get_metadata_operation("test");
+        env.get<sdfs_client>()->del_operation("test");
         // virtual int put_operation(std::string local_filename, std::string sdfs_filename) = 0;
         // virtual int put_operation(int socket, std::string sdfs_filename) = 0;
         // virtual int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename) = 0;

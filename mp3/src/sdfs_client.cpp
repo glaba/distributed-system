@@ -179,10 +179,8 @@ std::string sdfs_client_impl::get_operation_master(int socket, std::string local
 
     // receive master node put response
     sdfs_message mn_response;
-    std::cout << "here" << std::endl;
     if (sdfs_utils::receive_message(client.get(), socket, &mn_response) == SDFS_FAILURE) return "";
     if (mn_response.get_type() != sdfs_message::msg_type::mn_get) return "";
-    std::cout << "here" << std::endl;
 
     return mn_response.get_sdfs_hostname();
 }

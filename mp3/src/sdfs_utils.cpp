@@ -62,7 +62,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
     size_t filesize = lseek(fd, 0, SEEK_END);
 
     char *contents;
-    if ((contents = (char *) mmap(0, filesize, PROT_READ, MAP_PRIVATE, fd, 0)) ==
+    if ((contents = (char *) mmap(0, filesize, PROT_READ, MAP_SHARED, fd, 0)) ==
             (caddr_t) -1) {
         release_lock(fd);
         return -1;
@@ -109,7 +109,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
     size_t filesize = lseek(fd, 0, SEEK_END);
 
     char *contents;
-    if ((contents = (char *) mmap(0, filesize, PROT_READ, MAP_PRIVATE, fd, 0)) ==
+    if ((contents = (char *) mmap(0, filesize, PROT_READ, MAP_SHARED, fd, 0)) ==
             (caddr_t) -1) {
         release_lock(fd);
         return -1;
@@ -150,7 +150,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
 ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::string filename) {
     int fd;
 
-    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0x0777)) < 0) return -1;
+    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT, (mode_t) 0644)) < 0) return -1;
 
     if (acquire_lock(fd, LOCK_EX) == -1) return -1;
 
@@ -200,8 +200,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
 ssize_t sdfs_utils::read_file_from_socket(tcp_server *server, int socket, std::string filename) {
     int fd;
 
-    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666)) < 0) {
-        // std::cerr << "failed to open file " << filename << " errno was " << errno << std::endl;
+    if ((fd = open(filename.c_str(), O_RDWR | O_CREAT, (mode_t) 0644)) < 0) {
         return -1;
     }
 

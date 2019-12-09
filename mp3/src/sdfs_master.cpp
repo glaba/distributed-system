@@ -160,24 +160,28 @@ int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
     // RECEIVED DEL REQUEST FROM CLIENT
     lg->info("master received client del request for " + sdfs_filename);
 
-    // @TODO: DETERMINE HOW I WILL SEND THE RESPECTIVE NODES
-    //        THE DELETE MESSAGE FROM THE MASTER (maybe copy pasta client tbh)
-
     if (!sdfs_file_exists(sdfs_filename)) return SDFS_FAILURE;
+
+    int internal_node;
 
     sdfs_message sdfs_msg;
     sdfs_msg.set_type_del(sdfs_filename);
     std::vector<std::string> hosts = file_to_hostnames[sdfs_filename];
     for (auto host : hosts) {
-        if (client->setup_connection(host, config->get_sdfs_internal_port()) != -1) {
-            sdfs_utils::send_message(client.get(), socket, sdfs_msg);
-            client->close_connection(socket);
+        if ((internal_node = client->setup_connection(host, config->get_sdfs_internal_port())) != -1) {
+            sdfs_utils::send_message(client.get(), internal_node, sdfs_msg);
             hostname_to_files[host].erase(
                     std::remove(hostname_to_files[host].begin(), hostname_to_files[host].end(), sdfs_filename),
                     hostname_to_files[host].end());
+            client->close_connection(internal_node);
         }
         file_to_hostnames.erase(sdfs_filename);
     }
+
+    // REPLY TO CLIENT WITH SUCCESS
+    sdfs_message response;
+    response.set_type_success();
+    if (sdfs_utils::send_message(server.get(), socket, response) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }

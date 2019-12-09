@@ -85,7 +85,8 @@ int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
     lg->info("server received request from client to get " + sdfs_filename);
 
     // WRITE THE FILE TO THE CLIENT
-    if (sdfs_utils::write_file_to_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
+    std::string filename = config->get_sdfs_dir() + sdfs_filename;
+    if (sdfs_utils::write_file_to_socket(server.get(), socket, filename) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }
