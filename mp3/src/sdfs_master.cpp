@@ -71,6 +71,8 @@ void sdfs_master_impl::handle_connection(int socket) {
             std::string hostname = request.get_sdfs_hostname();
             std::string file_list = request.get_data();
             files_operation(socket, hostname, file_list);
+        } else if (request.get_type() == sdfs_message::msg_type::gidx) {
+            get_index_operation(socket, sdfs_filename);
         }
     }
 

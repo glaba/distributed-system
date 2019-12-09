@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
         env.get<election>()->start();
         env.get<sdfs_server>()->start();
         env.get<sdfs_master>()->start();
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(5000));
         // env.get<sdfs_client>()->get_operation("my_file", "test");
         env.get<sdfs_client>()->append_operation("files/md1", "ap_test");
         std::cout << "append 1 complete" << std::endl;

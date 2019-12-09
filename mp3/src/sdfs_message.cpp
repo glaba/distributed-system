@@ -35,11 +35,11 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
                 break;
             case msg_type::rep:
             case msg_type::mn_append:
-            case msg_type::mn_gidx:
                 sdfs_hostname = des.get_string();
                 sdfs_filename = des.get_string();
                 break;
             case msg_type::append:
+            case msg_type::mn_gidx:
                 sdfs_filename = des.get_string();
                 data = des.get_string();
                 break;
