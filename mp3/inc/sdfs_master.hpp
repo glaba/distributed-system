@@ -11,6 +11,7 @@
 #include "service.h"
 #include "environment.h"
 
+#include <mutex>
 #include <cstring>
 #include <sstream>
 #include <algorithm>
@@ -31,6 +32,8 @@ public:
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
     int append_operation(int socket, std::string metadata, std::string sdfs_filename);
+
+    void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback);
 
     std::vector<std::string> get_files_by_prefix(std::string prefix);
 private:
@@ -58,5 +61,9 @@ private:
     std::unique_ptr<tcp_server> server;
     std::unordered_map<std::string, std::vector<std::string>> file_to_hostnames;
     std::unordered_map<std::string, std::vector<std::string>> hostname_to_files;
+    std::vector<std::function<void(std::string filename, int offset, std::string metadata)>> append_callbacks;
+
+    // lock
+    std::recursive_mutex maps_mtx;
     configuration *config;
 };

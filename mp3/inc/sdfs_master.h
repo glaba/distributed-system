@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 class sdfs_master {
 public:
@@ -19,6 +20,8 @@ public:
     virtual int ls_operation(int socket, std::string sdfs_filename) = 0;
     // handles a append request over the specified socket
     virtual int append_operation(int socket, std::string metadata, std::string sdfs_filename) = 0;
+    // callback for append request
+    virtual void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) = 0;
     // returns a list of sdfs files matching a given prefix
     virtual std::vector<std::string> get_files_by_prefix(std::string prefix) = 0;
 };

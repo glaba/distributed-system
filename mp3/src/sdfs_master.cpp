@@ -79,13 +79,15 @@ void sdfs_master_impl::handle_failures(member failed_node) {
     //        and for each file remove this host from that file's list
     //        and find a suitable host to replicate that file at (call rep op using known host of file)
     // second, clean up the hosts dictionary by removing this hostname
+    // @TODO: implement
 }
 
 int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
-    // @TODO: to make this a quorum, may run the replication portion in a diff thread
-    //        and either just use 0 index or actually keep track of the original write
     // RECEIVED PUT REQUEST FROM CLIENT
     lg->info("master received client put request for " + sdfs_filename);
+
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
 
     // GET A LIST OF HOSTNAMES TO PUT TO
     std::vector<std::string> hostnames = get_hostnames();
@@ -127,6 +129,9 @@ int sdfs_master_impl::get_operation(int socket, std::string sdfs_filename) {
     // RECEIVED GET REQUEST FROM CLIENT
     lg->info("master received client get request for " + sdfs_filename);
 
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     // GET PROPER HOSTNAME
     std::string hostname = "";
     if (!sdfs_file_exists(sdfs_filename)) {
@@ -165,6 +170,9 @@ int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
     // RECEIVED DEL REQUEST FROM CLIENT
     lg->info("master received client del request for " + sdfs_filename);
 
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     if (!sdfs_file_exists(sdfs_filename)) return SDFS_FAILURE;
 
     int internal_node;
@@ -195,6 +203,9 @@ int sdfs_master_impl::ls_operation(int socket, std::string sdfs_filename) {
     // RECEIVED LS REQUEST FROM CLIENT
     lg->info("master received client ls request for " + sdfs_filename);
 
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     std::string data = "";
     // GET LIST OF NODES WITH THE FILE
     if (sdfs_file_exists(sdfs_filename)) {
@@ -219,6 +230,9 @@ int sdfs_master_impl::ls_operation(int socket, std::string sdfs_filename) {
 int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::string sdfs_filename) {
     // SENDING REP REQUEST
     lg->info("master and is now sending a rep for " + sdfs_filename + " to " + hostname);
+
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
 
     // CREATE REP REQUEST MESSAGE
     sdfs_message sdfs_msg;
@@ -248,6 +262,9 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     // RECEIVED APPEND REQUEST FROM CLIENT
     lg->info("master received client append request for " + sdfs_filename);
 
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     // GET A LIST OF HOSTNAMES TO PUT TO
     std::vector<std::string> hostnames = get_hostnames();
     if (hostnames.size() == 0) return SDFS_FAILURE;
@@ -262,6 +279,11 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     // RECEIVE CLIENT COMMAND STATUS MESSAGE
     sdfs_message response;
     if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
+
+    // CALL APPEND CALLBACKS
+    for (auto callback : append_callbacks) {
+        callback(sdfs_filename, std::stoi(new_filename.substr(new_filename.find(".") + 1, new_filename.length())), metadata);
+    }
 
     // UPDATE THE MAPS
     file_to_hostnames[new_filename].push_back(hostnames[0]);
@@ -286,6 +308,10 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     }
 
     return SDFS_SUCCESS;
+}
+
+void sdfs_master_impl::on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) {
+    append_callbacks.push_back(callback);
 }
 
 std::vector<std::string> sdfs_master_impl::get_files_by_prefix(std::string prefix) {
