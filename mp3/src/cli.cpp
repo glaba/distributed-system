@@ -115,6 +115,7 @@ bool cli_command::parse(string command, int argc, char **argv) {
             if (std::holds_alternative<bool*>(options[flag])) {
                 *std::get<bool*>(options[flag]) = true;
                 parsed_options.insert(flag);
+                break;
             }
 
             // We expect an argument for the rest of the types
@@ -212,7 +213,7 @@ void cli_command::print_help(std::string command) {
     for (auto option : options) {
         std::cout << " -" << option.first << "\t\t" << option_descriptions[option.first];
         if (std::holds_alternative<bool>(option_defaults[option.first]))
-            std::cout << " (default: " << std::get<bool>(option_defaults[option.first]) << ")";
+            std::cout << " (default: " << ((std::get<bool>(option_defaults[option.first])) ? "true" : "false") << ")";
         if (std::holds_alternative<int>(option_defaults[option.first]))
             std::cout << " (default: " << std::get<int>(option_defaults[option.first]) << ")";
         if (std::holds_alternative<std::string>(option_defaults[option.first]))

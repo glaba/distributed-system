@@ -89,7 +89,7 @@ void sdfs_master_impl::handle_failures(member failed_node) {
 
 int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
     // RECEIVED PUT REQUEST FROM CLIENT
-    lg->info("master received client put request for " + sdfs_filename);
+    lg->debug("master received client put request for " + sdfs_filename);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);
@@ -132,7 +132,7 @@ int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
 
 int sdfs_master_impl::get_operation(int socket, std::string sdfs_filename) {
     // RECEIVED GET REQUEST FROM CLIENT
-    lg->info("master received client get request for " + sdfs_filename);
+    lg->debug("master received client get request for " + sdfs_filename);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);
@@ -173,7 +173,7 @@ int sdfs_master_impl::get_operation(int socket, std::string sdfs_filename) {
 
 int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
     // RECEIVED DEL REQUEST FROM CLIENT
-    lg->info("master received client del request for " + sdfs_filename);
+    lg->debug("master received client del request for " + sdfs_filename);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);
@@ -206,7 +206,7 @@ int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
 
 int sdfs_master_impl::ls_operation(int socket, std::string sdfs_filename) {
     // RECEIVED LS REQUEST FROM CLIENT
-    lg->info("master received client ls request for " + sdfs_filename);
+    lg->debug("master received client ls request for " + sdfs_filename);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);
@@ -234,7 +234,7 @@ int sdfs_master_impl::ls_operation(int socket, std::string sdfs_filename) {
 
 int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::string sdfs_filename) {
     // SENDING REP REQUEST
-    lg->info("master and is now sending a rep for " + sdfs_filename + " to " + hostname);
+    lg->debug("master and is now sending a rep for " + sdfs_filename + " to " + hostname);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);
@@ -265,7 +265,7 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
 
 int sdfs_master_impl::append_operation(int socket, std::string metadata, std::string sdfs_filename) {
     // RECEIVED APPEND REQUEST FROM CLIENT
-    lg->info("master received client append request for " + sdfs_filename);
+    lg->debug("master received client append request for " + sdfs_filename);
 
     // LOCK THE MAPS
     std::lock_guard<std::recursive_mutex> guard(maps_mtx);

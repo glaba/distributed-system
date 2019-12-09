@@ -24,6 +24,6 @@ public:
     virtual int store_operation() = 0;
     // handles a get_metadata request over the specified socket
     virtual std::string get_metadata_operation(std::string sdfs_filename) = 0;
-
+    // gets all the pieces of a sharded file
     virtual int get_sharded(std::string local_filename, std::string sdfs_filename_prefix) = 0;
 };

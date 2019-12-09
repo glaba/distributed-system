@@ -16,6 +16,10 @@ public:
     void start();
     // Stops all client logic for the filesystem
     void stop();
+    // Optionally sets the master node, if this sdfs_client is not running in an environment with election
+    void set_master_node(std::string hostname) {
+        mn_hostname = hostname; // TODO: implement this functionality
+    }
     // handles a put request
     int put_operation(std::string local_filename, std::string sdfs_filename);
     // handles a get request
@@ -31,6 +35,7 @@ public:
     // handles a get_metadata request
     // TODO: implement this
     std::string get_metadata_operation(std::string sdfs_filename) {return "";}
+    int get_sharded(std::string local_filename, std::string sdfs_filename_prefix);
 
     std::unique_ptr<service_state> init_state();
 
@@ -53,6 +58,8 @@ private:
 
     bool isolated = false;
     std::atomic<bool> running;
+
+    std::string mn_hostname;
 
     // Mutex for accessing files (very broad and very inefficient but it's just a mock)
     std::mutex file_mutex;

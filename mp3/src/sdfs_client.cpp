@@ -63,7 +63,7 @@ int sdfs_client_impl::get_sharded(std::string local_filename, std::string sdfs_f
 
     unsigned num_shards = 0;
     while (true) {
-        std::string temp = temp_prefix + std::to_string(num_shards);
+        std::string temp = temp_prefix + "_" + std::to_string(num_shards);
         if (get_operation(temp, sdfs_filename_prefix + "." + std::to_string(num_shards)) != 0) {
             break;
         }
@@ -72,15 +72,17 @@ int sdfs_client_impl::get_sharded(std::string local_filename, std::string sdfs_f
     std::string cat_command = "cat ";
     std::string rm_command = "rm ";
     for (unsigned i = 0; i < num_shards; i++) {
-        cat_command += "\"" + temp_prefix + std::to_string(i) + "\" ";
-        rm_command += "\"" + temp_prefix + std::to_string(i) + "\" ";
+        cat_command += "\"" + temp_prefix + "_" + std::to_string(i) + "\" ";
+        rm_command += "\"" + temp_prefix + "_" + std::to_string(i) + "\" ";
     }
     cat_command += "> \"" + local_filename + "\"";
+    lg->info(cat_command);
 
     FILE *stream = popen(cat_command.c_str(), "r");
     if (pclose(stream)) {
         return -1;
     }
+    lg->info(rm_command);
     stream = popen(rm_command.c_str(), "r");
     pclose(stream);
 
@@ -235,7 +237,7 @@ int sdfs_client_impl::store_operation() {
 
 std::string sdfs_client_impl::put_operation_master(int socket, std::string local_filename, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to put " + sdfs_filename + " to master");
+    lg->debug("client is sending request to put " + sdfs_filename + " to master");
 
     // create put request message
     sdfs_message put_req;
@@ -254,7 +256,7 @@ std::string sdfs_client_impl::put_operation_master(int socket, std::string local
 
 std::string sdfs_client_impl::get_operation_master(int socket, std::string local_filename, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to get " + sdfs_filename + " to master");
+    lg->debug("client is sending request to get " + sdfs_filename + " to master");
 
     // create get request message
     sdfs_message get_req;
@@ -273,7 +275,7 @@ std::string sdfs_client_impl::get_operation_master(int socket, std::string local
 
 std::string sdfs_client_impl::get_metadata_operation_master(int socket, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to get metadata for " + sdfs_filename + " to master");
+    lg->debug("client is sending request to get metadata for " + sdfs_filename + " to master");
 
     // create get request message
     sdfs_message gmd_req;
@@ -292,7 +294,7 @@ std::string sdfs_client_impl::get_metadata_operation_master(int socket, std::str
 
 std::vector<std::string> sdfs_client_impl::append_operation_master(int socket, std::string metadata, std::string local_filename, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to append for " + sdfs_filename + " to master");
+    lg->debug("client is sending request to append for " + sdfs_filename + " to master");
 
     std::vector<std::string> ret;
     // create append request message
@@ -314,7 +316,7 @@ std::vector<std::string> sdfs_client_impl::append_operation_master(int socket, s
 
 int sdfs_client_impl::del_operation_master(int socket, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to del " + sdfs_filename + " to master");
+    lg->debug("client is sending request to del " + sdfs_filename + " to master");
 
     // create del request message
     sdfs_message del_req;
@@ -333,7 +335,7 @@ int sdfs_client_impl::del_operation_master(int socket, std::string sdfs_filename
 
 int sdfs_client_impl::ls_operation_master(int socket, std::string sdfs_filename) {
     // SOCKET IS WITH MASTER
-    lg->info("client is sending request to ls " + sdfs_filename + " to master");
+    lg->debug("client is sending request to ls " + sdfs_filename + " to master");
 
     // create ls request message
     sdfs_message ls_req;
@@ -352,7 +354,7 @@ int sdfs_client_impl::ls_operation_master(int socket, std::string sdfs_filename)
 
 int sdfs_client_impl::put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename) {
     // MASTER CORRESPONDENCE IS DONE
-    lg->info("client is requesting to put " + sdfs_filename);
+    lg->debug("client is requesting to put " + sdfs_filename);
 
     // SEND THE PUT REQUEST AND THEN SEND THE FILE
     sdfs_message put_msg; put_msg.set_type_put(sdfs_filename);
@@ -364,7 +366,7 @@ int sdfs_client_impl::put_operation_internal(int socket, std::string local_filen
 
 int sdfs_client_impl::get_operation_internal(int socket, std::string local_filename, std::string sdfs_filename) {
     // MASTER CORRESPONDENCE IS DONE
-    lg->info("client is requesting to get " + sdfs_filename + " as " + local_filename);
+    lg->debug("client is requesting to get " + sdfs_filename + " as " + local_filename);
 
     // SEND THE GET REQUEST AND THEN RECEIVE THE FILE
     sdfs_message get_msg; get_msg.set_type_get(sdfs_filename);
@@ -376,7 +378,7 @@ int sdfs_client_impl::get_operation_internal(int socket, std::string local_filen
 
 std::string sdfs_client_impl::get_metadata_operation_internal(int socket, std::string sdfs_filename) {
     // MASTER CORRESPONDENCE IS DONE
-    lg->info("client is requesting to get metadata for " + sdfs_filename);
+    lg->debug("client is requesting to get metadata for " + sdfs_filename);
 
     std::string metadata;
     // SEND THE GET REQUEST AND THEN RECEIVE THE FILE

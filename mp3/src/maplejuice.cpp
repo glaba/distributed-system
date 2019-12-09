@@ -118,13 +118,20 @@ int main(int argc, char **argv) {
             std::cin >> sdfs_filename;
 
             if (command == "put") {
-                sdfsc->put_operation(local_filename, sdfs_filename + ".0");
+                std::thread t([=] {
+                    sdfsc->put_operation(local_filename, sdfs_filename + ".0");
+                });
+                t.detach();
             } else if (command == "get") {
-                if (sdfsc->get_sharded(local_filename, sdfs_filename) != 0) {
-                    std::cout << "Get failed" << std::endl;
-                }
+                std::thread t([=] {
+                    sdfsc->get_sharded(local_filename, sdfs_filename);
+                });
+                t.detach();
             } else if (command == "append") {
-                sdfsc->append_operation(local_filename, sdfs_filename);
+                std::thread t([=] {
+                    sdfsc->append_operation(local_filename, sdfs_filename);
+                });
+                t.detach();
             } else {
                 std::cout << "Usage: put/get/append <local_filename> <sdfs_filename>" << std::endl;
             }
