@@ -91,9 +91,6 @@ int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
     // RECEIVED PUT REQUEST FROM CLIENT
     lg->info("master received client put request for " + sdfs_filename);
 
-    // LOCK THE MAPS
-    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
-
     // GET A LIST OF HOSTNAMES TO PUT TO
     std::vector<std::string> hostnames = get_hostnames();
     if (hostnames.size() == 0) return SDFS_FAILURE;
@@ -108,8 +105,7 @@ int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
     if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
 
     // UPDATE THE MAPS
-    file_to_hostnames[sdfs_filename].push_back(hostnames[0]);
-    hostname_to_files[hostnames[0]].push_back(sdfs_filename);
+    add_to_maps(hostnames[0], sdfs_filename);
 
     if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
@@ -117,8 +113,6 @@ int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
         int in_socket;
         if ((in_socket = client->setup_connection(hostnames[0], config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
         for (unsigned i = 1; i < hostnames.size(); i++) {
-            // @TODO: INSERT ERROR CHECKING AND FURTHER REPLICATION HERE
-            // @TODO: UPDATE MAPS ON SUCCESSFUL REPLICATION
             rep_operation(in_socket, hostnames[i], sdfs_filename);
         }
         client->close_connection(in_socket);
@@ -147,7 +141,7 @@ int sdfs_master_impl::get_operation(int socket, std::string sdfs_filename) {
         return SDFS_SUCCESS;
     } else {
         // file exists
-        hostname = file_to_hostnames[sdfs_filename][0];
+        hostname = get_hostname_from_map(sdfs_filename, 0);
     }
 
     // RESPOND WITH APPROPRIATE LOCATION FOR CLIENT TO FORWARD REQUEST TO
@@ -162,7 +156,6 @@ int sdfs_master_impl::get_operation(int socket, std::string sdfs_filename) {
     if (response.get_type() == sdfs_message::msg_type::success) {
         return SDFS_SUCCESS;
     } else if (response.get_type() == sdfs_message::msg_type::fail) {
-        // @TODO: SHOULD I TRY AND REDIRECT THE CLIENT OR JUST LET THEM ERR
         return SDFS_FAILURE;
     } else {
         return SDFS_FAILURE;
@@ -236,9 +229,6 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     // SENDING REP REQUEST
     lg->info("master and is now sending a rep for " + sdfs_filename + " to " + hostname);
 
-    // LOCK THE MAPS
-    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
-
     // CREATE REP REQUEST MESSAGE
     sdfs_message sdfs_msg;
     sdfs_msg.set_type_rep(hostname, sdfs_filename);
@@ -251,8 +241,7 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
     if (response.get_type() == sdfs_message::msg_type::success) {
         // UPDATE RECORDS AND RETURN
-        file_to_hostnames[sdfs_filename].push_back(hostname);
-        hostname_to_files[hostname].push_back(sdfs_filename);
+        add_to_maps(hostname, sdfs_filename);
         return SDFS_SUCCESS;
     } else if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
@@ -266,9 +255,6 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
 int sdfs_master_impl::append_operation(int socket, std::string metadata, std::string sdfs_filename) {
     // RECEIVED APPEND REQUEST FROM CLIENT
     lg->info("master received client append request for " + sdfs_filename);
-
-    // LOCK THE MAPS
-    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
 
     // GET A LIST OF HOSTNAMES TO PUT TO
     std::vector<std::string> hostnames = get_hostnames();
@@ -293,8 +279,7 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     }
 
     // UPDATE THE MAPS
-    file_to_hostnames[new_filename].push_back(hostnames[0]);
-    hostname_to_files[hostnames[0]].push_back(new_filename);
+    add_to_maps(hostnames[0], new_filename);
 
     if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
@@ -302,11 +287,9 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
         int in_socket;
         if ((in_socket = client->setup_connection(hostnames[0], config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
         for (unsigned i = 1; i < hostnames.size(); i++) {
-            rep_operation(in_socket, hostnames[i], new_filename);
-            // @TODO: INSERT ERROR CHECKING AND FURTHER REPLICATION HERE
             // UPDATE THE MAPS
-            file_to_hostnames[new_filename].push_back(hostnames[i]);
-            hostname_to_files[hostnames[i]].push_back(new_filename);
+            rep_operation(in_socket, hostnames[i], new_filename);
+            add_to_maps(hostnames[i], new_filename);
         }
         client->close_connection(in_socket);
         return SDFS_SUCCESS;
@@ -317,11 +300,29 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     return SDFS_SUCCESS;
 }
 
+int sdfs_master_impl::get_index_operation(int socket, std::string sdfs_filename) {
+    // RECEIVED LS REQUEST FROM CLIENT
+    lg->info("master received client get index request for " + sdfs_filename);
+
+    int num_shards = sdfs_master_impl::get_num_shards_by_prefix(sdfs_filename);
+    std::string data = std::to_string(num_shards);
+
+    sdfs_message sdfs_msg;
+    sdfs_msg.set_type_mn_gidx(sdfs_filename, data);
+
+    if (sdfs_utils::send_message(server.get(), socket, sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+
+    return SDFS_SUCCESS;
+}
+
 void sdfs_master_impl::on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) {
     append_callbacks.push_back(callback);
 }
 
 std::vector<std::string> sdfs_master_impl::get_files_by_prefix(std::string prefix) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     std::vector<std::string> ret;
 
     std::vector<std::string> keys(file_to_hostnames.size());
@@ -350,10 +351,15 @@ int sdfs_master_impl::files_operation(int socket, std::string hostname, std::str
 }
 
 bool sdfs_master_impl::sdfs_file_exists(std::string sdfs_filename) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
     return (file_to_hostnames.find(sdfs_filename) != file_to_hostnames.end() && file_to_hostnames[sdfs_filename].size() != 0);
 }
 
 std::vector<std::string> sdfs_master_impl::get_hostnames() {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     std::vector<member> members = hb->get_members();
 
     std::vector<unsigned int> indices(members.size());
@@ -368,12 +374,40 @@ std::vector<std::string> sdfs_master_impl::get_hostnames() {
     return hostnames;
 }
 
+int sdfs_master_impl::get_num_shards_by_prefix(std::string prefix) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
+    std::string filename = prefix + ".";
+    int num_shards = 0;
+    while (sdfs_file_exists(filename + std::to_string(num_shards))) {num_shards++;};
+    return num_shards;
+}
+
 std::string sdfs_master_impl::get_next_filename_by_prefix(std::string prefix) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
     std::string filename = prefix + ".";
     int curr_suff = 0;
     while (sdfs_file_exists(filename + std::to_string(curr_suff))) {curr_suff++;};
     filename += std::to_string(curr_suff);
     return filename;
+}
+
+void sdfs_master_impl::add_to_maps(std::string hostname, std::string filename) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
+    file_to_hostnames[filename].push_back(hostname);
+    hostname_to_files[hostname].push_back(filename);
+}
+
+std::string sdfs_master_impl::get_hostname_from_map(std::string filename, int idx) {
+    // LOCK THE MAPS
+    std::lock_guard<std::recursive_mutex> guard(maps_mtx);
+
+    return file_to_hostnames[filename][idx];
 }
 
 register_auto<sdfs_master, sdfs_master_impl> register_sdfs_master;

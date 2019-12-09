@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, mn_gmd, mn_append, put, get, del, ls, gmd, append, rep, ack, files, success, fail
+        empty, mn_put, mn_get, mn_ls, mn_gmd, mn_append, mn_gidx, put, get, del, ls, gmd, append, gidx, rep, ack, files, success, fail
     };
 
     // Creates a message from a buffer
@@ -71,6 +71,19 @@ public:
     // Sets the message to be a get message
     void set_type_gmd(std::string filename) {
         type = msg_type::gmd;
+        sdfs_filename = filename;
+    }
+
+    // Sets the message to be a get message
+    void set_type_mn_gidx(std::string filename, std::string idx) {
+        type = msg_type::mn_gidx;
+        sdfs_filename = filename;
+        data = idx;
+    }
+
+    // Sets the message to be a get_idx message
+    void set_type_gidx(std::string filename) {
+        type = msg_type::gidx;
         sdfs_filename = filename;
     }
 

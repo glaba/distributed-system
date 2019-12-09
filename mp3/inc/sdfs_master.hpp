@@ -33,6 +33,7 @@ public:
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
     int append_operation(int socket, std::string metadata, std::string sdfs_filename);
+    int get_index_operation(int socket, std::string sdfs_filename);
 
     void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback);
 
@@ -51,7 +52,12 @@ private:
     bool sdfs_file_exists(std::string sdfs_filename);
     std::vector<std::string> get_hostnames();
 
+    int get_num_shards_by_prefix(std::string prefix);
     std::string get_next_filename_by_prefix(std::string prefix);
+
+    // thread safe add and remove
+    void add_to_maps(std::string hostname, std::string filename);
+    std::string get_hostname_from_map(std::string filename, int idx);
 
     // Services that we depend on
     election *el;

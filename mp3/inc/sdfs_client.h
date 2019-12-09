@@ -22,6 +22,8 @@ public:
     virtual int append_operation(std::string local_filename, std::string sdfs_filename) = 0;
     // handles a store request
     virtual int store_operation() = 0;
+    // handles a get_index request over the specified socket
+    virtual int get_index_operation(std::string sdfs_filename) = 0;
     // handles a get_metadata request over the specified socket
     virtual std::string get_metadata_operation(std::string sdfs_filename) = 0;
 

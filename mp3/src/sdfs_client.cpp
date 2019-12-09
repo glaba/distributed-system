@@ -52,6 +52,7 @@ int sdfs_client_impl::put_operation(std::string local_filename, std::string sdfs
         client->close_connection(master_socket);
         return SDFS_FAILURE;
     }
+
     client->close_connection(master_socket);
 
     return ret;
@@ -220,6 +221,21 @@ int sdfs_client_impl::append_operation(std::string local_filename, std::string s
     return ret;
 }
 
+int sdfs_client_impl::get_index_operation(std::string sdfs_filename) {
+    int master_socket;
+    if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
+
+    // master node correspondence to get the internal hostname
+    std::string index = get_index_operation_master(master_socket, sdfs_filename);
+    client->close_connection(master_socket);
+
+    if (index == "") return SDFS_FAILURE;
+
+    std::string::size_type sz;
+
+    return std::stoi(index, &sz);
+}
+
 int sdfs_client_impl::store_operation() {
     // local operation to ls sdfs directory
     DIR *dirp = opendir(config->get_sdfs_dir().c_str());
@@ -348,6 +364,26 @@ int sdfs_client_impl::ls_operation_master(int socket, std::string sdfs_filename)
     if (mn_response.get_type() != sdfs_message::msg_type::mn_ls) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
+}
+
+std::string sdfs_client_impl::get_index_operation_master(int socket, std::string sdfs_filename) {
+    // SOCKET IS WITH MASTER
+    lg->info("client is sending request to get index " + sdfs_filename + " to master");
+
+    // create gidx request message
+    sdfs_message gidx_req;
+    gidx_req.set_type_gidx(sdfs_filename);
+
+    // send request message to master
+    if (sdfs_utils::send_message(client.get(), socket, gidx_req) == SDFS_FAILURE) return "";
+
+    // receive master node ls response
+    sdfs_message mn_response;
+    if (sdfs_utils::receive_message(client.get(), socket, &mn_response) == SDFS_FAILURE) return "";
+    if (mn_response.get_type() != sdfs_message::msg_type::mn_gidx) return "";
+
+    return mn_response.get_data();
+
 }
 
 int sdfs_client_impl::put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename) {

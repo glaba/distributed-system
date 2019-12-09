@@ -98,6 +98,7 @@ int main(int argc, char **argv) {
 
         // Start up SDFS services
         // env.get<sdfs_client>()->start();
+        std::cout << "done parsing args and configuring environment" << std::endl;
         env.get<heartbeater>()->start();
         env.get<election>()->start();
         env.get<sdfs_server>()->start();
@@ -110,6 +111,8 @@ int main(int argc, char **argv) {
         std::cout << "append 2 complete" << std::endl;
         env.get<sdfs_client>()->append_operation("files/md3", "ap_test");
         std::cout << "append 3 complete" << std::endl;
+        int num_shards = env.get<sdfs_client>()->get_index_operation("ap_test");
+        std::cout << "num shards is (should be 3) : " << num_shards << std::endl;
         // env.get<sdfs_client>()->get_operation("files/test_copy", "test");
         // env.get<sdfs_client>()->get_metadata_operation("test");
         // env.get<sdfs_client>()->del_operation("test");

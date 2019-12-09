@@ -22,6 +22,8 @@ public:
     virtual int ls_operation(int socket, std::string sdfs_filename) = 0;
     // handles a append request over the specified socket
     virtual int append_operation(int socket, std::string metadata, std::string sdfs_filename) = 0;
+    // handles a get_index request over the specified socket
+    virtual int get_index_operation(int socket, std::string sdfs_filename) = 0;
     // callback for append request
     virtual void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) = 0;
     // returns a list of sdfs files matching a given prefix

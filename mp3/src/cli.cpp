@@ -115,6 +115,7 @@ bool cli_command::parse(string command, int argc, char **argv) {
             if (std::holds_alternative<bool*>(options[flag])) {
                 *std::get<bool*>(options[flag]) = true;
                 parsed_options.insert(flag);
+                break;
             }
 
             // We expect an argument for the rest of the types
