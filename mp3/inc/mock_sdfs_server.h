@@ -10,4 +10,14 @@ public:
     void start() {};
     // Stops all server logic for the filesystem
     void stop() {};
+    // handles a put request over the specified socket
+    int put_operation(int socket, std::string sdfs_filename) {return -1;}
+    // handles a get request over the specified socket
+    int get_operation(int socket, std::string sdfs_filename) {return -1;}
+    // handles a del request over the specified socket
+    int del_operation(int socket, std::string sdfs_filename) {return -1;}
+    // handles a ls request over the specified socket
+    int ls_operation(int socket, std::string sdfs_filename) {return -1;}
+    // handles a get_metadata request over the specified socket
+    int get_metadata_operation(int socket, std::string sdfs_filename) {return -1;}
 };

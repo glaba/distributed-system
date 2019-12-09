@@ -28,6 +28,9 @@ public:
     int ls_operation(std::string sdfs_filename);
     // handles a store request
     int store_operation();
+    // handles a get_metadata request
+    // TODO: implement this
+    int get_metadata_operation(std::string sdfs_filename) {return -1;}
 
     std::unique_ptr<service_state> init_state();
 
