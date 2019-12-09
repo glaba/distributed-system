@@ -67,6 +67,10 @@ void sdfs_master_impl::handle_connection(int socket) {
         } else if (request.get_type() == sdfs_message::msg_type::append) {
             std::string metadata = request.get_data();
             append_operation(socket, metadata, sdfs_filename);
+        } else if (request.get_type() == sdfs_message::msg_type::files) {
+            std::string hostname = request.get_sdfs_hostname();
+            std::string file_list = request.get_data();
+            files_operation(socket, hostname, file_list);
         }
     }
 
@@ -79,7 +83,8 @@ void sdfs_master_impl::handle_failures(member failed_node) {
     //        and for each file remove this host from that file's list
     //        and find a suitable host to replicate that file at (call rep op using known host of file)
     // second, clean up the hosts dictionary by removing this hostname
-    // @TODO: implement
+    std::string hostname = failed_node.hostname;
+
 }
 
 int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
