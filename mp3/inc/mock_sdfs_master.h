@@ -27,6 +27,7 @@ public:
     // callback for append request
     void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) {}
     std::vector<std::string> get_files_by_prefix(std::string prefix);
+    int get_index_operation(int socket, std::string sdfs_filename) {return -1;};
 
 private:
     mock_sdfs_client *client;

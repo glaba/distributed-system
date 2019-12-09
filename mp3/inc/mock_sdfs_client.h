@@ -36,6 +36,7 @@ public:
     // TODO: implement this
     std::string get_metadata_operation(std::string sdfs_filename) {return "";}
     int get_sharded(std::string local_filename, std::string sdfs_filename_prefix);
+    int get_index_operation(std::string sdfs_filename);
 
     std::unique_ptr<service_state> init_state();
 

@@ -154,4 +154,8 @@ int mock_sdfs_client::store_operation() {
     return -1;
 }
 
+int mock_sdfs_client::get_index_operation(std::string sdfs_filename) {
+    return -1;
+}
+
 register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;
