@@ -11,6 +11,7 @@
 #include <fstream>
 
 #define MAX_NUM_RETRIES 5
+#define NUM_FILES_PARALLEL 20
 
 using std::string;
 
@@ -152,6 +153,11 @@ void mj_worker_impl::run_job(int job_id) {
     pclose(stream);
     lg->debug("[Job " + std::to_string(job_id) + "] Downloaded executable " + state.exe + " from SDFS");
 
+    // An array of threads processing files in parallel, and a boolean that they set to true on failure
+    std::array<std::optional<std::thread>, NUM_FILES_PARALLEL> file_threads;
+    unsigned num_file_threads = 0;
+    std::atomic<bool> failed = false;
+
     while (running.load()) {
         string cur_file;
         string cur_file_name_only;
@@ -169,46 +175,75 @@ void mj_worker_impl::run_job(int job_id) {
         }
         lg->debug("[Job " + std::to_string(job_id) + "] Processing file " + cur_file);
 
-        // Download cur_file from the SDFS
-        string cur_file_path = config->get_mj_dir() + cur_file + "_" + std::to_string(job_id);
-        if (!retry([this, &cur_file_path, &cur_file] {return sdfsc->get_sharded(cur_file_path, cur_file) == 0;},
-            job_id, "get input file \"" + cur_file + "\" from SDFS"))
-        {
-            return;
+        // Stop processing files if any of the files has failed
+        if (failed.load()) {
+            break;
         }
-        lg->debug("[Job " + std::to_string(job_id) + "] Downloaded input file " + cur_file + " from SDFS");
 
-        // Construct the outputter object which will process the output of the command and determine where in SDFS it goes
-        std::unique_ptr<outputter> outptr = outputter_factory::get_outputter(state.outputter_type, state.sdfs_output_dir);
-
-        // Try to run the program multiple times in case of a spurious failure
-        lg->info("[Job " + std::to_string(job_id) + "] Running command " + exe_path + " " + cur_file_path);
-        bool successfully_processed_file = retry([this, &exe_path, &cur_file_path, &cur_file_name_only, &outptr, job_id] {
-            // Actually run the program on the input file, processing it line by line
-            bool success = run_command(exe_path + " " + cur_file_path + " " + cur_file_name_only, [this, &outptr, job_id] (string line) {
-                return outptr->process_line(line);
-            });
-            if (!success) {
-                outptr->reset();
+        if (num_file_threads == NUM_FILES_PARALLEL) {
+            for (unsigned i = 0; i < NUM_FILES_PARALLEL; i++) {
+                file_threads[i].value().join();
+                file_threads[i].reset();
+                num_file_threads--;
             }
-            return success;
-        }, job_id, "run program on input file " + cur_file + ", retrying");
-        // Fail if we are unable to run exe
-        if (!successfully_processed_file) {
-            return;
         }
 
-        // std::thread append_thread([this, job_id, outptr = std::move(outptr), cur_file_name_only] {
-        //     append_output(job_id, outptr.get(), cur_file_name_only);
-        // });
-        // append_thread.detach();
-        if (!append_output(job_id, outptr.get(), cur_file_name_only)) {
-            return;
+        unsigned thread_index = -1;
+        for (unsigned i = 0; i < NUM_FILES_PARALLEL; i++) {
+            if (!file_threads[i]) {
+                thread_index = i;
+            }
+        }
+        assert(thread_index >= 0);
+        num_file_threads++;
+
+        // Start a thread to download the file, process it, and write the results back to SDFS
+        std::thread file_thread([this, job_id, cur_file, cur_file_name_only, &state, &exe_path, &failed] {
+            // Download cur_file from the SDFS
+            string cur_file_path = config->get_mj_dir() + cur_file + "_" + std::to_string(job_id);
+            if (!retry([this, &cur_file_path, &cur_file] {return sdfsc->get_sharded(cur_file_path, cur_file) == 0;},
+                job_id, "get input file \"" + cur_file + "\" from SDFS"))
+            {
+                failed = true;
+                return;
+            }
+            lg->debug("[Job " + std::to_string(job_id) + "] Downloaded input file " + cur_file + " from SDFS");
+
+            // Construct the outputter object which will process the output of the command and determine where in SDFS it goes
+            std::unique_ptr<outputter> outptr = outputter_factory::get_outputter(state.outputter_type, state.sdfs_output_dir);
+
+            // Try to run the program multiple times in case of a spurious failure
+            lg->info("[Job " + std::to_string(job_id) + "] Running command " + exe_path + " " + cur_file_path);
+            bool successfully_processed_file = retry([this, &exe_path, &cur_file_path, &cur_file_name_only, &outptr, job_id] {
+                // Actually run the program on the input file, processing it line by line
+                bool success = run_command(exe_path + " " + cur_file_path + " " + cur_file_name_only, [this, &outptr, job_id] (string line) {
+                    return outptr->process_line(line);
+                });
+                if (!success) {
+                    outptr->reset();
+                }
+                return success;
+            }, job_id, "run program on input file " + cur_file + ", retrying");
+            // Fail if we are unable to run exe
+            if (!successfully_processed_file) {
+                failed = true;
+                return;
+            }
+
+            append_output(job_id, outptr.get(), cur_file_name_only);
+        });
+        file_threads[thread_index] = std::move(file_thread);
+    }
+
+    for (unsigned i = 0; i < NUM_FILES_PARALLEL; i++) {
+        if (file_threads[i]) {
+            file_threads[i].value().join();
+            file_threads[i].reset();
         }
     }
 }
 
-bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_file)
+void mj_worker_impl::append_output(int job_id, outputter *outptr, string input_file)
 {
     while (running.load()) {
         // First, get the master hostname from the election service
@@ -225,106 +260,29 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
                 throw client.get();
             }
 
-            std::mutex append_mutex;
-            std::vector<bool> append_complete;
-            int cur_index = -1;
+            // Fire off threads for each key that needs to be appended
+            std::vector<std::thread> append_threads;
+            std::atomic<bool> master_down = false;
             while (outptr->more()) {
-                cur_index++;
-                {
-                    append_mutex.lock();
-                    append_complete.push_back(false);
-                    append_mutex.unlock();
-                }
                 auto pair = outptr->emit();
                 string &output_file = pair.first;
                 std::vector<string> &vals = pair.second;
 
-                // Then, construct the message request permission to append
-                mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file});
-                string msg_str = msg.serialize();
+                std::optional<std::thread> append_thread =
+                    append_lines(job_id, client.get(), fd, input_file, output_file, vals, &master_down);
 
-                // Connect to the master and send the message, and wait for either a yes or no response
-                if (client->write_to_server(fd, msg_str) <= 0) {
-                    lg->debug("[Job " + std::to_string(job_id) + "] Request to append to output file " + output_file + " failed to send to master");
-                    throw client.get(); // Master has gone down
-                }
-
-                string response_str = client->read_from_server(fd);
-
-                mj_message response(response_str.c_str(), response_str.length());
-                if (!response.is_well_formed() || response.get_msg_type() != mj_message::mj_msg_type::APPEND_PERM) {
-                    lg->debug("[Job " + std::to_string(job_id) + "] Lost connection with master node while " +
-                        "requesting permission to append to output file " + output_file);
-                    throw client.get();
-                }
-
-                bool got_permission = (response.get_msg_data<mj_append_perm>().allowed != 0);
-                lg->debug("[Job " + std::to_string(job_id) + "] " + (got_permission ? "Received " : "Did not receive ") +
-                    "permission to append to output file " + output_file);
-
-                if (got_permission) {
-                    std::thread append_thread([=, &append_complete, &append_mutex] {
-                        append_mutex.lock();
-                        append_complete[cur_index] = false;
-                        append_mutex.unlock();
-
-                        unsigned cur_id = mt();
-                        // First, put the values into a local file
-                        string local_output = config->get_mj_dir() + "intermediate_" + std::to_string(cur_id);
-                        std::ofstream out;
-                        out.open(local_output);
-                        if (!out) {
-                            std::cerr << "Failed to open local file to write intermediate results" << std::endl;
-                            exit(1);
-                        }
-
-                        for (const string &val : vals) {
-                            out << val << std::endl;
-                        }
-                        out.close();
-                        lg->trace("[Job " + std::to_string(job_id) + "] Wrote intermediate results for output file " + output_file + " to local file");
-
-                        // Then, append the values to file with name intermediate_filename using sdfs_client
-                        if (!retry([this, &local_output, &output_file] {return sdfsc->append_operation(local_output, output_file) == 0;},
-                            job_id, "append values for output file " + output_file + " from input file " + input_file))
-                        {
-                            pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
-                            // client->close_connection(fd); // TODO FIX THIS LEAK
-                            return;
-                        }
-                        pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
-
-                        // TODO: add metadata key=maple, value=input_file to SDFS entry
-
-                        lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file + " from input file " + input_file);
-                        append_mutex.lock();
-                        append_complete[cur_index] = true;
-                        append_mutex.unlock();
-                    });
-                    append_thread.detach();
-                } else {
-                    lg->info("[Job " + std::to_string(job_id) + "] Not appending values to output file " + output_file + " from input file " + input_file);
+                if (append_thread) {
+                    append_threads.push_back(std::move(append_thread.value()));
                 }
             }
 
-            // Wait for all append_completes to be true
-            while (true) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                {
-                    append_mutex.lock();
-                    for (unsigned i = 0; i < append_complete.size(); i++) {
-                        if (!append_complete[i]) {
-                            append_mutex.unlock();
-                            continue;
-                        }
-                    }
-                    append_mutex.unlock();
-                    break;
-                }
+            // Wait for all appends to complete and restart everything if the master went down
+            for (auto &append_thread : append_threads) {
+                append_thread.join();
             }
-            lg->info("Completed");
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if (master_down.load()) {
+                throw client.get();
+            }
 
             // Inform the master node that the file is complete
             mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
@@ -333,14 +291,80 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
             if (client->write_to_server(fd, complete_msg.serialize()) <= 0) {
                 throw client.get();
             }
-            // client->close_connection(fd); // TODO FIX THIS LEAK
+            client->close_connection(fd);
             break;
         } catch (tcp_client *failed_client) {
-            // failed_client->close_connection(fd);
+            failed_client->close_connection(fd);
             continue;
         }
     }
-    return true;
+}
+
+std::optional<std::thread> mj_worker_impl::append_lines(int job_id, tcp_client *client, int fd, string &input_file,
+    string &output_file, std::vector<string> &vals, std::atomic<bool> *master_down)
+{
+    // Then, construct the message request permission to append
+    mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file});
+    string msg_str = msg.serialize();
+
+    // Connect to the master and send the message, and wait for either a yes or no response
+    if (client->write_to_server(fd, msg_str) <= 0) {
+        lg->debug("[Job " + std::to_string(job_id) + "] Request to append to output file " + output_file + " failed to send to master");
+        *master_down = true;
+        return std::nullopt;
+    }
+
+    string response_str = client->read_from_server(fd);
+
+    mj_message response(response_str.c_str(), response_str.length());
+    if (!response.is_well_formed() || response.get_msg_type() != mj_message::mj_msg_type::APPEND_PERM) {
+        lg->debug("[Job " + std::to_string(job_id) + "] Lost connection with master node while " +
+            "requesting permission to append to output file " + output_file);
+        *master_down = true;
+        return std::nullopt;
+    }
+
+    bool got_permission = (response.get_msg_data<mj_append_perm>().allowed != 0);
+    lg->debug("[Job " + std::to_string(job_id) + "] " + (got_permission ? "Received " : "Did not receive ") +
+        "permission to append to output file " + output_file);
+
+    if (got_permission) {
+        std::thread append_thread([=] {
+            unsigned cur_id = mt();
+            // First, put the values into a local file
+            string local_output = config->get_mj_dir() + "intermediate_" + std::to_string(cur_id);
+            std::ofstream out;
+            out.open(local_output);
+            if (!out) {
+                std::cerr << "Failed to open local file to write intermediate results" << std::endl;
+                exit(1);
+            }
+
+            for (const string &val : vals) {
+                out << val << std::endl;
+            }
+            out.close();
+            lg->trace("[Job " + std::to_string(job_id) + "] Wrote intermediate results for output file " + output_file + " to local file");
+
+            // Then, append the values to file with name intermediate_filename using sdfs_client
+            if (!retry([this, &local_output, &output_file] {return sdfsc->append_operation(local_output, output_file) == 0;},
+                job_id, "append values for output file " + output_file + " from input file " + input_file))
+            {
+                pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
+                *master_down = true;
+                return;
+            }
+            pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
+
+            // TODO: add metadata key=maple, value=input_file to SDFS entry
+
+            lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file + " from input file " + input_file);
+        });
+        return std::optional<std::thread>(std::move(append_thread));
+    } else {
+        lg->info("[Job " + std::to_string(job_id) + "] Not appending values to output file " + output_file + " from input file " + input_file);
+        return std::nullopt;
+    }
 }
 
 bool mj_worker_impl::run_command(string command, std::function<bool(string)> callback) {

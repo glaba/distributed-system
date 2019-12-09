@@ -228,11 +228,9 @@ int mj_master_impl::assign_job(mj_start_job info) {
         file = file.substr(info.sdfs_src_dir.length());
         file = file.substr(0, file.find_last_of("."));
         input_files_set.insert(file);
-        lg->info("Sanitized: " + file);
     }
     for (const std::string &file : input_files_set) {
         input_files.push_back(file);
-        lg->info(file);
     }
 
     // Assign files to nodes based on the specified partitioner and fill the job_state struct

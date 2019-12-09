@@ -24,6 +24,7 @@
 #include <functional>
 #include <stdlib.h>
 #include <random>
+#include <optional>
 
 class mj_worker_impl : public mj_worker, public service_impl<mj_worker_impl> {
 public:
@@ -36,7 +37,11 @@ private:
     void server_thread_function();
     bool run_command(std::string command, std::function<bool(std::string)> callback);
     void run_job(int job_id);
-    bool append_output(int job_id, outputter *outptr, std::string input_file);
+    void append_output(int job_id, outputter *outptr, std::string input_file);
+    // Appends the lines from a single input file to the specified output file after getting permission from the master node
+    // Returns either a thread that is working or nothing if the master denied permission
+    std::optional<std::thread> append_lines(int job_id, tcp_client *client, int fd, std::string &input_file,
+        std::string &output_file, std::vector<std::string> &vals, std::atomic<bool> *master_down);
 
     bool retry(std::function<bool()> callback, int job_id, std::string description);
 

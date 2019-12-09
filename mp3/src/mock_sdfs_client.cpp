@@ -60,6 +60,10 @@ int mock_sdfs_client::put_operation(string local_filename, string sdfs_filename)
 }
 
 int mock_sdfs_client::get_operation(string local_filename, string sdfs_filename) {
+    return -1;
+}
+
+int mock_sdfs_client::get_sharded(string local_filename, string sdfs_filename) {
     if (!running.load() || isolated) {
         return -1;
     }
@@ -150,4 +154,4 @@ int mock_sdfs_client::store_operation() {
     return -1;
 }
 
-// register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;
+register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;

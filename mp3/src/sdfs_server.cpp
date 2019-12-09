@@ -70,7 +70,7 @@ void sdfs_server_impl::handle_connection(int socket) {
 int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
     // the client has made a put request to master
     // and the master has approved the client request
-    lg->info("server received request from client to put " + sdfs_filename);
+    lg->debug("server received request from client to put " + sdfs_filename);
 
     // RECEIVE THE FILE FROM THE CLIENT
     std::string filename = config->get_sdfs_dir() + sdfs_filename;
@@ -82,7 +82,7 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
 int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
     // the client has made a get request to master
     // and the master has approved the client request
-    lg->info("server received request from client to get " + sdfs_filename);
+    lg->debug("server received request from client to get " + sdfs_filename);
 
     // WRITE THE FILE TO THE CLIENT
     std::string filename = config->get_sdfs_dir() + sdfs_filename;
@@ -94,7 +94,7 @@ int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
 int sdfs_server_impl::get_metadata_operation(int socket, std::string sdfs_filename) {
     // the client has made a gmd request to master
     // and the master has approved the client request
-    lg->info("server received request from client to get metadata " + sdfs_filename);
+    lg->debug("server received request from client to get metadata " + sdfs_filename);
 
     // WRITE THE METADATA TO THE CLIENT
     std::string filename = config->get_sdfs_dir() + sdfs_filename;
@@ -106,7 +106,7 @@ int sdfs_server_impl::get_metadata_operation(int socket, std::string sdfs_filena
 int sdfs_server_impl::del_operation(int socket, std::string sdfs_filename) {
     // the client has made a dele request to master
     // and the master has approved the client request
-    lg->info("server received request from client to get " + sdfs_filename);
+    lg->debug("server received request from client to get " + sdfs_filename);
 
     if (del_file(sdfs_filename) == -1) return SDFS_FAILURE;
 
@@ -116,7 +116,7 @@ int sdfs_server_impl::del_operation(int socket, std::string sdfs_filename) {
 int sdfs_server_impl::ls_operation(int socket, std::string sdfs_filename) {
     // the client has made a del request to master
     // and the master has approved the client request
-    lg->info("server received request from client to ls " + sdfs_filename);
+    lg->debug("server received request from client to ls " + sdfs_filename);
 
     bool exists = file_exists(sdfs_filename);
 
@@ -126,7 +126,7 @@ int sdfs_server_impl::ls_operation(int socket, std::string sdfs_filename) {
 
 int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename) {
     // the master has made a rep request to the server
-    lg->info("server received request from master to rep " + sdfs_filename + " to host " + sdfs_hostname);
+    lg->debug("server received request from master to rep " + sdfs_filename + " to host " + sdfs_hostname);
 
     // GET INTERNAL SOCKET TO HOSTNAME
     int internal_socket;
