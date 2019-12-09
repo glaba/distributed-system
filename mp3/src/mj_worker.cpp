@@ -264,6 +264,10 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
 
                 if (got_permission) {
                     std::thread append_thread([=, &append_complete, &append_mutex] {
+                        append_mutex.lock();
+                        append_complete[cur_index] = false;
+                        append_mutex.unlock();
+
                         unsigned cur_id = mt();
                         // First, put the values into a local file
                         string local_output = config->get_mj_dir() + "intermediate_" + std::to_string(cur_id);
@@ -305,17 +309,22 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
 
             // Wait for all append_completes to be true
             while (true) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 {
                     append_mutex.lock();
                     for (unsigned i = 0; i < append_complete.size(); i++) {
                         if (!append_complete[i]) {
+                            append_mutex.unlock();
                             continue;
                         }
                     }
                     append_mutex.unlock();
+                    break;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
+            lg->info("Completed");
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
             // Inform the master node that the file is complete
             mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
