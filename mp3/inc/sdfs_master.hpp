@@ -11,7 +11,6 @@
 #include "service.h"
 #include "environment.h"
 
-#include <string>
 #include <cstring>
 #include <sstream>
 #include <algorithm>
@@ -31,6 +30,8 @@ public:
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
+
+    std::vector<std::string> get_files_by_prefix(std::string prefix);
 private:
     void process_loop();
     void handle_connection(int socket);

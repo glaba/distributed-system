@@ -1,5 +1,7 @@
 #include "sdfs_master.hpp"
 
+auto key_selector = [](auto pair){return pair.first;};
+
 sdfs_master_impl::sdfs_master_impl(environment &env)
     : el(env.get<election>()),
       hb(env.get<heartbeater>()),
@@ -237,6 +239,20 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     }
 
     return SDFS_SUCCESS;
+}
+
+std::vector<std::string> sdfs_master_impl::get_files_by_prefix(std::string prefix) {
+    std::vector<std::string> ret;
+
+    std::vector<std::string> keys(file_to_hostnames.size());
+    transform(file_to_hostnames.begin(), file_to_hostnames.end(), keys.begin(), key_selector);
+
+    // iterate through list of keys to see which files are prefixed by given prefix
+    for (auto key : keys) {
+        if (key.compare(0, prefix.size(), prefix) == 0) ret.push_back(key);
+    }
+
+    return ret;
 }
 
 int sdfs_master_impl::files_operation(int socket, std::string hostname, std::string data) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 class sdfs_master {
 public:
@@ -16,4 +17,6 @@ public:
     virtual int del_operation(int socket, std::string sdfs_filename) = 0;
     // handles a ls request over the specified socket
     virtual int ls_operation(int socket, std::string sdfs_filename) = 0;
+    // returns a list of sdfs files matching a given prefix
+    virtual std::vector<std::string> get_files_by_prefix(std::string prefix) = 0;
 };
