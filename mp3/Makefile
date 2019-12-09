@@ -20,21 +20,25 @@ MJE_TARGETS    := mje/wc_maple mje/wc_juice
 MEMBER         := member
 SDFS           := sdfs
 MAPLE          := maple
+JUICE          := juice
 MAPLEJUICE     := maplejuice
 MJE            := mje
 
-all: $(MEMBER) $(SDFS) $(MAPLE) $(MAPLEJUICE) $(MJE)
+all: $(MEMBER) $(SDFS) $(MAPLE) $(MAPLEJUICE) $(MJE) $(JUICE)
 
-$(MEMBER): $(filter-out obj/sdfs.o obj/maple.o obj/maplejuice.o, $(OBJ_FILES))
+$(MEMBER): $(filter-out obj/sdfs.o obj/maple.o obj/maplejuice.o obj/juice.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(SDFS): $(filter-out obj/member.o obj/maple.o obj/maplejuice.o, $(OBJ_FILES))
+$(SDFS): $(filter-out obj/member.o obj/maple.o obj/maplejuice.o obj/juice.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(MAPLE): $(filter-out obj/member.o obj/sdfs.o obj/maplejuice.o, $(OBJ_FILES))
+$(MAPLE): $(filter-out obj/member.o obj/sdfs.o obj/maplejuice.o obj/juice.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(MAPLEJUICE): $(filter-out obj/member.o obj/sdfs.o obj/maple.o, $(OBJ_FILES))
+$(JUICE): $(filter-out obj/member.o obj/sdfs.o obj/maplejuice.o obj/maple.o, $(OBJ_FILES))
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(MAPLEJUICE): $(filter-out obj/member.o obj/sdfs.o obj/maple.o  obj/juice.o, $(OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
