@@ -24,15 +24,16 @@ public:
     void start();
     void stop();
 
-private:
-    void handle_connection(int socket);
-
-    // functions to handle major sdfs operations
     int put_operation(int socket, std::string sdfs_filename);
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
     int get_metadata_operation(int socket, std::string sdfs_filename);
+private:
+    void process_loop();
+    void handle_connection(int socket);
+
+    // functions to handle major sdfs operations
     int append_operation(int socket, int index, std::string sdfs_filename);
 
     int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);

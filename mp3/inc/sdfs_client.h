@@ -18,4 +18,6 @@ public:
     virtual int ls_operation(std::string sdfs_filename) = 0;
     // handles a store request
     virtual int store_operation() = 0;
+    // handles a get_metadata request over the specified socket
+    virtual int get_metadata_operation(std::string sdfs_filename) = 0;
 };

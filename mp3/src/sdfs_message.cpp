@@ -11,12 +11,14 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
         switch (type) {
             case msg_type::put:
             case msg_type::get:
+            case msg_type::gmd:
             case msg_type::del:
             case msg_type::ls:
                 sdfs_filename = des.get_string();
                 break;
             case msg_type::mn_put:
             case msg_type::mn_get:
+            case msg_type::mn_gmd:
                 sdfs_hostname = des.get_string();
                 break;
             case msg_type::mn_ls:
@@ -33,6 +35,7 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
             case msg_type::rep:
                 sdfs_hostname = des.get_string();
                 sdfs_filename = des.get_string();
+                break;
             default:
                 throw "Unknown type";
         }
@@ -56,12 +59,14 @@ std::string sdfs_message::serialize() {
     switch (type) {
         case msg_type::put:
         case msg_type::get:
+        case msg_type::gmd:
         case msg_type::del:
         case msg_type::ls:
             ser.add_field(sdfs_filename);
             break;
         case msg_type::mn_put:
         case msg_type::mn_get:
+        case msg_type::mn_gmd:
             ser.add_field(sdfs_hostname);
             break;
         case msg_type::mn_ls:

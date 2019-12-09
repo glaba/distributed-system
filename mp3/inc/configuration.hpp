@@ -3,11 +3,14 @@
 #include "configuration.h"
 #include "service.h"
 
+#include <errno.h>
 #include <sys/stat.h>
 #include <random>
 #include <chrono>
 #include <string>
 #include <iostream>
+
+extern int errno;
 
 class configuration_impl : public configuration, public service_impl<configuration_impl> {
 public:
@@ -60,7 +63,7 @@ public:
     void set_sdfs_subdir(std::string subdir) {
         sdfs_dir = dir + subdir + "/";
         // Create the directory
-        if (mkdir(sdfs_dir.c_str(), ACCESSPERMS) != 0) {
+        if (mkdir(sdfs_dir.c_str(), ACCESSPERMS) != 0 && errno != EEXIST) {
             std::cerr << "Could not create SDFS subdirectory, exiting" << std::endl;
             exit(1);
         }

@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, put, get, del, ls, append, rep, ack, files, success, fail
+        empty, mn_put, mn_get, mn_ls, mn_gmd, put, get, del, ls, gmd, append, rep, ack, files, success, fail
     };
 
     // Creates a message from a buffer
@@ -28,6 +28,12 @@ public:
     // Sets the message to be a mn_get message
     void set_type_mn_get(std::string hostname) {
         type = msg_type::mn_get;
+        sdfs_hostname = hostname;
+    }
+
+    // Sets the message to be a mn_gmd message
+    void set_type_mn_gmd(std::string hostname) {
+        type = msg_type::mn_gmd;
         sdfs_hostname = hostname;
     }
 
@@ -62,6 +68,12 @@ public:
         sdfs_filename = filename;
     }
 
+    // Sets the message to be a get message
+    void set_type_gmd(std::string filename) {
+        type = msg_type::gmd;
+        sdfs_filename = filename;
+    }
+
     // Sets the message to be an ack message
     void set_type_ack() {
         type = msg_type::ack;
@@ -88,6 +100,14 @@ public:
     void set_type_ls(std::string filename) {
         type = msg_type::ls;
         sdfs_filename = filename;
+    }
+
+    // Sets the message to be a files message
+    void set_type_append(std::string hostname, std::string filename, std::string data) {
+        type = msg_type::files;
+        sdfs_hostname = hostname;
+        sdfs_filename = filename;
+        // data = files;
     }
 
     msg_type get_type() {

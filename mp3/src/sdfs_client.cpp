@@ -58,7 +58,6 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
     // master node correspondence to get the internal hostname
     std::string hostname;
     hostname = get_operation_master(master_socket, local_filename, sdfs_filename);
-    client->close_connection(master_socket);
 
     int internal_socket;
     if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return SDFS_FAILURE;
@@ -68,6 +67,36 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
     client->close_connection(internal_socket);
 
     // report back to master with status (remove above close connection too)
+    // create success/fail message
+    sdfs_message res;
+    if (ret == SDFS_SUCCESS) {
+        res.set_type_success();
+    } else {
+        res.set_type_fail();
+    }
+
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    client->close_connection(master_socket);
+
+    return ret;
+}
+
+int sdfs_client_impl::get_metadata_operation(std::string sdfs_filename) {
+    int master_socket;
+    if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
+
+    // master node correspondence to get the internal hostname
+    std::string hostname;
+    hostname = get_metadata_operation_master(master_socket, sdfs_filename);
+
+    int internal_socket;
+    if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return SDFS_FAILURE;
+
+    // internal node correspondence to get the file metadata
+    int ret = get_metadata_operation_internal(internal_socket, sdfs_filename);
+    client->close_connection(internal_socket);
+
+    // report back to master with status
     // create success/fail message
     sdfs_message res;
     if (ret == SDFS_SUCCESS) {
@@ -150,6 +179,27 @@ std::string sdfs_client_impl::get_operation_master(int socket, std::string local
 
     // receive master node put response
     sdfs_message mn_response;
+    std::cout << "here" << std::endl;
+    if (sdfs_utils::receive_message(client.get(), socket, &mn_response) == SDFS_FAILURE) return "";
+    if (mn_response.get_type() != sdfs_message::msg_type::mn_get) return "";
+    std::cout << "here" << std::endl;
+
+    return mn_response.get_sdfs_hostname();
+}
+
+std::string sdfs_client_impl::get_metadata_operation_master(int socket, std::string sdfs_filename) {
+    // SOCKET IS WITH MASTER
+    lg->info("client is sending request to get metadata for " + sdfs_filename + " to master");
+
+    // create get request message
+    sdfs_message gmd_req;
+    gmd_req.set_type_gmd(sdfs_filename);
+
+    // send request message to master
+    if (sdfs_utils::send_message(client.get(), socket, gmd_req) == SDFS_FAILURE) return "";
+
+    // receive master node put response (will be same as get response for reusability)
+    sdfs_message mn_response;
     if (sdfs_utils::receive_message(client.get(), socket, &mn_response) == SDFS_FAILURE) return "";
     if (mn_response.get_type() != sdfs_message::msg_type::mn_get) return "";
 
@@ -191,8 +241,6 @@ int sdfs_client_impl::ls_operation_master(int socket, std::string sdfs_filename)
     if (sdfs_utils::receive_message(client.get(), socket, &mn_response) == SDFS_FAILURE) return SDFS_FAILURE;
     if (mn_response.get_type() != sdfs_message::msg_type::mn_ls) return SDFS_FAILURE;
 
-    std::cout << mn_response.get_data() << std::endl;
-
     return SDFS_SUCCESS;
 }
 
@@ -220,13 +268,25 @@ int sdfs_client_impl::get_operation_internal(int socket, std::string local_filen
     return SDFS_SUCCESS;
 }
 
+int sdfs_client_impl::get_metadata_operation_internal(int socket, std::string sdfs_filename) {
+    // MASTER CORRESPONDENCE IS DONE
+    lg->info("client is requesting to get metadata for " + sdfs_filename);
+
+    std::string metadata;
+    // SEND THE GET REQUEST AND THEN RECEIVE THE FILE
+    sdfs_message gmd_msg; gmd_msg.set_type_gmd(sdfs_filename);
+    if (sdfs_utils::send_message(client.get(), socket, gmd_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if ((metadata = client->read_from_server(socket)) == "") return SDFS_FAILURE;
+    std::cout << "client received metadata : " << metadata << std::endl;
+
+    return SDFS_SUCCESS;
+}
+
 int sdfs_client_impl::get_master_socket() {
     // virtual int setup_connection(std::string host, int port) = 0;
     int socket = -1;
-    el->get_master_node([&, socket] (member master_node, bool succeeded) mutable {
-        if (succeeded) {
-            socket = client->setup_connection(master_node.hostname, config->get_sdfs_master_port());
-        }
+    el->wait_master_node([&] (member master_node) mutable {
+        socket = client->setup_connection(master_node.hostname, config->get_sdfs_master_port());
     });
     return socket;
 }

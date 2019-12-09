@@ -12,14 +12,30 @@ sdfs_server_impl::sdfs_server_impl(environment &env)
 }
 
 void sdfs_server_impl::start() {
-    // @TODO: ADD LOGIC TO ACCEPT CONNECTIONS AND SPIN UP NEW THREADS
+    server->setup_server(config->get_sdfs_internal_port());
+
+    std::thread *server_thread = new std::thread([this] {process_loop();});
+    server_thread->detach();
     return;
 }
 
 void sdfs_server_impl::stop() {
     // @TODO: ADD LOGIC TO STOP ACCEPTING CONNECTIONS
     // @TODO: ALSO REMOVE ALL FILES HERE
+    server->stop_server();
     return;
+}
+
+void sdfs_server_impl::process_loop() {
+    while (true) {
+        // accept the connection on the server
+        int client = server->accept_connection();
+
+        if (client == -1) continue;
+
+        std::thread *client_t = new std::thread([this, client] {handle_connection(client);});
+        client_t->detach();
+    }
 }
 
 void sdfs_server_impl::handle_connection(int socket) {
@@ -35,6 +51,8 @@ void sdfs_server_impl::handle_connection(int socket) {
             put_operation(socket, sdfs_filename);
         } else if (request.get_type() == sdfs_message::msg_type::get) {
             get_operation(socket, sdfs_filename);
+        } else if (request.get_type() == sdfs_message::msg_type::gmd) {
+            get_metadata_operation(socket, sdfs_filename);
         } else if (request.get_type() == sdfs_message::msg_type::del) {
             del_operation(socket, sdfs_filename);
         } else if (request.get_type() == sdfs_message::msg_type::ls) {
@@ -55,7 +73,8 @@ int sdfs_server_impl::put_operation(int socket, std::string sdfs_filename) {
     lg->info("server received request from client to put " + sdfs_filename);
 
     // RECEIVE THE FILE FROM THE CLIENT
-    if (sdfs_utils::read_file_from_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
+    std::string filename = config->get_sdfs_dir() + sdfs_filename;
+    if (sdfs_utils::read_file_from_socket(server.get(), socket, filename) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }
@@ -65,8 +84,20 @@ int sdfs_server_impl::get_operation(int socket, std::string sdfs_filename) {
     // and the master has approved the client request
     lg->info("server received request from client to get " + sdfs_filename);
 
-    // RECEIVE THE FILE FROM THE CLIENT
+    // WRITE THE FILE TO THE CLIENT
     if (sdfs_utils::write_file_to_socket(server.get(), socket, sdfs_filename) == -1) return SDFS_FAILURE;
+
+    return SDFS_SUCCESS;
+}
+
+int sdfs_server_impl::get_metadata_operation(int socket, std::string sdfs_filename) {
+    // the client has made a gmd request to master
+    // and the master has approved the client request
+    lg->info("server received request from client to get metadata " + sdfs_filename);
+
+    // WRITE THE METADATA TO THE CLIENT
+    std::string filename = config->get_sdfs_dir() + sdfs_filename;
+    if (sdfs_utils::write_first_line_to_socket(server.get(), socket, filename) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }
@@ -97,7 +128,6 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     lg->info("server received request from master to rep " + sdfs_filename + " to host " + sdfs_hostname);
 
     // GET INTERNAL SOCKET TO HOSTNAME
-    // @TODO: WHAT HAPPENS IF I FAIL - WILL THE MASTER INDEFINITELY WAIT FOR A RESPONSE?
     int internal_socket;
     if ((internal_socket = client->setup_connection(sdfs_hostname, config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
 
@@ -109,11 +139,6 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     if (sdfs_utils::send_message(client.get(), internal_socket, put_msg) == SDFS_FAILURE) return SDFS_FAILURE;
     if (sdfs_utils::write_file_to_socket(client.get(), internal_socket, local_filename) == -1) return SDFS_FAILURE;
 
-    return SDFS_SUCCESS;
-}
-
-int sdfs_server_impl::get_metadata_operation(int socket, std::string sdfs_filename) {
-    // @TODO: implement
     return SDFS_SUCCESS;
 }
 

@@ -26,12 +26,14 @@ public:
     void start();
     void stop();
 
-private:
     // Functions to handle major sdfs operations as the master
     int put_operation(int socket, std::string sdfs_filename);
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
+private:
+    void process_loop();
+    void handle_connection(int socket);
 
     // used to replicate a given file
     int rep_operation(int socket, std::string hostname, std::string sdfs_filename);
@@ -50,7 +52,7 @@ private:
     std::unique_ptr<logger> lg;
     std::unique_ptr<tcp_client> client;
     std::unique_ptr<tcp_server> server;
-    std::unique_ptr<std::unordered_map<std::string, std::vector<std::string>>> file_to_hostnames;
-    std::unique_ptr<std::unordered_map<std::string, std::vector<std::string>>> hostname_to_files;
+    std::unordered_map<std::string, std::vector<std::string>> file_to_hostnames;
+    std::unordered_map<std::string, std::vector<std::string>> hostname_to_files;
     configuration *config;
 };
