@@ -14,6 +14,7 @@
 #include "mj_master.h"
 #include "heartbeater.h"
 #include "outputter.h"
+#include "sdfs_master.h"
 
 #include <memory>
 #include <atomic>
@@ -21,6 +22,8 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <stdlib.h>
+#include <random>
 
 class mj_worker_impl : public mj_worker, public service_impl<mj_worker_impl> {
 public:
@@ -59,6 +62,8 @@ private:
     mj_master *mm;
     sdfs_client *sdfsc;
     sdfs_server *sdfss;
+    sdfs_master *sdfsm;
 
     std::atomic<bool> running;
+    std::mt19937 mt;
 };

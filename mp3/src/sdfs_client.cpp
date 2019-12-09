@@ -1,12 +1,15 @@
 #include "sdfs_client.h"
 #include "sdfs_client.hpp"
 
+#include <random>
+
 sdfs_client_impl::sdfs_client_impl(environment &env)
     : el(env.get<election>()),
       lg(env.get<logger_factory>()->get_logger("sdfs_client")),
       client(env.get<tcp_factory>()->get_tcp_client()),
       server(env.get<tcp_factory>()->get_tcp_server()),
-      config(env.get<configuration>())
+      config(env.get<configuration>()),
+      mt(std::chrono::system_clock::now().time_since_epoch().count())
 {
     // @TODO: master node logic, probably going to need the election service as well
 }
@@ -45,10 +48,43 @@ int sdfs_client_impl::put_operation(std::string local_filename, std::string sdfs
         res.set_type_fail();
     }
 
-    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) {
+        client->close_connection(master_socket);
+        return SDFS_FAILURE;
+    }
     client->close_connection(master_socket);
 
     return ret;
+}
+
+int sdfs_client_impl::get_sharded(std::string local_filename, std::string sdfs_filename_prefix) {
+    std::string id = std::to_string(mt());
+    std::string temp_prefix = config->get_mj_dir() + "shard" + id;
+
+    unsigned num_shards = 0;
+    while (true) {
+        std::string temp = temp_prefix + std::to_string(num_shards);
+        if (get_operation(temp, sdfs_filename_prefix + "." + std::to_string(num_shards)) != 0) {
+            break;
+        }
+        num_shards++;
+    }
+    std::string cat_command = "cat ";
+    std::string rm_command = "rm ";
+    for (unsigned i = 0; i < num_shards; i++) {
+        cat_command += "\"" + temp_prefix + std::to_string(i) + "\" ";
+        rm_command += "\"" + temp_prefix + std::to_string(i) + "\" ";
+    }
+    cat_command += "> \"" + local_filename + "\"";
+
+    FILE *stream = popen(cat_command.c_str(), "r");
+    if (pclose(stream)) {
+        return -1;
+    }
+    stream = popen(rm_command.c_str(), "r");
+    pclose(stream);
+
+    return 0;
 }
 
 int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs_filename) {
@@ -59,8 +95,16 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
     std::string hostname;
     hostname = get_operation_master(master_socket, local_filename, sdfs_filename);
 
+    if (hostname == "") {
+        client->close_connection(master_socket);
+        return SDFS_FAILURE;
+    }
+
     int internal_socket;
-    if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return SDFS_FAILURE;
+    if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) {
+        client->close_connection(master_socket);
+        return SDFS_FAILURE;
+    }
 
     // internal node correspondence to put the file
     int ret = get_operation_internal(internal_socket, local_filename, sdfs_filename);
@@ -75,7 +119,10 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
         res.set_type_fail();
     }
 
-    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) {
+        client->close_connection(master_socket);
+        return SDFS_FAILURE;
+    }
     client->close_connection(master_socket);
 
     return ret;
@@ -164,7 +211,10 @@ int sdfs_client_impl::append_operation(std::string local_filename, std::string s
         res_msg.set_type_fail();
     }
 
-    if (sdfs_utils::send_message(client.get(), master_socket, res_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), master_socket, res_msg) == SDFS_FAILURE) {
+        client->close_connection(master_socket);
+        return SDFS_FAILURE;
+    }
     client->close_connection(master_socket);
 
     return ret;
@@ -357,6 +407,10 @@ void sdfs_client_impl::send_files() {
 }
 
 int sdfs_client_impl::get_master_socket() {
+    if (mn_hostname != "") {
+        return client->setup_connection(mn_hostname, config->get_sdfs_master_port());
+    }
+
     // virtual int setup_connection(std::string host, int port) = 0;
     int socket = -1;
     el->wait_master_node([&] (member master_node) mutable {

@@ -23,7 +23,8 @@ mj_worker_impl::mj_worker_impl(environment &env)
     , el(env.get<election>())
     , mm(env.get<mj_master>())
     , sdfsc(env.get<sdfs_client>())
-    , sdfss(env.get<sdfs_server>()), running(false) {}
+    , sdfss(env.get<sdfs_server>())
+    , sdfsm(env.get<sdfs_master>()), running(false), mt(std::chrono::system_clock::now().time_since_epoch().count()) {}
 
 void mj_worker_impl::start() {
     if (running.load()) {
@@ -34,7 +35,8 @@ void mj_worker_impl::start() {
     el->start();
     mm->start();
     sdfsc->start();
-    sdfss->start(); // This should start sdfs_master as well
+    sdfss->start();
+    sdfsm->start();
     running = true;
 
     std::thread server_thread([this] {server_thread_function();});
@@ -141,11 +143,13 @@ void mj_worker_impl::run_job(int job_id) {
 
     // Download exe from the SDFS
     string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
-    if (!retry([this, &exe_path, &state] {return sdfsc->get_operation(exe_path, state.exe) == 0;},
+    if (!retry([this, &exe_path, &state] {return sdfsc->get_sharded(exe_path, state.exe) == 0;},
         job_id, "get \"" + state.exe + "\" from SDFS"))
     {
         return;
     }
+    FILE *stream = popen(("chmod +x \"" + exe_path + "\"").c_str(), "r");
+    pclose(stream);
     lg->debug("[Job " + std::to_string(job_id) + "] Downloaded executable " + state.exe + " from SDFS");
 
     while (running.load()) {
@@ -167,7 +171,7 @@ void mj_worker_impl::run_job(int job_id) {
 
         // Download cur_file from the SDFS
         string cur_file_path = config->get_mj_dir() + cur_file + "_" + std::to_string(job_id);
-        if (!retry([this, &cur_file_path, &cur_file] {return sdfsc->get_operation(cur_file_path, cur_file) == 0;},
+        if (!retry([this, &cur_file_path, &cur_file] {return sdfsc->get_sharded(cur_file_path, cur_file) == 0;},
             job_id, "get input file \"" + cur_file + "\" from SDFS"))
         {
             return;
@@ -194,6 +198,10 @@ void mj_worker_impl::run_job(int job_id) {
             return;
         }
 
+        // std::thread append_thread([this, job_id, outptr = std::move(outptr), cur_file_name_only] {
+        //     append_output(job_id, outptr.get(), cur_file_name_only);
+        // });
+        // append_thread.detach();
         if (!append_output(job_id, outptr.get(), cur_file_name_only)) {
             return;
         }
@@ -217,7 +225,16 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
                 throw client.get();
             }
 
+            std::mutex append_mutex;
+            std::vector<bool> append_complete;
+            int cur_index = -1;
             while (outptr->more()) {
+                cur_index++;
+                {
+                    append_mutex.lock();
+                    append_complete.push_back(false);
+                    append_mutex.unlock();
+                }
                 auto pair = outptr->emit();
                 string &output_file = pair.first;
                 std::vector<string> &vals = pair.second;
@@ -246,37 +263,58 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
                     "permission to append to output file " + output_file);
 
                 if (got_permission) {
-                    // First, put the values into a local file
-                    string local_output = config->get_mj_dir() + "intermediate_" + std::to_string(job_id);
-                    std::ofstream out;
-                    out.open(local_output);
-                    if (!out) {
-                        std::cerr << "Failed to open local file to write intermediate results" << std::endl;
-                        exit(1);
-                    }
+                    std::thread append_thread([=, &append_complete, &append_mutex] {
+                        unsigned cur_id = mt();
+                        // First, put the values into a local file
+                        string local_output = config->get_mj_dir() + "intermediate_" + std::to_string(cur_id);
+                        std::ofstream out;
+                        out.open(local_output);
+                        if (!out) {
+                            std::cerr << "Failed to open local file to write intermediate results" << std::endl;
+                            exit(1);
+                        }
 
-                    for (const string &val : vals) {
-                        out << val << std::endl;
-                    }
-                    out.close();
-                    lg->trace("[Job " + std::to_string(job_id) + "] Wrote intermediate results for output file " + output_file + " to local file");
+                        for (const string &val : vals) {
+                            out << val << std::endl;
+                        }
+                        out.close();
+                        lg->trace("[Job " + std::to_string(job_id) + "] Wrote intermediate results for output file " + output_file + " to local file");
 
-                    // Then, append the values to file with name intermediate_filename using sdfs_client
-                    if (!retry([this, &local_output, &output_file] {return sdfsc->append_operation(local_output, output_file) == 0;},
-                        job_id, "append values for output file " + output_file + " from input file " + input_file))
-                    {
+                        // Then, append the values to file with name intermediate_filename using sdfs_client
+                        if (!retry([this, &local_output, &output_file] {return sdfsc->append_operation(local_output, output_file) == 0;},
+                            job_id, "append values for output file " + output_file + " from input file " + input_file))
+                        {
+                            pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
+                            // client->close_connection(fd); // TODO FIX THIS LEAK
+                            return;
+                        }
                         pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
-                        client->close_connection(fd);
-                        return false;
-                    }
-                    pclose(popen(string("rm \"" + local_output + "\"").c_str(), "r"));
 
-                    // TODO: add metadata key=maple, value=input_file to SDFS entry
+                        // TODO: add metadata key=maple, value=input_file to SDFS entry
 
-                    lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file + " from input file " + input_file);
+                        lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file + " from input file " + input_file);
+                        append_mutex.lock();
+                        append_complete[cur_index] = true;
+                        append_mutex.unlock();
+                    });
+                    append_thread.detach();
                 } else {
                     lg->info("[Job " + std::to_string(job_id) + "] Not appending values to output file " + output_file + " from input file " + input_file);
                 }
+            }
+
+            // Wait for all append_completes to be true
+            while (true) {
+                {
+                    append_mutex.lock();
+                    for (unsigned i = 0; i < append_complete.size(); i++) {
+                        if (!append_complete[i]) {
+                            continue;
+                        }
+                    }
+                    append_mutex.unlock();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
 
             // Inform the master node that the file is complete
@@ -286,10 +324,10 @@ bool mj_worker_impl::append_output(int job_id, outputter *outptr, string input_f
             if (client->write_to_server(fd, complete_msg.serialize()) <= 0) {
                 throw client.get();
             }
-            client->close_connection(fd);
+            // client->close_connection(fd); // TODO FIX THIS LEAK
             break;
         } catch (tcp_client *failed_client) {
-            failed_client->close_connection(fd);
+            // failed_client->close_connection(fd);
             continue;
         }
     }

@@ -13,6 +13,8 @@
 #include <dirent.h>
 
 #include <string.h>
+#include <random>
+#include <stdlib.h>
 
 // Defining the return value for failed operations
 #define SDFS_CLIENT_FAILURE -1
@@ -26,6 +28,9 @@ public:
     void start();
     void stop();
 
+    void set_master_node(std::string hostname) {
+        mn_hostname = hostname;
+    };
     int put_operation(std::string local_filename, std::string sdfs_filename);
     int get_operation(std::string local_filename, std::string sdfs_filename);
     int del_operation(std::string sdfs_filename);
@@ -34,6 +39,7 @@ public:
     std::string get_metadata_operation(std::string sdfs_filename);
 
     int store_operation();
+    int get_sharded(std::string local_filename, std::string sdfs_filename_prefix);
 private:
     std::string put_operation_master(int socket, std::string local_filename, std::string sdfs_filename);
     std::string get_operation_master(int socket, std::string local_filename, std::string sdfs_filename);
@@ -59,4 +65,8 @@ private:
     std::unique_ptr<tcp_client> client;
     std::unique_ptr<tcp_server> server;
     configuration *config;
+
+    std::string mn_hostname = "";
+
+    std::mt19937 mt;
 };

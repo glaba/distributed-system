@@ -5,6 +5,7 @@
 #include "mj_worker.h"
 #include "test.h"
 #include "heartbeater.h"
+#include "sdfs_client.h"
 
 #include <string>
 #include <chrono>
@@ -23,6 +24,7 @@ int main(int argc, char **argv) {
     int el_port;
     std::string dir;
     std::string sdfs_subdir;
+    std::string mj_subdir;
     int sdfs_internal_port;
     int sdfs_master_port;
     int mj_internal_port;
@@ -49,6 +51,7 @@ int main(int argc, char **argv) {
     };
     cli_parser.add_required_option<>("d", "dir", "The empty directory to store any files in, ending with a /", &dir_validator);
     cli_parser.add_required_option<>("sd", "sdfs_subdir", "The name of the subdirectory to store SDFS files in", &sdfs_subdir);
+    cli_parser.add_required_option<>("md", "mj_subdir", "The name of the subdirectory to store temporary MapleJuice files in", &mj_subdir);
 
     std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
         if (str == "OFF") {
@@ -93,6 +96,7 @@ int main(int argc, char **argv) {
         config->set_sdfs_subdir(sdfs_subdir);
         config->set_sdfs_internal_port(sdfs_internal_port);
         config->set_sdfs_master_port(sdfs_master_port);
+        config->set_mj_subdir(mj_subdir);
         config->set_mj_internal_port(mj_internal_port);
         config->set_mj_master_port(mj_master_port);
 
@@ -103,8 +107,27 @@ int main(int argc, char **argv) {
             env.get<heartbeater>()->join_group(introducer);
         }
 
+        sdfs_client *sdfsc = env.get<sdfs_client>();
         while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            // Command line to put and get files in SDFS
+            std::cout << "> " << std::flush;
+
+            string command, local_filename, sdfs_filename;
+            std::cin >> command;
+            std::cin >> local_filename;
+            std::cin >> sdfs_filename;
+
+            if (command == "put") {
+                sdfsc->put_operation(local_filename, sdfs_filename + ".0");
+            } else if (command == "get") {
+                if (sdfsc->get_sharded(local_filename, sdfs_filename) != 0) {
+                    std::cout << "Get failed" << std::endl;
+                }
+            } else if (command == "append") {
+                sdfsc->append_operation(local_filename, sdfs_filename);
+            } else {
+                std::cout << "Usage: put/get/append <local_filename> <sdfs_filename>" << std::endl;
+            }
         }
     }
 }

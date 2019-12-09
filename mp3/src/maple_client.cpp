@@ -21,10 +21,12 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
     string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
 {
     do {
-        sdfsc->put_operation(local_exe, maple_exe);
+        sdfsc->set_master_node(mj_node);
+        sdfsc->put_operation(local_exe, maple_exe + ".0");
 
         mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
             sdfs_src_dir, outputter::type::maple, sdfs_intermediate_filename_prefix});
+
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client();
@@ -33,6 +35,7 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
             error = "Node at " + mj_node + " is not running Maplejuice, retry";
             return false;
         }
+
 
         // This response will either indicate that the server is not the master node or that the job is complete
         string response = client->read_from_server(fd);

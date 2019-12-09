@@ -220,10 +220,19 @@ int mj_master_impl::assign_job(mj_start_job info) {
         ", sdfs_output_dir=" + info.sdfs_output_dir + "]");
 
     // Get the list of input files
-    std::vector<std::string> input_files = sdfsm->get_files_by_prefix(info.sdfs_src_dir);
-    // Strip the directory from the input files
-    for (std::string &file : input_files) {
+    std::vector<std::string> input_files_raw = sdfsm->get_files_by_prefix(info.sdfs_src_dir);
+    std::unordered_set<std::string> input_files_set;
+    std::vector<std::string> input_files;
+    // Strip the directory from the input files as well as shard numbers
+    for (std::string &file : input_files_raw) {
         file = file.substr(info.sdfs_src_dir.length());
+        file = file.substr(0, file.find_last_of("."));
+        input_files_set.insert(file);
+        lg->info("Sanitized: " + file);
+    }
+    for (const std::string &file : input_files_set) {
+        input_files.push_back(file);
+        lg->info(file);
     }
 
     // Assign files to nodes based on the specified partitioner and fill the job_state struct

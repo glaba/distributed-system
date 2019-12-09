@@ -21,7 +21,8 @@ bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_e
     partitioner::type partitioner_type, string sdfs_intermediate_filename_prefix, string sdfs_dest_filename)
 {
     do {
-        sdfsc->put_operation(local_exe, juice_exe);
+        sdfsc->set_master_node(mj_node);
+        sdfsc->put_operation(local_exe, juice_exe + ".0");
 
         mj_message msg(0, mj_start_job{juice_exe, num_juices, partitioner_type,
             sdfs_intermediate_filename_prefix, outputter::type::juice, sdfs_dest_filename});
