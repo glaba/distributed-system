@@ -31,7 +31,7 @@ public:
     int del_operation(std::string sdfs_filename);
     int ls_operation(std::string sdfs_filename);
     int append_operation(std::string local_filename, std::string sdfs_filename);
-    int get_metadata_operation(std::string sdfs_filename);
+    std::string get_metadata_operation(std::string sdfs_filename);
 
     int store_operation();
 private:
@@ -44,7 +44,7 @@ private:
 
     // int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
     int get_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
-    int get_metadata_operation_internal(int socket, std::string sdfs_filename);
+    std::string get_metadata_operation_internal(int socket, std::string sdfs_filename);
     int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
 
     int get_master_socket();

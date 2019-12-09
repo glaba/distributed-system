@@ -81,31 +81,31 @@ int sdfs_client_impl::get_operation(std::string local_filename, std::string sdfs
     return ret;
 }
 
-int sdfs_client_impl::get_metadata_operation(std::string sdfs_filename) {
+std::string sdfs_client_impl::get_metadata_operation(std::string sdfs_filename) {
     int master_socket;
-    if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
+    if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return "";
 
     // master node correspondence to get the internal hostname
     std::string hostname;
     hostname = get_metadata_operation_master(master_socket, sdfs_filename);
 
     int internal_socket;
-    if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return SDFS_FAILURE;
+    if ((internal_socket = sdfs_client_impl::get_internal_socket(hostname)) == -1) return "";
 
     // internal node correspondence to get the file metadata
-    int ret = get_metadata_operation_internal(internal_socket, sdfs_filename);
+    std::string ret = get_metadata_operation_internal(internal_socket, sdfs_filename);
     client->close_connection(internal_socket);
 
     // report back to master with status
     // create success/fail message
     sdfs_message res;
-    if (ret == SDFS_SUCCESS) {
+    if (ret != "") {
         res.set_type_success();
     } else {
         res.set_type_fail();
     }
 
-    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), master_socket, res) == SDFS_FAILURE) return "";
     client->close_connection(master_socket);
 
     return ret;
@@ -324,17 +324,17 @@ int sdfs_client_impl::get_operation_internal(int socket, std::string local_filen
     return SDFS_SUCCESS;
 }
 
-int sdfs_client_impl::get_metadata_operation_internal(int socket, std::string sdfs_filename) {
+std::string sdfs_client_impl::get_metadata_operation_internal(int socket, std::string sdfs_filename) {
     // MASTER CORRESPONDENCE IS DONE
     lg->info("client is requesting to get metadata for " + sdfs_filename);
 
     std::string metadata;
     // SEND THE GET REQUEST AND THEN RECEIVE THE FILE
     sdfs_message gmd_msg; gmd_msg.set_type_gmd(sdfs_filename);
-    if (sdfs_utils::send_message(client.get(), socket, gmd_msg) == SDFS_FAILURE) return SDFS_FAILURE;
-    if ((metadata = client->read_from_server(socket)) == "") return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), socket, gmd_msg) == SDFS_FAILURE) return "";
+    if ((metadata = client->read_from_server(socket)) == "") return "";
 
-    return SDFS_SUCCESS;
+    return metadata;
 }
 
 int sdfs_client_impl::get_master_socket() {
