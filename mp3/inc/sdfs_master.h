@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <vector>
+#include <string>
 
 class sdfs_master {
 public:

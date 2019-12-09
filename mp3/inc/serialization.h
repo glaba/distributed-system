@@ -23,16 +23,16 @@ private:
 
 class deserializer {
 public:
-    deserializer(char *buf_, unsigned length_)
+    deserializer(const char *buf_, unsigned length_)
         : buf(buf_), length(length_), pos(0) {}
 
     uint32_t get_int();
     std::string get_string();
     void done();
 
-    static uint32_t read_uint32_from_char_buf(char *buf);
+    static uint32_t read_uint32_from_char_buf(const char *buf);
 private:
-    char *buf;
+    const char *buf;
     unsigned length;
     unsigned pos;
 };

@@ -1,10 +1,7 @@
 #include "hb_messages.h"
 #include "serialization.h"
 
-#include <iostream>
 #include <cassert>
-
-using std::unique_ptr;
 
 // Creates a message from a buffer
 hb_message::hb_message(char *buf_, unsigned length_) {

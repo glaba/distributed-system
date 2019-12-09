@@ -11,9 +11,9 @@
 using std::unique_ptr;
 using std::make_unique;
 
-testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
+testing::register_test single_connection("mock_tcp.single_connection",
     "Tests passing messages between one TCP client and one TCP server",
-    4, [] (logger::log_level level)
+    3, [] (logger::log_level level)
 {
     environment_group env_group(true);
     unique_ptr<environment> client_env = env_group.get_env();
@@ -28,9 +28,8 @@ testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
 
     // Start the server in its own thread
     bool server_complete = false;
+    server->setup_server(1234);
     std::thread server_thread([&server, &server_complete] {
-        server->setup_server(1234);
-
         int fd = server->accept_connection();
 
         for (int i = 0; i < 10; i++) {
@@ -38,32 +37,26 @@ testing::register_test one_client_one_server("mock_tcp.one_client_one_server",
             assert(msg == std::to_string(i));
             server->write_to_client(fd, std::to_string(i));
         }
+        server->close_connection(fd);
+        server->stop_server();
         server_complete = true;
     });
     server_thread.detach();
 
-    // Wait a little bit for the server to get setup
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    int fd = client->setup_connection("server", 1234);
+    for (int i = 0; i < 10; i++) {
+        client->write_to_server(fd, std::to_string(i));
+        std::string msg = client->read_from_server(fd);
+        assert(msg == std::to_string(i));
+    }
+    client->close_connection(fd);
 
-    bool client_complete = false;
-    std::thread client_thread([&client, &client_complete] {
-        int fd = client->setup_connection("server", 1234);
-        for (int i = 0; i < 10; i++) {
-            client->write_to_server(fd, std::to_string(i));
-            std::string msg = client->read_from_server(fd);
-            assert(msg == std::to_string(i));
-        }
-        client_complete = true;
-    });
-    client_thread.detach();
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-    assert(client_complete && server_complete);
+    assert(server_complete);
 });
 
-testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_server_ports",
+testing::register_test different_ports("mock_tcp.different_ports",
     "Tests passing messages between one TCP client and multiple TCP server on the same machine with different ports",
-    4, [] (logger::log_level level)
+    5, [] (logger::log_level level)
 {
     const unsigned NUM_SERVERS = 5;
 
@@ -85,9 +78,8 @@ testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_serv
     std::vector<bool> servers_complete;
     for (unsigned i = 0; i < NUM_SERVERS; i++) {
         servers_complete.push_back(false);
+        servers[i]->setup_server(i + 1); // A port of 0 is invalid
         std::thread server_thread([&servers, &servers_complete, i] {
-            servers[i]->setup_server(i + 1); // A port of 0 is invalid
-
             int fd = servers[i]->accept_connection();
 
             for (int j = 0; j < 10; j++) {
@@ -95,13 +87,12 @@ testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_serv
                 assert(msg == std::to_string(j));
                 servers[i]->write_to_client(fd, std::to_string(j));
             }
+            servers[i]->close_connection(fd);
+            servers[i]->stop_server();
             servers_complete[i] = true;
         });
         server_thread.detach();
     }
-
-    // Wait a little bit for the servers to get setup
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     std::vector<bool> clients_complete;
     for (unsigned i = 0; i < NUM_SERVERS; i++) {
@@ -116,12 +107,13 @@ testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_serv
                 // Add a delay to ensure that messages are interleaved
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
+            client->close_connection(fd);
             clients_complete[i] = true;
         });
         client_thread.detach();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(4000));
     for (unsigned i = 0; i < NUM_SERVERS; i++) {
         assert(clients_complete[i]);
         assert(servers_complete[i]);
@@ -130,7 +122,7 @@ testing::register_test one_client_one_server_ports("mock_tcp.one_client_one_serv
 
 testing::register_test server_after_client("mock_tcp.server_after_client",
     "Tests that even if a server calls accept_connection after a client calls setup_connection, it works",
-    3, [] (logger::log_level level)
+    4, [] (logger::log_level level)
 {
     environment_group env_group(true);
     unique_ptr<environment> client_env = env_group.get_env();
@@ -145,9 +137,9 @@ testing::register_test server_after_client("mock_tcp.server_after_client",
 
     // Start the server in its own thread
     bool server_complete = false;
+    server->setup_server(1234);
     std::thread server_thread([&server, &server_complete] {
-        server->setup_server(1234);
-
+        // Delay accepting the connection past when the client connects
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
         int fd = server->accept_connection();
@@ -157,6 +149,8 @@ testing::register_test server_after_client("mock_tcp.server_after_client",
             assert(msg == std::to_string(i));
             server->write_to_client(fd, std::to_string(i));
         }
+        server->close_connection(fd);
+        server->stop_server();
         server_complete = true;
     });
     server_thread.detach();
@@ -169,11 +163,12 @@ testing::register_test server_after_client("mock_tcp.server_after_client",
             std::string msg = client->read_from_server(fd);
             assert(msg == std::to_string(i));
         }
+        client->close_connection(fd);
         client_complete = true;
     });
     client_thread.detach();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(4000));
     assert(client_complete && server_complete);
 });
 
@@ -193,9 +188,6 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
     unique_ptr<tcp_server> server = server_env->get<tcp_factory>()->get_tcp_server();
     server->setup_server(1234);
 
-    // Wait a little bit for the server to get setup
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
     // On the first iteration, the server will close the connection, and the client on the second
     for (int i = 0; i < 2; i++) {
         // Start the server in its own thread
@@ -203,47 +195,46 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
         std::thread server_thread([&server, i, &server_complete] {
             int fd = server->accept_connection();
 
-            for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
                 std::string msg = server->read_from_client(fd);
-                assert(msg == std::to_string(i));
-                server->write_to_client(fd, std::to_string(i));
+                assert(msg == std::to_string(j));
+                server->write_to_client(fd, std::to_string(j));
             }
 
             if (i == 0) {
                 // Server closes connection
-                // Add delay to avoid race condition between closing connection and sending final message
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 server->close_connection(fd);
             } else {
                 // We should now find that the connection to the client is closed
                 assert(server->read_from_client(fd) == "");
                 assert(server->write_to_client(fd, "LLJ") == 0);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                server->close_connection(fd);
             }
             server_complete = true;
         });
         server_thread.detach();
 
-        // Wait for server
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
         // Use the current thread for the client
         bool client_complete = false;
         std::thread client_thread([&client, i, &client_complete] {
             int fd = client->setup_connection("server", 1234);
-            for (int i = 0; i < 10; i++) {
-                client->write_to_server(fd, std::to_string(i));
+            for (int j = 0; j < 10; j++) {
+                client->write_to_server(fd, std::to_string(j));
                 std::string msg = client->read_from_server(fd);
-                assert(msg == std::to_string(i));
+                assert(msg == std::to_string(j));
             }
 
             if (i == 0) {
                 // We should now find that the connection to the server is closed
                 assert(client->read_from_server(fd) == "");
                 assert(client->write_to_server(fd, "LLJ") == 0);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                client->close_connection(fd);
             } else {
                 // Client closes connection
-                // Add delay to avoid race condition, as with the server
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 client->close_connection(fd);
             }
             client_complete = true;
@@ -253,9 +244,11 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
         assert(client_complete && server_complete);
     }
+
+    server->stop_server();
 });
 
-testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
+testing::register_test n_servers("mock_tcp.n_servers",
     "Tests passing messages between a single TCP client and multiple TCP servers",
     6, [] (logger::log_level level)
 {
@@ -279,32 +272,29 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
         servers.push_back(server_envs[i]->get<tcp_factory>()->get_tcp_server());
     }
 
+    std::unique_ptr<logger> lg = client_env->get<logger_factory>()->get_logger("test");
+
     // Start the servers in their own thread
     std::vector<bool> servers_complete;
     for (int i = 0; i < NUM_SERVERS; i++) {
         servers_complete.push_back(false);
-        std::thread server_thread([&servers, i, &servers_complete] {
-            servers[i]->setup_server(1234);
-
+        servers[i]->setup_server(1234);
+        std::thread server_thread([&servers, i, &lg, &servers_complete] {
             int fd = servers[i]->accept_connection();
 
             for (int j = 0; j < 10; j++) {
                 std::string msg = servers[i]->read_from_client(fd);
+                lg->info("Server " + std::to_string(i) + " received " + msg);
                 assert(msg == std::to_string(10 * i + j));
                 servers[i]->write_to_client(fd, std::to_string(10 * i + j));
             }
 
-            // Add delay to avoid race condition between closing connection and sending final message
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             servers[i]->close_connection(fd);
             servers[i]->stop_server();
             servers_complete[i] = true;
         });
         server_thread.detach();
     }
-
-    // Wait a little bit for the server to get setup
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Open connections to all the servers
     bool client_complete = false;
@@ -328,6 +318,7 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
         for (int i = 0; i < NUM_SERVERS; i++) {
             assert(client->read_from_server(fds[i]) == "");
             assert(client->write_to_server(fds[i], "LLJ") == 0);
+            client->close_connection(fds[i]);
         }
         client_complete = true;
     });
@@ -341,9 +332,9 @@ testing::register_test one_client_n_servers("mock_tcp.one_client_n_servers",
     }
 });
 
-testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
+testing::register_test n_clients("mock_tcp.n_clients",
     "Tests passing messages between a multiple TCP clients and a single TCP server",
-    6, [] (logger::log_level level)
+    7, [] (logger::log_level level)
 {
     const int NUM_CLIENTS = 5;
 
@@ -366,9 +357,8 @@ testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
     }
 
     // Start the server in its own thread
+    server->setup_server(1234);
     std::thread server_thread([&server, NUM_CLIENTS] {
-        server->setup_server(1234);
-
         for (int i = 0; i < NUM_CLIENTS; i++) {
             int fd = server->accept_connection();
 
@@ -379,14 +369,12 @@ testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
                     assert(msg == std::to_string(j));
                     server->write_to_client(fd, std::to_string(j));
                 }
+                server->close_connection(fd);
             });
             client_thread.detach();
         }
     });
     server_thread.detach();
-
-    // Wait a bit for the server to set up
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Start the clients in their own thread
     std::vector<bool> clients_complete;
@@ -408,15 +396,17 @@ testing::register_test n_clients_one_server("mock_tcp.n_clients_one_server",
     }
 
     // Wait for all communication to complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(7000));
+    server->stop_server();
 
     for (unsigned i = 0; i < clients_complete.size(); i++) {
         assert(clients_complete[i]);
     }
 });
 
-testing::register_test n_clients_same_machine_one_server("mock_tcp.n_clients_same_machine_one_server",
-    "Tests passing messages between multiple TCP clients on the same machine and a single TCP server",
+testing::register_test ephemeral_ports("mock_tcp.ephemeral_ports",
+    "Tests passing messages between multiple TCP clients on the same machine and a single TCP server, "
+        "which normal TCP accomplishes with ephemeral ports",
     6, [] (logger::log_level level)
 {
     const int NUM_CLIENTS = 5;
@@ -437,9 +427,8 @@ testing::register_test n_clients_same_machine_one_server("mock_tcp.n_clients_sam
     }
 
     // Start the server in its own thread
+    server->setup_server(1234);
     std::thread server_thread([&server, NUM_CLIENTS] {
-        server->setup_server(1234);
-
         for (int i = 0; i < NUM_CLIENTS; i++) {
             int fd = server->accept_connection();
 
@@ -450,14 +439,12 @@ testing::register_test n_clients_same_machine_one_server("mock_tcp.n_clients_sam
                     assert(msg == std::to_string(j));
                     server->write_to_client(fd, std::to_string(j));
                 }
+                server->close_connection(fd);
             });
             client_thread.detach();
         }
     });
     server_thread.detach();
-
-    // Wait a bit for the server to set up
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Start the clients in their own thread
     std::vector<bool> clients_complete;
@@ -480,6 +467,7 @@ testing::register_test n_clients_same_machine_one_server("mock_tcp.n_clients_sam
 
     // Wait for all communication to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    server->stop_server();
 
     for (unsigned i = 0; i < clients_complete.size(); i++) {
         assert(clients_complete[i]);

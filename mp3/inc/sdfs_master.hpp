@@ -25,6 +25,7 @@ public:
 
     void start();
     void stop();
+    std::vector<std::string> get_files_by_prefix(std::string prefix);
 
     // Functions to handle major sdfs operations as the master
     int put_operation(int socket, std::string sdfs_filename);
@@ -35,7 +36,6 @@ public:
 
     void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback);
 
-    std::vector<std::string> get_files_by_prefix(std::string prefix);
 private:
     void process_loop();
     void handle_connection(int socket);

@@ -33,11 +33,16 @@ public:
         env_id = mt_rand();
     }
 
-    // Returns a pointer to the service of type T
+    // If this is a test environment, forces the environment to use the non-mock version of the service
     template <typename T>
-    T *get() {
+    void disable_mock() {
         std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
 
+        std::lock_guard<std::mutex> guard(disabled_mocks_mutex);
+        disabled_mocks.insert(id);
+    }
+
+    service *get(std::string id) {
         spawning_mutex.lock();
 
         // If it is not being constructed / done being constructed already, we will construct the service ourselves
@@ -46,11 +51,20 @@ public:
 
             spawning_mutex.unlock();
 
+            bool use_mock;
+            {
+                std::lock_guard<std::mutex> guard(disabled_mocks_mutex);
+                use_mock = is_test_env && (disabled_mocks.find(id) == disabled_mocks.end());
+            }
+
             std::unique_ptr<service> svc;
             { // Atomic access to the service
-                std::lock_guard<std::recursive_mutex> guard_registry(is_test_env ? test_service_registry_mutex : service_registry_mutex);
-                auto &registry = is_test_env ? test_service_registry : service_registry;
+                std::lock_guard<std::recursive_mutex> guard_registry(use_mock ? test_service_registry_mutex : service_registry_mutex);
+                auto &registry = use_mock ? test_service_registry : service_registry;
 
+                if (!registry[id]) {
+                    assert(false && "Requested service which does not exist");
+                }
                 svc = registry[id](*this);
             }
 
@@ -63,7 +77,7 @@ public:
             services[id]->env_id = env_id;
 
             // Service state uses the impl ID instead of the intf ID because each impl has different shared state
-            std::string impl_id = services[id]->get_impl_id();
+            std::string impl_id = services[id]->get_service_id();
             if (service::state[env_id].find(impl_id) == service::state[env_id].end()) {
                 service::state[env_id][impl_id] = services[id]->init_state();
             }
@@ -86,9 +100,16 @@ public:
         }
 
         std::lock_guard<std::mutex> guard(services_mutex);
-        T *retval = dynamic_cast<T*>(services[id].get());
+        service *retval = services[id].get();
         assert(retval != nullptr);
         return retval;
+    }
+
+    // Returns a pointer to the service of type T
+    template <typename T>
+    T *get() {
+        std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
+        return dynamic_cast<T*>(get(id));
     }
 
 private:
@@ -105,6 +126,10 @@ private:
 
     bool is_test_env;
     uint32_t env_id;
+
+    // A set of service names whose mocks are disabled
+    std::mutex disabled_mocks_mutex;
+    std::unordered_set<std::string> disabled_mocks;
 
     std::mutex services_mutex;
     std::unordered_map<std::string, std::unique_ptr<service>> services;

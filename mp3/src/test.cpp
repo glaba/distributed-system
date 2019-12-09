@@ -14,8 +14,6 @@
 #include <mutex>
 #include <climits>
 
-#define PARALLELISM 8
-
 using std::unique_ptr;
 using std::make_unique;
 
@@ -25,7 +23,7 @@ testing::register_test::register_test(std::string name, std::string description,
     tests.push_back(std::make_tuple(name, description, approx_length, test_fn));
 }
 
-void testing::run_tests(std::string prefix, logger::log_level level, bool show_description) {
+void testing::run_tests(std::string prefix, logger::log_level level, int parallelism, bool show_description) {
     std::vector<test*> tests_to_run;
 
     for (unsigned i = 0; i < tests.size(); i++) {
@@ -42,7 +40,7 @@ void testing::run_tests(std::string prefix, logger::log_level level, bool show_d
     });
 
     // If there is no logging, run the tests in parallel
-    unsigned num_threads = (level == logger::log_level::level_off) ? PARALLELISM : 1;
+    unsigned num_threads = (level == logger::log_level::level_off) ? parallelism : 1;
 
     // Fairly distribute the workload between threads
     std::vector<unsigned> thread_workloads;
@@ -87,6 +85,7 @@ void testing::run_tests(std::string prefix, logger::log_level level, bool show_d
 
                 std::function<void(logger::log_level)> test_fn = std::get<3>(*tests_to_run[test_index]);
                 test_fn(level);
+                std::cout << "Finished " << test_name << std::endl;
             }
         }));
     }

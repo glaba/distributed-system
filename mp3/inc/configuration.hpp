@@ -22,8 +22,8 @@ public:
     std::string get_hostname() {
         return hostname;
     }
-    void set_first_node(bool first_node_) {
-        first_node = first_node_;
+    void set_first_node(bool is_first_node_) {
+        first_node = is_first_node_;
     }
     bool is_first_node() {
         return first_node;
@@ -52,6 +52,18 @@ public:
     int get_sdfs_master_port() {
         return sdfs_master_port;
     }
+    void set_mj_internal_port(int port_) {
+        mj_internal_port = port_;
+    }
+    int get_mj_internal_port() {
+        return mj_internal_port;
+    }
+    void set_mj_master_port(int port_) {
+        mj_master_port = port_;
+    }
+    int get_mj_master_port() {
+        return mj_master_port;
+    }
     // Sets the directory that all files for the program will be stored in
     // Assumes that the directory exist and is empty
     void set_dir(std::string dir_) {
@@ -71,6 +83,16 @@ public:
     std::string get_sdfs_dir() {
         return sdfs_dir;
     }
+    void set_mj_subdir(std::string subdir) {
+        mj_dir = dir + subdir + "/";
+        if (mkdir(mj_dir.c_str(), ACCESSPERMS) != 0) {
+            std::cerr << "Could not create Maple subdirectory, exiting" << std::endl;
+            exit(1);
+        }
+    }
+    std::string get_mj_dir() {
+        return mj_dir;
+    }
 
 protected:
     std::string hostname;
@@ -79,8 +101,11 @@ protected:
     int election_port;
     int sdfs_internal_port;
     int sdfs_master_port;
+    int mj_internal_port;
+    int mj_master_port;
     std::string dir;
     std::string sdfs_dir;
+    std::string mj_dir;
 
     configuration_impl() {}
 };

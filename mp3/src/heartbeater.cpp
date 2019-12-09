@@ -17,7 +17,7 @@ heartbeater_impl::heartbeater_impl(environment &env)
       config(env.get<configuration>()),
       client(env.get<udp_factory>()->get_udp_client()),
       server(env.get<udp_factory>()->get_udp_server()),
-      nodes_can_join(true), mem_list(env)
+      nodes_can_join(true), mem_list(env), running(false)
 {
     our_id = 0;
 
@@ -34,6 +34,10 @@ heartbeater_impl::heartbeater_impl(environment &env)
 
 // Starts the heartbeater
 void heartbeater_impl::start() {
+    if (running.load()) {
+        return;
+    }
+
     lg->info("Starting heartbeater");
 
     running = true;
@@ -47,6 +51,10 @@ void heartbeater_impl::start() {
 
 // Stops the heartbeater synchronously
 void heartbeater_impl::stop() {
+    if (!running.load()) {
+        return;
+    }
+
     lg->info("Stopping heartbeater");
 
     server->stop_server();
