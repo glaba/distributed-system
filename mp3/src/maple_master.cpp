@@ -8,18 +8,25 @@
 #include <chrono>
 #include <climits>
 #include <functional>
+#include <algorithm>
 
 using std::string;
 
 maple_master_impl::maple_master_impl(environment &env)
-    : lg(env.get<logger_factory>()->get_logger("maple_master"))
+    : mt(std::chrono::system_clock::now().time_since_epoch().count())
+    , lg(env.get<logger_factory>()->get_logger("maple_master"))
     , config(env.get<configuration>())
     , hb(env.get<heartbeater>())
     , el(env.get<election>())
-    , client(env.get<tcp_factory>()->get_tcp_client())
-    , server(env.get<tcp_factory>()->get_tcp_server()) {}
+    , fac(env.get<tcp_factory>())
+    , sdfsm(env.get<sdfs_master>())
+    , server(env.get<tcp_factory>()->get_tcp_server()), running(false) {}
 
 void maple_master_impl::start() {
+    if (running.load()) {
+        return;
+    }
+
     lg->info("Starting Maple master");
     el->start();
     running = true;
@@ -36,8 +43,13 @@ void maple_master_impl::start() {
 }
 
 void maple_master_impl::stop() {
+    if (!running.load()) {
+        return;
+    }
+
     lg->info("Stopping Maple master");
     running = false;
+    server->stop_server();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
@@ -61,6 +73,14 @@ void maple_master_impl::run_master() {
 
             if (!msg.is_well_formed()) {
                 lg->debug("Received ill-formed message from client");
+                server->close_connection(fd);
+                return;
+            }
+
+            // Make sure the message is coming from within the group
+            if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
+                lg->info("Received message from member outside of group");
+                server->close_connection(fd);
                 return;
             }
 
@@ -69,7 +89,7 @@ void maple_master_impl::run_master() {
 
                 bool is_master;
                 string master_hostname;
-                el->get_master_node([this, &is_master, &master_hostname] (member m, bool succeeded) {
+                el->wait_master_node([this, &is_master, &master_hostname] (member m) {
                     is_master = (m.id == hb->get_id());
                     master_hostname = m.hostname;
                 });
@@ -80,13 +100,14 @@ void maple_master_impl::run_master() {
                     lg->trace("Redirecting request to start job with executable " + info.maple_exe + " to master node");
 
                     // Send a message to the client informing them of the actual master node
-                    maple_message not_master_msg(maple_not_master{master_hostname});
+                    maple_message not_master_msg(hb->get_id(), maple_not_master{master_hostname});
                     server->write_to_client(fd, not_master_msg.serialize());
                     server->close_connection(fd);
                 }
+                return;
             }
 
-            if (msg.get_msg_type() == maple_message::maple_msg_type::REQUEST_APPEND_PERM) {
+            while (msg.get_msg_type() == maple_message::maple_msg_type::REQUEST_APPEND_PERM) {
                 maple_request_append_perm info = msg.get_msg_data<maple_request_append_perm>();
 
                 bool allow_append;
@@ -98,15 +119,38 @@ void maple_master_impl::run_master() {
                     allow_append = (committed_outputs.find(std::make_pair(info.file, info.key)) == committed_outputs.end());
                 }
 
-                lg->debug("Node at " + info.hostname + " requested permission to append values for key " + info.key +
-                    " from input file " + info.file + " for job with ID " + std::to_string(info.job_id));
+                lg->debug("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
+                    " requested permission to append values for key " + info.key + " from input file " + info.file +
+                    (allow_append ? ", allowing append" : ", disallowing append"));
 
                 // Send the permission back to the node
-                maple_message msg(maple_append_perm{allow_append});
-                server->write_to_client(fd, msg.serialize()); // Ignore failure, that will be handled in node_dropped
-                server->close_connection(fd);
+                maple_message perm_msg(hb->get_id(), maple_append_perm{allow_append});
+                server->write_to_client(fd, perm_msg.serialize()); // Ignore failure, that will be handled in node_dropped
+
+                // TODO: use callback from SDFS to reliably mark the output as committed instead of this
+                {
+                    std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+                    job_states[info.job_id].committed_outputs.insert(std::make_pair(info.file, info.key));
+                }
+
+                msg_str = server->read_from_client(fd);
+                msg = maple_message(msg_str.c_str(), msg_str.length());
+                if (!msg.is_well_formed()) {
+                    lg->debug("Received ill-formed message from client after it requested permission to append");
+                    server->close_connection(fd);
+                    return;
+                }
+                // Check if the client has left the group
+                if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
+                    lg->info("Received message from member outside of group");
+                    server->close_connection(fd);
+                    return;
+                }
             }
 
+            // Either we arrived here from a new connection OR after a REQUEST_APPEND_PERM from the previous if block
+            // Either way, we should close the connection with the server
+            server->close_connection(fd);
             if (msg.get_msg_type() == maple_message::maple_msg_type::FILE_DONE) {
                 maple_file_done info = msg.get_msg_data<maple_file_done>();
 
@@ -124,14 +168,15 @@ void maple_master_impl::run_master() {
 
                     node_states[info.hostname].num_files--; // Even if the node fails, this is OK because this will be erased
 
-                    if (processed_files.find(info.file) != processed_files.end()) {
+                    if (processed_files.find(info.file) == processed_files.end()) {
                         unprocessed_files.erase(info.file);
                         processed_files.insert(info.file);
                     }
                 }
-
-                server->close_connection(fd);
+                return;
             }
+
+            lg->debug("Received unexpected message type from client");
         });
         client_thread.detach();
     }
@@ -141,12 +186,29 @@ void maple_master_impl::handle_job(int fd, string maple_exe, int num_maples,
     string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
 {
     // Assign the appropriate nodes an even partitioning of the input files
-    assign_job(maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir);
+    int job_id = assign_job(maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir);
+
+    // Wait for the job to actually complete
+    while (!job_complete(job_id)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
 
     // Tell the client that the job is complete
-    maple_message msg(maple_job_end{1});
+    maple_message msg(hb->get_id(), maple_job_end{1});
     server->write_to_client(fd, msg.serialize());
     server->close_connection(fd);
+}
+
+bool maple_master_impl::job_complete(int job_id) {
+    std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+
+    job_state &state = job_states[job_id];
+    for (auto pair : state.unprocessed_files) {
+        if (pair.second.size() > 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 int maple_master_impl::assign_job(std::string maple_exe, int num_maples,
@@ -158,8 +220,8 @@ int maple_master_impl::assign_job(std::string maple_exe, int num_maples,
         ", num_maples=" + std::to_string(num_maples) + ", sdfs_intermediate_filename_prefix=" +
         sdfs_intermediate_filename_prefix + ", sdfs_src_dir=" + sdfs_src_dir + "]");
 
-    // TODO: get the list of input files
-    std::vector<std::string> input_files;
+    // Get the list of input files
+    std::vector<std::string> input_files = sdfsm->get_files_by_prefix(sdfs_src_dir);
 
     std::vector<member> members = get_least_busy_nodes(num_maples);
 
@@ -176,11 +238,26 @@ int maple_master_impl::assign_job(std::string maple_exe, int num_maples,
         std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
         std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
 
+        lg->info("[Job " + std::to_string(job_id) + "] Number of input files is " + std::to_string(input_files.size()));
         for (unsigned i = 0; i < input_files.size(); i++) {
             unsigned member_index = i % members.size();
             string hostname = members[member_index].hostname;
             node_states[hostname].num_files++;
             job_states[job_id].unprocessed_files[hostname].insert(input_files[i]);
+        }
+    }
+
+    { // Print the files assigned to each node
+        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+        for (auto &pair : job_states[job_id].unprocessed_files) {
+            string log_str = "[Job " + std::to_string(job_id) + "] Files assigned to node at " + pair.first + ": ";
+            for (auto it = pair.second.begin(); it != pair.second.end(); ++it) {
+                log_str += *it;
+                if (std::next(it) != pair.second.end()) {
+                    log_str += ", ";
+                }
+            }
+            lg->info(log_str);
         }
     }
 
@@ -227,8 +304,9 @@ void maple_master_impl::assign_job_to_node(int job_id, std::string hostname, std
     std::unordered_set<std::string> input_files, std::string sdfs_intermediate_filename_prefix)
 {
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
-    maple_message msg(maple_assign_job{job_id, maple_exe, input_files_vec, sdfs_intermediate_filename_prefix});
+    maple_message msg(hb->get_id(), maple_assign_job{job_id, maple_exe, input_files_vec, sdfs_intermediate_filename_prefix});
 
+    std::unique_ptr<tcp_client> client = fac->get_tcp_client();
     int fd = client->setup_connection(hostname, config->get_maple_internal_port());
     if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
         // The failure will be handled as normal by assigning the files for this node to another node
@@ -246,6 +324,16 @@ void maple_master_impl::assign_job_to_node(int job_id, std::string hostname, std
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
 void maple_master_impl::node_dropped(std::string hostname) {
+    bool is_master = false;
+    el->get_master_node([this, &is_master] (member m, bool succeeded) {
+        if (succeeded && m.id == hb->get_id()) {
+            is_master = true;
+        }
+    });
+    if (!is_master) {
+        return;
+    }
+
     std::unordered_set<int> jobs;
 
     lg->info("Lost node at " + hostname + ", reassigning its work to other nodes");
@@ -275,9 +363,11 @@ void maple_master_impl::node_dropped(std::string hostname) {
             string target = get_least_busy_nodes(1)[0].hostname;
             targets[job_id] = target;
 
-            lg->debug("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
+            lg->info("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
 
-            job_states[job_id].unprocessed_files[target] = participating_job_states[job_id].unprocessed_files[hostname];
+            for (string file : participating_job_states[job_id].unprocessed_files[hostname]) {
+                job_states[job_id].unprocessed_files[target].insert(file);
+            }
             node_states[target].num_files += participating_job_states[job_id].unprocessed_files[hostname].size();
         }
     }

@@ -33,6 +33,15 @@ public:
         env_id = mt_rand();
     }
 
+    // If this is a test environment, forces the environment to use the non-mock version of the service
+    template <typename T>
+    void disable_mock() {
+        std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
+
+        std::lock_guard<std::mutex> guard(disabled_mocks_mutex);
+        disabled_mocks.insert(id);
+    }
+
     // Returns a pointer to the service of type T
     template <typename T>
     T *get() {
@@ -46,10 +55,16 @@ public:
 
             spawning_mutex.unlock();
 
+            bool use_mock;
+            {
+                std::lock_guard<std::mutex> guard(disabled_mocks_mutex);
+                use_mock = is_test_env && (disabled_mocks.find(id) == disabled_mocks.end());
+            }
+
             std::unique_ptr<service> svc;
             { // Atomic access to the service
-                std::lock_guard<std::recursive_mutex> guard_registry(is_test_env ? test_service_registry_mutex : service_registry_mutex);
-                auto &registry = is_test_env ? test_service_registry : service_registry;
+                std::lock_guard<std::recursive_mutex> guard_registry(use_mock ? test_service_registry_mutex : service_registry_mutex);
+                auto &registry = use_mock ? test_service_registry : service_registry;
 
                 if (!registry[id]) {
                     assert(false && "Requested service which does not exist");
@@ -108,6 +123,10 @@ private:
 
     bool is_test_env;
     uint32_t env_id;
+
+    // A set of service names whose mocks are disabled
+    std::mutex disabled_mocks_mutex;
+    std::unordered_set<std::string> disabled_mocks;
 
     std::mutex services_mutex;
     std::unordered_map<std::string, std::unique_ptr<service>> services;

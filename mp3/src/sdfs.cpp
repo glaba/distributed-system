@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
     }
 
     if (test_parser->was_invoked()) {
-        testing::run_tests(test_prefix, log_level, parallelism, true);
+        testing::run_tests(test_prefix, log_level, parallelism, false);
         return 0;
     }
 

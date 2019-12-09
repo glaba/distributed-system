@@ -65,7 +65,8 @@ public:
     maple_message(const char *buf, unsigned length);
 
     // Creates an empty message
-    maple_message(msg_data d) {
+    maple_message(uint32_t id_, msg_data d) {
+        id = id_;
         data = d;
         set_msg_type();
     }
@@ -78,6 +79,10 @@ public:
     // Gets the type of the message
     maple_msg_type get_msg_type() {
         return msg_type;
+    }
+
+    uint32_t get_id() {
+        return id;
     }
 
     // Gets the data contained in the message
@@ -94,6 +99,7 @@ private:
     // Sets the message type based on the value stored in data
     void set_msg_type();
 
+    uint32_t id;
     maple_msg_type msg_type;
     msg_data data;
 };

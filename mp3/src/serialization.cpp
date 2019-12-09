@@ -41,7 +41,7 @@ std::string serializer::serialize() {
             write_uint32_to_char_buf(str.size(), buf.get() + pos);
             pos += sizeof(uint32_t);
 
-            std::strncpy(buf.get() + pos, str.c_str(), str.size());
+            std::memcpy(buf.get() + pos, str.c_str(), str.size());
             pos += str.size();
         }
     }
@@ -87,7 +87,7 @@ std::string deserializer::get_string() {
     }
 
     unique_ptr<char[]> str_buf = make_unique<char[]>(size);
-    std::strncpy(str_buf.get(), buf + pos, size);
+    std::memcpy(str_buf.get(), buf + pos, size);
     pos += size;
 
     return std::string(str_buf.get(), size);

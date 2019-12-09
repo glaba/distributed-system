@@ -9,8 +9,10 @@
 #include "logging.h"
 #include "configuration.h"
 #include "sdfs_client.h"
+#include "sdfs_server.h"
 #include "election.h"
 #include "maple_master.h"
+#include "heartbeater.h"
 
 #include <memory>
 #include <atomic>
@@ -30,6 +32,10 @@ private:
     void server_thread_function();
     bool run_command(std::string command, std::function<bool(std::string)> callback);
     void run_job(int job_id);
+    bool append_kv_pairs(int job_id, std::unordered_map<std::string, std::vector<std::string>> &kv_pairs,
+        std::string sdfs_intermediate_filename_prefix, std::string filename);
+
+    bool retry(std::function<bool()> callback, int job_id, std::string description);
 
     struct job_state {
         std::string maple_exe;
@@ -41,14 +47,16 @@ private:
     std::mutex job_states_mutex;
     std::unordered_map<int, job_state> job_states;
 
-    std::atomic<bool> running;
-
     // Services that this service depends on
-    sdfs_client *sdfsc;
     std::unique_ptr<logger> lg;
     configuration *config;
-    std::unique_ptr<tcp_client> client;
+    tcp_factory *fac;
     std::unique_ptr<tcp_server> server;
+    heartbeater *hb;
     election *el;
     maple_master *mm;
+    sdfs_client *sdfsc;
+    sdfs_server *sdfss;
+
+    std::atomic<bool> running;
 };

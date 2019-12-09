@@ -85,6 +85,7 @@ void testing::run_tests(std::string prefix, logger::log_level level, int paralle
 
                 std::function<void(logger::log_level)> test_fn = std::get<3>(*tests_to_run[test_index]);
                 test_fn(level);
+                std::cout << "Finished " << test_name << std::endl;
             }
         }));
     }

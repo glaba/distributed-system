@@ -49,7 +49,12 @@ testing::register_test election_test("election.failover",
 
     for (unsigned i = 1; i < NUM_NODES; i++) {
         hbs[i]->join_group("h0");
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        hbs[i]->on_fail([] (member m) {
+            if (m.hostname != "h0") {
+                assert(false && "Heartbeater incorrectly lost a node due to packet loss. Retry test!");
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(4000));
@@ -64,7 +69,6 @@ testing::register_test election_test("election.failover",
 
     // Stop h0 and see how election proceeds
     elections[0]->stop();
-    hbs[0]->stop();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20000));
 
@@ -88,7 +92,6 @@ testing::register_test election_test("election.failover",
 
         std::thread stop_thread([&hbs, &elections, i] {
             elections[i]->stop();
-            hbs[i]->stop();
         });
         stop_thread.detach();
     }
@@ -96,7 +99,7 @@ testing::register_test election_test("election.failover",
     std::this_thread::sleep_for(std::chrono::milliseconds(4500));
 });
 
-testing::register_test election_test_packet_loss("election.failover_packet_loss",
+testing::register_test election_test_packet_loss("election.packet_loss",
     "Tests that re-election of a master node after failure succeeds even with UDP packet loss",
     45, [] (logger::log_level level)
 {
@@ -142,7 +145,7 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
                 assert(false && "Heartbeater incorrectly lost a node due to packet loss. Retry test!");
             }
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(4000));
@@ -163,7 +166,6 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
 
     // Stop h0 and see how election proceeds
     elections[0]->stop();
-    hbs[0]->stop();
 
     // Wait for all nodes to detect failure
     std::this_thread::sleep_for(std::chrono::milliseconds(6000));
@@ -211,7 +213,6 @@ testing::register_test election_test_packet_loss("election.failover_packet_loss"
 
         std::thread stop_thread([&hbs, &elections, i] {
             elections[i]->stop();
-            hbs[i]->stop();
         });
         stop_thread.detach();
     }

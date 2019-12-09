@@ -7,6 +7,7 @@
 #include "heartbeater.h"
 #include "election.h"
 #include "tcp.h"
+#include "sdfs_master.h"
 
 #include <memory>
 #include <atomic>
@@ -28,6 +29,7 @@ private:
     int assign_job(std::string maple_exe, int num_maples, std::string sdfs_intermediate_filename_prefix, std::string sdfs_src_dir);
     void assign_job_to_node(int job_id, std::string hostname, std::string maple_exe, std::unordered_set<std::string> input_files, std::string sdfs_intermediate_filename_prefix);
     std::vector<member> get_least_busy_nodes(int n);
+    bool job_complete(int job_id);
     void node_dropped(std::string hostname);
 
     struct string_pair_hash {
@@ -54,8 +56,6 @@ private:
         std::unordered_set<std::pair<std::string, std::string>, string_pair_hash> committed_outputs;
     };
 
-    std::atomic<bool> running;
-
     // RNG to generate job IDs
     std::mt19937 mt;
 
@@ -72,6 +72,9 @@ private:
     configuration *config;
     heartbeater *hb;
     election *el;
-    std::unique_ptr<tcp_client> client;
+    tcp_factory *fac;
+    sdfs_master *sdfsm;
     std::unique_ptr<tcp_server> server;
+
+    std::atomic<bool> running;
 };

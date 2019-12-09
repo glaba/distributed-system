@@ -83,6 +83,16 @@ public:
     std::string get_sdfs_dir() {
         return sdfs_dir;
     }
+    void set_maple_subdir(std::string subdir) {
+        maple_dir = dir + subdir + "/";
+        if (mkdir(maple_dir.c_str(), ACCESSPERMS) != 0) {
+            std::cerr << "Could not create Maple subdirectory, exiting" << std::endl;
+            exit(1);
+        }
+    }
+    std::string get_maple_dir() {
+        return maple_dir;
+    }
 
 protected:
     std::string hostname;
@@ -95,6 +105,7 @@ protected:
     int maple_master_port;
     std::string dir;
     std::string sdfs_dir;
+    std::string maple_dir;
 
     configuration_impl() {}
 };

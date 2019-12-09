@@ -105,7 +105,7 @@ testing::register_test joining_group("heartbeater.joining_group",
     30,
     test_fn<false>);
 
-testing::register_test joining_group_random_introducer("heartbeater.joining_group_random_introducer",
+testing::register_test joining_group_random_introducer("heartbeater.random_introducer",
     "Tests that 10 nodes can successfully join and remain in the group using any node as the introducer",
     30,
     test_fn<true>);

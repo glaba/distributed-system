@@ -60,11 +60,11 @@ private:
     // The next 4 bytes will be a unique ID identifying the host
 
     // Mock TCP server, which is just a wrapper around a no-failure mock UDP server
+    // close_connection and stop_server MUST be called in the mock, and will cause a failure if not
     class mock_tcp_server : public tcp_server {
     public:
         mock_tcp_server(mock_udp_factory *factory_, string hostname_)
             : factory(factory_), hostname(hostname_) {}
-        ~mock_tcp_server();
 
         void setup_server(int port_);
         void stop_server();
@@ -101,12 +101,13 @@ private:
     };
 
     // Mock TCP client, which is just a wrapper around a no-failure mock UDP client
+    // close_connection MUST be called in the mock, and will cause a failure if not
     class mock_tcp_client : public tcp_client {
     public:
         mock_tcp_client(mock_udp_factory *factory_, string hostname_)
             : factory(factory_), hostname(hostname_), mt(std::chrono::system_clock::now().time_since_epoch().count()),
-              id(mt()) {}
-        ~mock_tcp_client();
+              id(mt() & 0x7FFFFFFF) {}
+        ~mock_tcp_client() {std::this_thread::sleep_for(std::chrono::milliseconds(500));}
 
         int setup_connection(std::string host, int port);
         std::string read_from_server(int socket);

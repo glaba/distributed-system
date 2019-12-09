@@ -5,6 +5,7 @@ maple_message::maple_message(const char *buf, unsigned length) {
     deserializer des(buf, length);
 
     try {
+        id = des.get_int();
         msg_type = static_cast<maple_msg_type>(des.get_int());
 
         switch (msg_type) {
@@ -20,6 +21,7 @@ maple_message::maple_message(const char *buf, unsigned length) {
             case NOT_MASTER: {
                 maple_not_master d;
                 d.master_node = des.get_string();
+                data = d;
                 break;
             }
             case JOB_END: {
@@ -76,6 +78,7 @@ std::string maple_message::serialize() {
     assert(msg_type != INVALID && "Should not be serializing before setting message data");
 
     serializer ser;
+    ser.add_field(id);
     ser.add_field(msg_type);
 
     switch (msg_type) {

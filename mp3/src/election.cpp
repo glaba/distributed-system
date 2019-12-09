@@ -16,7 +16,7 @@ election_impl::election_impl(environment &env)
       lg(env.get<logger_factory>()->get_logger("election")),
       client(env.get<udp_factory>()->get_udp_client()),
       server(env.get<udp_factory>()->get_udp_server()),
-      config(env.get<configuration>())
+      config(env.get<configuration>()), running(false)
 {
     if (config->is_first_node()) {
         // Set ourselves as the master node
@@ -101,11 +101,16 @@ void election_impl::start() {
 
 // Stops all threads and election logic (may leave master_node in an invalid state)
 void election_impl::stop() {
+    if (!running.load()) {
+        return;
+    }
+
     lg->info("Stopping election");
 
     server->stop_server();
     running = false;
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    hb->stop();
 }
 
 // Debugging function to print a string value for the enum

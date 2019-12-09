@@ -32,7 +32,9 @@ public:
         show_packets = show_packets_;
         drop_probability = drop_probability_;
     }
+
 private:
+
     // Private methods that only mock_tcp_factory should use
     friend class mock_tcp_factory;
     void reinitialize(environment &env_);

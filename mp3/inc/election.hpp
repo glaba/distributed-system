@@ -52,9 +52,6 @@ private:
     // Transitions the current state to the given state
     void transition(election_state origin_state, election_state dest_state);
 
-    // Indicates whether or not the election is running
-    std::atomic<bool> running;
-
     // Keeps track of the highest initiator ID seen for ELECTION messages so far
     uint32_t highest_initiator_id;
     void add_to_cache(election_message msg);
@@ -108,4 +105,7 @@ private:
 
     // The current master node (an ID of 0 means there is no master node)
     member master_node;
+
+    // Indicates whether or not the election is running
+    std::atomic<bool> running;
 };

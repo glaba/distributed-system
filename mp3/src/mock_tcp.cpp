@@ -39,20 +39,6 @@ mock_udp_factory *mock_tcp_factory::get_mock_udp_factory() {
     return fac;
 }
 
-mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
-    {
-        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
-
-        if (running.load()) {
-            stop_server();
-        }
-    }
-
-    // 500ms delay to reduce chance of race condition in msg_thread to essentially 0
-    // This should not be protected by the lock so that msg_thread gets its chance to finish up its work and quit
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-}
-
 void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
@@ -65,55 +51,58 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
 
     running = true;
     msg_thread = std::thread([this] {
-        char buf[1024];
+        char buf[32768];
         unsigned length;
 
         while (running.load()) {
             // There is a tremendously unlikely race condition here if the mock_tcp_server destructor is called,
             // 500 milliseconds pass, and server is deleted all between the line above and the line below
-            length = server->recv(buf, 1024);
+            length = server->recv(buf, 32768);
 
-            { // Atomic block while we potentially touch the message queues
-                std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+            // Handle the condition where recv has already been called but the server has been stopped
+            if (!running.load()) {
+                continue;
+            }
 
-                // Handle the condition where recv has already been called but the server has been stopped
-                if (!running.load()) {
-                    continue;
+            // Assert that it at least contains the prefix and message length
+            assert(length >= 5);
+
+            char magic_byte = buf[0];
+            uint32_t client_id = deserializer::read_uint32_from_char_buf(buf + 1);
+
+            // Check the magic byte
+            switch (magic_byte) {
+                case initiate_magic_byte: {
+                    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+                    // Make sure we don't already have an open connection with this client
+                    assert((msg_queues.find(client_id) == msg_queues.end() ||
+                            client_hostnames.find(client_id) == client_hostnames.end()) &&
+                            "Connection already open with this client");
+                    incoming_connections.push(std::make_tuple(client_id, std::string(buf + 5, length - 5)));
+                    break;
                 }
+                case msg_magic_byte: {
+                    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-                // Assert that it at least contains the prefix and message length
-                assert(length >= 5);
+                    if (msg_queues.find(client_id) == msg_queues.end())
+                        assert(false && "Received message from client before establishing connection");
 
-                char magic_byte = buf[0];
-                uint32_t client_id = deserializer::read_uint32_from_char_buf(buf + 1);
-
-                // Check the magic byte
-                switch (magic_byte) {
-                    case initiate_magic_byte: {
-                        // Make sure we don't already have an open connection with this client
-                        assert((msg_queues.find(client_id) == msg_queues.end() ||
-                                client_hostnames.find(client_id) == client_hostnames.end()) &&
-                                "Connection already open with this client");
-                        incoming_connections.push(std::make_tuple(client_id, std::string(buf + 5, length - 5)));
-                        break;
-                    }
-                    case msg_magic_byte: {
-                        if (msg_queues.find(client_id) == msg_queues.end())
-                            assert(false && "Received message from client before establishing connection");
-
-                        msg_queues[client_id].push(std::string(buf + 5, length - 5));
-                        break;
-                    }
-                    case close_magic_byte: {
-                        if (msg_queues.find(client_id) == msg_queues.end())
-                            assert(false && "Received connection closed message from server before establishing connection");
-
-                        delete_connection(client_id);
-                        break;
-                    }
-                    case accept_magic_byte: assert(false && "TCP server should not receive accept message");
-                    default: assert(false && "Invalid magic byte in mock TCP message");
+                    msg_queues[client_id].push(std::string(buf + 5, length - 5));
+                    break;
                 }
+                case close_magic_byte: {
+                    {
+                        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+                        if (msg_queues.find(client_id) == msg_queues.end()) // We have already closed the connection
+                            break;
+                    }
+
+                    delete_connection(client_id);
+                    break;
+                }
+                case accept_magic_byte: assert(false && "TCP server should not receive accept message");
+                default: assert(false && "Invalid magic byte in mock TCP message");
             }
         }
     });
@@ -123,15 +112,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
 void mock_tcp_factory::mock_tcp_server::stop_server() {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    // Close all open connections with client (use the vector to avoid modifying container while iterating)
-    std::vector<uint32_t> open_fds;
-    for (auto client_info : client_hostnames) {
-        open_fds.push_back(client_info.first);
-    }
-
-    for (uint32_t fd : open_fds) {
-        close_connection(fd);
-    }
+    assert(client_hostnames.size() == 0 && "Not all connections closed before stopping server");
 
     running = false;
     server->stop_server();
@@ -173,7 +154,10 @@ int mock_tcp_factory::mock_tcp_server::accept_connection() {
 void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    assert(msg_queues.find(client_socket) != msg_queues.end() && "Client was not connected to begin with");
+    if (msg_queues.find(client_socket) == msg_queues.end()) {
+        // The connection was already closed
+        return;
+    }
 
     // Send a message saying the connection is closed
     char closed_msg[5];
@@ -188,11 +172,26 @@ void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
 }
 
 void mock_tcp_factory::mock_tcp_server::delete_connection(int client_fd) {
-    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
-
-    assert(msg_queues.find(client_fd) != msg_queues.end() && "Client was not connected to begin with");
+    // Wait for msg_queue to become empty
+    while (true) {
+        {
+            std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+            if (msg_queues.find(client_fd) == msg_queues.end()) {
+                return;
+            }
+            if (msg_queues[client_fd].size() == 0) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
     // Remove all information about the client
+    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+    if (msg_queues.find(client_fd) == msg_queues.end()) {
+        return;
+    }
+
     msg_queues.erase(client_fd);
     client_hostnames.erase(client_fd);
 }
@@ -231,26 +230,12 @@ ssize_t mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, std::s
     // Create the message with the required fields
     msg[0] = msg_magic_byte;
     serializer::write_uint32_to_char_buf(id, msg.get() + 1);
-    std::strncpy(msg.get() + 5, data.c_str(), data.size());
+    std::memcpy(msg.get() + 5, data.c_str(), data.size());
 
     uint32_t client_id = client_fd;
     client->send(client_hostnames[client_fd] + std::to_string(client_id) + "->" + hostname + "_client",
         port, std::string(msg.get(), 5 + data.size()));
     return data.size();
-}
-
-mock_tcp_factory::mock_tcp_client::~mock_tcp_client() {
-    std::lock_guard<std::recursive_mutex> guard(msg_mutex);
-
-    // Close all connections
-    std::vector<uint32_t> open_fds;
-    for (auto server_info : server_hostnames) {
-        open_fds.push_back(server_info.first);
-    }
-
-    for (uint32_t fd : open_fds) {
-        close_connection(fd);
-    }
 }
 
 int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int port) {
@@ -277,19 +262,19 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
         unique_ptr<char[]> initiation_msg = make_unique<char[]>(5 + hostname.size());
         initiation_msg[0] = initiate_magic_byte;
         serializer::write_uint32_to_char_buf(id, initiation_msg.get() + 1);
-        std::strncpy(initiation_msg.get() + 5, hostname.c_str(), hostname.size());
+        std::memcpy(initiation_msg.get() + 5, hostname.c_str(), hostname.size());
 
         clients[server_id]->send(host + "_server", port, std::string(initiation_msg.get(), 5 + hostname.size()));
 
         running[server_id] = true;
         msg_threads[server_id] = std::thread([this, server_id] {
-            char buf[1024];
+            char buf[32768];
             unsigned length;
 
-            while (running[server_id].load()) {
+            while (true) {
                 // There is a tremendously unlikely race condition here if stop_server is called and running is set to false,
                 // 500 milliseconds pass, and servers[server_id] is deleted all between the line above and the line below
-                length = servers[server_id]->recv(buf, 1024);
+                length = servers[server_id]->recv(buf, 32768);
 
                 { // Atomic block while we potentially touch the message queues
                     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
@@ -298,40 +283,47 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
                     if (!running[server_id].load()) {
                         return;
                     }
+                }
 
-                    // Assert that it at least contains the prefix and message length
-                    assert(length >= 5);
+                // Assert that it at least contains the prefix and message length
+                assert(length >= 5);
 
-                    char magic_byte = buf[0];
-                    // Make sure that we are receiving messages from the correct ID
-                    assert(deserializer::read_uint32_from_char_buf(buf + 1) == server_id &&
-                           "Received unexpected message from server on wrong UDP server instance");
+                char magic_byte = buf[0];
+                // Make sure that we are receiving messages from the correct ID
+                assert(deserializer::read_uint32_from_char_buf(buf + 1) == server_id &&
+                       "Received unexpected message from server on wrong UDP server instance");
 
-                    // Check the magic byte
-                    switch (magic_byte) {
-                        case accept_magic_byte: {
-                            // Make sure we don't already have an open connection with this server
-                            assert(msg_queues.find(server_id) == msg_queues.end() && "Connection already open with this server");
-                            msg_queues[server_id] = std::queue<std::string>();
-                            break;
-                        }
-                        case msg_magic_byte: {
-                            if (msg_queues.find(server_id) == msg_queues.end())
-                                assert(false && "Received message from server before establishing connection");
+                // Check the magic byte
+                switch (magic_byte) {
+                    case accept_magic_byte: {
+                        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-                            msg_queues[server_id].push(std::string(buf + 5, length - 5));
-                            break;
-                        }
-                        case close_magic_byte: {
-                            if (msg_queues.find(server_id) == msg_queues.end())
-                                assert(false && "Received connection closed message from server before establishing connection");
-
-                            delete_connection(server_id);
-                            return;
-                        }
-                        case initiate_magic_byte: assert(false && "TCP client should not receive initiate message");
-                        default: assert(false && "Invalid magic byte in mock TCP message");
+                        // Make sure we don't already have an open connection with this server
+                        assert(msg_queues.find(server_id) == msg_queues.end() && "Connection already open with this server");
+                        msg_queues[server_id] = std::queue<std::string>();
+                        break;
                     }
+                    case msg_magic_byte: {
+                        std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+
+                        if (msg_queues.find(server_id) == msg_queues.end())
+                            assert(false && "Received message from server before establishing connection");
+
+                        msg_queues[server_id].push(std::string(buf + 5, length - 5));
+                        break;
+                    }
+                    case close_magic_byte: {
+                        {
+                            std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+                            if (msg_queues.find(server_id) == msg_queues.end())
+                                break; // We have already closed the connection
+                        }
+
+                        delete_connection(server_id);
+                        return;
+                    }
+                    case initiate_magic_byte: assert(false && "TCP client should not receive initiate message");
+                    default: assert(false && "Invalid magic byte in mock TCP message");
                 }
             }
         });
@@ -386,7 +378,7 @@ ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(int socket, std::stri
     // Create the message with the required fields
     msg[0] = msg_magic_byte;
     serializer::write_uint32_to_char_buf(id, msg.get() + 1);
-    std::strncpy(msg.get() + 5, data.c_str(), data.size());
+    std::memcpy(msg.get() + 5, data.c_str(), data.size());
     clients[socket]->send(server_hostnames[socket] + "_server", server_ports[socket], std::string(msg.get(), 5 + data.size()));
     return data.size();
 }
@@ -394,7 +386,10 @@ ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(int socket, std::stri
 void mock_tcp_factory::mock_tcp_client::close_connection(int socket) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-    assert(server_hostnames.find(socket) != server_hostnames.end() && "Socket was not opened to begin with");
+    // The connection has already been closed
+    if (server_hostnames.find(socket) == server_hostnames.end()) {
+        return;
+    }
 
     // Send a message saying we are closing the connection
     char closed_msg[5];
@@ -407,14 +402,29 @@ void mock_tcp_factory::mock_tcp_client::close_connection(int socket) {
 }
 
 void mock_tcp_factory::mock_tcp_client::delete_connection(int socket) {
-    {
+    // Wait for all messages to be delivered
+    while (true) {
+        {
+            std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+            if (server_hostnames.find(socket) == server_hostnames.end()) {
+                return;
+            }
+            if (msg_queues[socket].size() == 0) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    { // Remove all data about the server
         std::lock_guard<std::recursive_mutex> guard(msg_mutex);
-
-        assert(server_hostnames.find(socket) != server_hostnames.end() && "Socket was not opened to begin with");
-
-        // Remove all data about the server
-        running[socket] = false;
-        servers[socket]->stop_server();
+        if (server_hostnames.find(socket) == server_hostnames.end()) {
+            return;
+        }
+        if (running[socket].load()) {
+            running[socket] = false;
+            servers[socket]->stop_server();
+        }
     }
 
     // Wait for the server to stop (should actually take ~20ms, but we give some extra time)
@@ -422,6 +432,9 @@ void mock_tcp_factory::mock_tcp_client::delete_connection(int socket) {
 
     {
         std::lock_guard<std::recursive_mutex> guard(msg_mutex);
+        if (server_hostnames.find(socket) == server_hostnames.end()) {
+            return;
+        }
 
         // Delete all information
         servers.erase(socket);
