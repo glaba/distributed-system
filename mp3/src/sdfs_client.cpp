@@ -337,6 +337,25 @@ std::string sdfs_client_impl::get_metadata_operation_internal(int socket, std::s
     return metadata;
 }
 
+void sdfs_client_impl::send_files() {
+    // to be called when master fails and new master is elected
+    std::string files_list = "";
+    // local operation to ls sdfs directory
+    DIR *dirp = opendir(config->get_sdfs_dir().c_str());
+    struct dirent *dp;
+
+    while ((dp = readdir(dirp)) != NULL) {
+        files_list += dp->d_name;
+        files_list += "\n";
+    }
+    closedir(dirp);
+
+    int master_socket = get_master_socket();
+    sdfs_message files_msg;
+    files_msg.set_type_files(config->get_hostname(), files_list);
+    sdfs_utils::send_message(client.get(), master_socket, files_msg);
+}
+
 int sdfs_client_impl::get_master_socket() {
     // virtual int setup_connection(std::string host, int port) = 0;
     int socket = -1;

@@ -50,6 +50,9 @@ private:
     int get_master_socket();
     int get_internal_socket(std::string hostname);
 
+    // master failure callback
+    void send_files();
+
     // Services that we depend on
     election *el;
     std::unique_ptr<logger> lg;

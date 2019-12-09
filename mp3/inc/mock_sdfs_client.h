@@ -30,7 +30,7 @@ public:
     int store_operation();
     // handles a get_metadata request
     // TODO: implement this
-    int get_metadata_operation(std::string sdfs_filename) {return -1;}
+    std::string get_metadata_operation(std::string sdfs_filename) {return "";}
 
     std::unique_ptr<service_state> init_state();
 
