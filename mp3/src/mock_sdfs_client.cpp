@@ -150,4 +150,4 @@ int mock_sdfs_client::store_operation() {
     return -1;
 }
 
-register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;
+// register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;
