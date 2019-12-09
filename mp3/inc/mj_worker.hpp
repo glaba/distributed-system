@@ -1,6 +1,6 @@
 #pragma once
 
-#include "maple_node.h"
+#include "mj_worker.h"
 #include "environment.h"
 #include "logging.h"
 #include "sdfs_client.h"
@@ -11,8 +11,9 @@
 #include "sdfs_client.h"
 #include "sdfs_server.h"
 #include "election.h"
-#include "maple_master.h"
+#include "mj_master.h"
 #include "heartbeater.h"
+#include "outputter.h"
 
 #include <memory>
 #include <atomic>
@@ -21,9 +22,9 @@
 #include <unordered_map>
 #include <functional>
 
-class maple_node_impl : public maple_node, public service_impl<maple_node_impl> {
+class mj_worker_impl : public mj_worker, public service_impl<mj_worker_impl> {
 public:
-    maple_node_impl(environment &env);
+    mj_worker_impl(environment &env);
 
     void start();
     void stop();
@@ -32,14 +33,15 @@ private:
     void server_thread_function();
     bool run_command(std::string command, std::function<bool(std::string)> callback);
     void run_job(int job_id);
-    bool append_kv_pairs(int job_id, std::unordered_map<std::string, std::vector<std::string>> &kv_pairs,
-        std::string sdfs_intermediate_filename_prefix, std::string filename);
+    bool append_output(int job_id, outputter *outptr, std::string input_file);
 
     bool retry(std::function<bool()> callback, int job_id, std::string description);
 
     struct job_state {
-        std::string maple_exe;
-        std::string sdfs_intermediate_filename_prefix;
+        std::string exe;
+        std::string sdfs_src_dir;
+        std::string sdfs_output_dir;
+        outputter::type outputter_type;
         std::vector<std::string> files;
     };
 
@@ -54,7 +56,7 @@ private:
     std::unique_ptr<tcp_server> server;
     heartbeater *hb;
     election *el;
-    maple_master *mm;
+    mj_master *mm;
     sdfs_client *sdfsc;
     sdfs_server *sdfss;
 

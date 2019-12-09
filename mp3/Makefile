@@ -15,7 +15,7 @@ TEST_OBJ_FILES := $(patsubst $(TEST_DIR)/%.cpp,$(OBJ_DIR)/%.test.o,$(TEST_FILES)
 OBJ_FILES      := $(SRC_OBJ_FILES) $(TEST_OBJ_FILES)
 
 MJE_SRC_FILES  := $(wildcard $(MJE_SRC_DIR)/*.cpp)
-MJE_TARGETS    := mje/wc_maple
+MJE_TARGETS    := mje/wc_maple mje/wc_juice
 
 MEMBER         := member
 SDFS           := sdfs

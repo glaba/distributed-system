@@ -1,6 +1,7 @@
 #pragma once
 
-#include "maple_master.h"
+#include "mj_messages.h"
+#include "mj_master.h"
 #include "environment.h"
 #include "logging.h"
 #include "configuration.h"
@@ -8,6 +9,7 @@
 #include "election.h"
 #include "tcp.h"
 #include "sdfs_master.h"
+#include "outputter.h"
 
 #include <memory>
 #include <atomic>
@@ -15,20 +17,20 @@
 #include <unordered_map>
 #include <string>
 
-class maple_master_impl : public maple_master, public service_impl<maple_master_impl> {
+class mj_master_impl : public mj_master, public service_impl<mj_master_impl> {
 public:
-    maple_master_impl(environment &env);
+    mj_master_impl(environment &env);
 
     void start();
     void stop();
 
 private:
     void run_master();
-    void handle_job(int fd, std::string maple_exe, int num_maples, std::string sdfs_intermediate_filename_prefix, std::string sdfs_src_dir);
+    void handle_job(int fd, mj_start_job info);
     // Assigns files to nodes in the cluster, sends them a message assigning them work, and returns the job ID, which is negative on failure
-    int assign_job(std::string maple_exe, int num_maples, std::string sdfs_intermediate_filename_prefix, std::string sdfs_src_dir);
-    void assign_job_to_node(int job_id, std::string hostname, std::string maple_exe, std::unordered_set<std::string> input_files, std::string sdfs_intermediate_filename_prefix);
-    std::vector<member> get_least_busy_nodes(int n);
+    int assign_job(mj_start_job info);
+    void assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files);
+    member get_least_busy_node();
     bool job_complete(int job_id);
     void node_dropped(std::string hostname);
 
@@ -45,14 +47,16 @@ private:
     };
 
     struct job_state {
-        std::string maple_exe;
-        std::string sdfs_intermediate_filename_prefix;
+        std::string exe;
+        std::string sdfs_src_dir;
+        std::string sdfs_output_dir;
+        outputter::type outputter_type;
 
         // A map from node hostname to the files assigned to it that have not yet been processed
         std::unordered_map<std::string, std::unordered_set<std::string>> unprocessed_files;
         std::unordered_map<std::string, std::unordered_set<std::string>> processed_files;
 
-        // A set of (input file, key) pairs that have been committed to the SDFS as the output of Maple
+        // A set of (input file, output file) pairs that have been committed to the SDFS
         std::unordered_set<std::pair<std::string, std::string>, string_pair_hash> committed_outputs;
     };
 

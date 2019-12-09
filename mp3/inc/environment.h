@@ -42,11 +42,7 @@ public:
         disabled_mocks.insert(id);
     }
 
-    // Returns a pointer to the service of type T
-    template <typename T>
-    T *get() {
-        std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
-
+    service *get(std::string id) {
         spawning_mutex.lock();
 
         // If it is not being constructed / done being constructed already, we will construct the service ourselves
@@ -81,7 +77,7 @@ public:
             services[id]->env_id = env_id;
 
             // Service state uses the impl ID instead of the intf ID because each impl has different shared state
-            std::string impl_id = services[id]->get_impl_id();
+            std::string impl_id = services[id]->get_service_id();
             if (service::state[env_id].find(impl_id) == service::state[env_id].end()) {
                 service::state[env_id][impl_id] = services[id]->init_state();
             }
@@ -104,9 +100,16 @@ public:
         }
 
         std::lock_guard<std::mutex> guard(services_mutex);
-        T *retval = dynamic_cast<T*>(services[id].get());
+        service *retval = services[id].get();
         assert(retval != nullptr);
         return retval;
+    }
+
+    // Returns a pointer to the service of type T
+    template <typename T>
+    T *get() {
+        std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
+        return dynamic_cast<T*>(get(id));
     }
 
 private:

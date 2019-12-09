@@ -2,7 +2,7 @@
 #include "logging.h"
 #include "environment.h"
 #include "configuration.h"
-#include "maple_node.h"
+#include "mj_worker.h"
 #include "test.h"
 #include "heartbeater.h"
 
@@ -25,8 +25,8 @@ int main(int argc, char **argv) {
     std::string sdfs_subdir;
     int sdfs_internal_port;
     int sdfs_master_port;
-    int maple_internal_port;
-    int maple_master_port;
+    int mj_internal_port;
+    int mj_master_port;
     logger::log_level log_level = logger::log_level::level_off;
     // Arguments for command maplejuice test ...
     int parallelism;
@@ -38,8 +38,8 @@ int main(int argc, char **argv) {
     cli_parser.add_option<>("ep", "port", "The UDP port to use for elections", &el_port, 1235);
     cli_parser.add_option<>("sip", "port", "The TCP port used for communication between nodes in SDFS", &sdfs_internal_port, 1234);
     cli_parser.add_option<>("smp", "port", "The TCP port used for communication between clients and the master node in SDFS", &sdfs_master_port, 1235);
-    cli_parser.add_option<>("mip", "port", "The TCP port used for communication with Maple nodes", &maple_internal_port, 1236);
-    cli_parser.add_option<>("mmp", "port", "The TCP port used for communication with the Maple master", &maple_master_port, 1237);
+    cli_parser.add_option<>("mip", "port", "The TCP port used for communication with Maple nodes", &mj_internal_port, 1236);
+    cli_parser.add_option<>("mmp", "port", "The TCP port used for communication with the Maple master", &mj_master_port, 1237);
     std::function<bool(std::string)> dir_validator = [&dir] (std::string str) {
         if (str[str.length() - 1] != '/') {
             return false;
@@ -93,12 +93,12 @@ int main(int argc, char **argv) {
         config->set_sdfs_subdir(sdfs_subdir);
         config->set_sdfs_internal_port(sdfs_internal_port);
         config->set_sdfs_master_port(sdfs_master_port);
-        config->set_maple_internal_port(maple_internal_port);
-        config->set_maple_master_port(maple_master_port);
+        config->set_mj_internal_port(mj_internal_port);
+        config->set_mj_master_port(mj_master_port);
 
         env.get<logger_factory>()->configure(log_level);
 
-        env.get<maple_node>()->start();
+        env.get<mj_worker>()->start();
         if (introducer != "") {
             env.get<heartbeater>()->join_group(introducer);
         }

@@ -52,17 +52,17 @@ public:
     int get_sdfs_master_port() {
         return sdfs_master_port;
     }
-    void set_maple_internal_port(int port_) {
-        maple_internal_port = port_;
+    void set_mj_internal_port(int port_) {
+        mj_internal_port = port_;
     }
-    int get_maple_internal_port() {
-        return maple_internal_port;
+    int get_mj_internal_port() {
+        return mj_internal_port;
     }
-    void set_maple_master_port(int port_) {
-        maple_master_port = port_;
+    void set_mj_master_port(int port_) {
+        mj_master_port = port_;
     }
-    int get_maple_master_port() {
-        return maple_master_port;
+    int get_mj_master_port() {
+        return mj_master_port;
     }
     // Sets the directory that all files for the program will be stored in
     // Assumes that the directory exist and is empty
@@ -83,15 +83,15 @@ public:
     std::string get_sdfs_dir() {
         return sdfs_dir;
     }
-    void set_maple_subdir(std::string subdir) {
-        maple_dir = dir + subdir + "/";
-        if (mkdir(maple_dir.c_str(), ACCESSPERMS) != 0) {
+    void set_mj_subdir(std::string subdir) {
+        mj_dir = dir + subdir + "/";
+        if (mkdir(mj_dir.c_str(), ACCESSPERMS) != 0) {
             std::cerr << "Could not create Maple subdirectory, exiting" << std::endl;
             exit(1);
         }
     }
-    std::string get_maple_dir() {
-        return maple_dir;
+    std::string get_mj_dir() {
+        return mj_dir;
     }
 
 protected:
@@ -101,11 +101,11 @@ protected:
     int election_port;
     int sdfs_internal_port;
     int sdfs_master_port;
-    int maple_internal_port;
-    int maple_master_port;
+    int mj_internal_port;
+    int mj_master_port;
     std::string dir;
     std::string sdfs_dir;
-    std::string maple_dir;
+    std::string mj_dir;
 
     configuration_impl() {}
 };

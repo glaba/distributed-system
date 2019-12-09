@@ -1,56 +1,63 @@
 #pragma once
 
+#include "partitioner.h"
+#include "outputter.h"
+
 #include <string>
 #include <variant>
 #include <cassert>
 #include <vector>
 
-struct maple_start_job {
-    std::string maple_exe;
-    int num_maples;
-    std::string sdfs_intermediate_filename_prefix;
+struct mj_start_job {
+    std::string exe;
+    int num_workers;
+    partitioner::type partitioner_type;
     std::string sdfs_src_dir;
+    outputter::type outputter_type;
+    std::string sdfs_output_dir;
 };
 
-struct maple_not_master {
+struct mj_not_master {
     std::string master_node; // When this is set to "", there is no master
 };
 
-struct maple_job_end {
+struct mj_job_end {
     int succeeded;
 };
 
-struct maple_assign_job {
+struct mj_assign_job {
     int job_id;
-    std::string maple_exe;
+    std::string exe;
+    std::string sdfs_src_dir;
     std::vector<std::string> input_files;
-    std::string sdfs_intermediate_filename_prefix;
+    outputter::type outputter_type;
+    std::string sdfs_output_dir;
 };
 
-struct maple_request_append_perm {
+struct mj_request_append_perm {
     int job_id;
     std::string hostname; // The hostname of the node sending the message
-    std::string file;
-    std::string key;
+    std::string input_file;
+    std::string output_file;
 };
 
-struct maple_append_perm {
+struct mj_append_perm {
     int allowed;
 };
 
-struct maple_file_done {
+struct mj_file_done {
     int job_id;
     std::string hostname;
     std::string file;
 };
 
-class maple_message {
+class mj_message {
 public:
     using msg_data = std::variant<
-        maple_start_job, maple_not_master, maple_job_end,
-        maple_assign_job, maple_request_append_perm, maple_append_perm, maple_file_done>;
+        mj_start_job, mj_not_master, mj_job_end,
+        mj_assign_job, mj_request_append_perm, mj_append_perm, mj_file_done>;
 
-    enum maple_msg_type {
+    enum mj_msg_type {
         START_JOB,
         NOT_MASTER,
         JOB_END,
@@ -62,10 +69,10 @@ public:
     };
 
     // Creates a message from a buffer (safe)
-    maple_message(const char *buf, unsigned length);
+    mj_message(const char *buf, unsigned length);
 
     // Creates an empty message
-    maple_message(uint32_t id_, msg_data d) {
+    mj_message(uint32_t id_, msg_data d) {
         id = id_;
         data = d;
         set_msg_type();
@@ -77,7 +84,7 @@ public:
     }
 
     // Gets the type of the message
-    maple_msg_type get_msg_type() {
+    mj_msg_type get_msg_type() {
         return msg_type;
     }
 
@@ -100,6 +107,6 @@ private:
     void set_msg_type();
 
     uint32_t id;
-    maple_msg_type msg_type;
+    mj_msg_type msg_type;
     msg_data data;
 };

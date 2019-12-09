@@ -15,7 +15,7 @@ using none = std::monostate;
 
 int main(int argc, char **argv) {
     // Arguments for command maple ...
-    string local_maple_exe;
+    string local_exe;
     string maple_exe;
     int num_maples;
     string sdfs_intermediate_filename_prefix;
@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     int maple_master_port;
     logger::log_level log_level = logger::log_level::level_off;
 
-    cli_parser.add_argument<>("local_maple_exe", "The path to the executable which performs map on individual files", &local_maple_exe);
+    cli_parser.add_argument<>("local_exe", "The path to the executable which performs map on individual files", &local_exe);
     cli_parser.add_argument<>("maple_exe", "The name the executable will be stored under in SDFS", &maple_exe);
     cli_parser.add_argument<>("num_maples", "The number of Maple tasks to run", &num_maples);
     cli_parser.add_argument<>("sdfs_intermediate_filename_prefix", "The prefix for intermediate files emitted by Maple", &sdfs_intermediate_filename_prefix);
@@ -62,11 +62,11 @@ int main(int argc, char **argv) {
     configuration *config = env.get<configuration>();
     config->set_sdfs_internal_port(sdfs_internal_port);
     config->set_sdfs_master_port(sdfs_master_port);
-    config->set_maple_master_port(maple_master_port);
+    config->set_mj_master_port(maple_master_port);
 
     env.get<logger_factory>()->configure(log_level);
 
-    if (env.get<maple_client>()->run_job(maple_master, local_maple_exe, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir)) {
+    if (env.get<maple_client>()->run_job(maple_master, local_exe, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir)) {
         std::cout << "Maple job successfully completed" << std::endl;
     } else {
         std::cout << "Maple job failed to complete: " + env.get<maple_client>()->get_error() << std::endl;

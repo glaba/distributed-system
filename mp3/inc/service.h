@@ -25,6 +25,8 @@ class service {
 public:
     virtual ~service() {}
 
+    virtual std::string get_service_id() = 0;
+
 protected:
     // Returns a service_state object that represents the default state of the service
     virtual std::unique_ptr<service_state> init_state() {
@@ -32,8 +34,6 @@ protected:
     }
 
 private:
-    virtual std::string get_impl_id() = 0;
-
     // The ID of the environment containing this service, which will be set by environment upon instantiation
     uint32_t env_id = 0;
 
@@ -52,10 +52,14 @@ class service_impl : public service {
 public:
     virtual ~service_impl() {}
 
+    std::string get_service_id() final {
+        return abi::__cxa_demangle(typeid(Impl).name(), 0, 0, 0);
+    }
+
 protected:
     // Gives atomic access to the service_state object for the singleton environment or environment group
     void access_state(std::function<void(service_state*)> callback) {
-        std::string id = get_impl_id();
+        std::string id = get_service_id();
 
         while (true) {
             {
@@ -69,11 +73,6 @@ protected:
 
         std::lock_guard<std::mutex> guard(service::state_mutex);
         callback(service::state[env_id][id].get());
-    }
-
-private:
-    std::string get_impl_id() {
-        return abi::__cxa_demangle(typeid(Impl).name(), 0, 0, 0);
     }
 
     friend class environment;

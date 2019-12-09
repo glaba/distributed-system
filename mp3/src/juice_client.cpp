@@ -1,5 +1,5 @@
-#include "maple_client.h"
-#include "maple_client.hpp"
+#include "juice_client.h"
+#include "juice_client.hpp"
 #include "environment.h"
 #include "mj_messages.h"
 #include "partitioner.h"
@@ -7,30 +7,30 @@
 
 using std::string;
 
-maple_client_impl::maple_client_impl(environment &env)
+juice_client_impl::juice_client_impl(environment &env)
     : sdfsc(env.get<sdfs_client>())
     , config(env.get<configuration>())
     , fac(env.get<tcp_factory>())
-    , lg(env.get<logger_factory>()->get_logger("maple_client")) {}
+    , lg(env.get<logger_factory>()->get_logger("juice_client")) {}
 
-std::string maple_client_impl::get_error() {
+std::string juice_client_impl::get_error() {
     return error;
 }
 
-bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_exe, int num_maples,
-    string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
+bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_exe, int num_juices,
+    partitioner::type partitioner_type, string sdfs_intermediate_filename_prefix, string sdfs_dest_filename)
 {
     do {
-        sdfsc->put_operation(local_exe, maple_exe);
+        sdfsc->put_operation(local_exe, juice_exe);
 
-        mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
-            sdfs_src_dir, outputter::type::maple, sdfs_intermediate_filename_prefix});
+        mj_message msg(0, mj_start_job{juice_exe, num_juices, partitioner_type,
+            sdfs_intermediate_filename_prefix, outputter::type::juice, sdfs_dest_filename});
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client();
         int fd = client->setup_connection(mj_node, config->get_mj_master_port());
         if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
-            error = "Node at " + mj_node + " is not running Maplejuice, retry";
+            error = "Node at " + mj_node + " is not running MapleJuice, retry";
             return false;
         }
 
@@ -47,7 +47,7 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
         mj_message response_msg(response.c_str(), response.length());
 
         if (!response_msg.is_well_formed()) {
-            lg->info("Received invalid response from Maple master");
+            lg->info("Received invalid response from juice master");
             error = "MapleJuice master node is behaving unexpectedly";
             return false;
         }
@@ -62,14 +62,15 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
                 continue;
             } else {
                 lg->info("Contacted node was not the master, but told us that the master is at " + master_node);
-                return run_job(master_node, local_exe, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir);
+                return run_job(master_node, local_exe, juice_exe, num_juices, partitioner_type,
+                    sdfs_dest_filename, sdfs_intermediate_filename_prefix);
             }
         } else if (response_msg.get_msg_type() == mj_message::mj_msg_type::JOB_END) {
             if (response_msg.get_msg_data<mj_job_end>().succeeded) {
-                lg->info("Maple job completed successfully");
+                lg->info("Juice job completed successfully");
                 return true;
             } else {
-                lg->info("Maple job failed to run successfully");
+                lg->info("Juice job failed to run successfully");
                 error = "Provided executable failed to run correctly on MapleJuice nodes";
                 return false;
             }
@@ -77,4 +78,4 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
     } while (true);
 }
 
-register_auto<maple_client, maple_client_impl> register_maple_client;
+register_auto<juice_client, juice_client_impl> register_juice_client;

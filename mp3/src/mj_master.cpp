@@ -1,7 +1,7 @@
-#include "maple_master.h"
-#include "maple_master.hpp"
+#include "mj_master.h"
+#include "mj_master.hpp"
 #include "environment.h"
-#include "maple_messages.h"
+#include "mj_messages.h"
 #include "member_list.h"
 
 #include <thread>
@@ -12,9 +12,9 @@
 
 using std::string;
 
-maple_master_impl::maple_master_impl(environment &env)
+mj_master_impl::mj_master_impl(environment &env)
     : mt(std::chrono::system_clock::now().time_since_epoch().count())
-    , lg(env.get<logger_factory>()->get_logger("maple_master"))
+    , lg(env.get<logger_factory>()->get_logger("mj_master"))
     , config(env.get<configuration>())
     , hb(env.get<heartbeater>())
     , el(env.get<election>())
@@ -22,12 +22,12 @@ maple_master_impl::maple_master_impl(environment &env)
     , sdfsm(env.get<sdfs_master>())
     , server(env.get<tcp_factory>()->get_tcp_server()), running(false) {}
 
-void maple_master_impl::start() {
+void mj_master_impl::start() {
     if (running.load()) {
         return;
     }
 
-    lg->info("Starting Maple master");
+    lg->info("Starting MapleJuice master");
     el->start();
     running = true;
 
@@ -42,20 +42,20 @@ void maple_master_impl::start() {
     master_thread.detach();
 }
 
-void maple_master_impl::stop() {
+void mj_master_impl::stop() {
     if (!running.load()) {
         return;
     }
 
-    lg->info("Stopping Maple master");
+    lg->info("Stopping MapleJuice master");
     running = false;
     server->stop_server();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 
-void maple_master_impl::run_master() {
-    server->setup_server(config->get_maple_master_port());
+void mj_master_impl::run_master() {
+    server->setup_server(config->get_mj_master_port());
 
     while (true) {
         if (!running.load()) {
@@ -69,7 +69,7 @@ void maple_master_impl::run_master() {
 
         std::thread client_thread([this, fd] {
             string msg_str = server->read_from_client(fd);
-            maple_message msg(msg_str.c_str(), msg_str.length());
+            mj_message msg(msg_str.c_str(), msg_str.length());
 
             if (!msg.is_well_formed()) {
                 lg->debug("Received ill-formed message from client");
@@ -84,8 +84,8 @@ void maple_master_impl::run_master() {
                 return;
             }
 
-            if (msg.get_msg_type() == maple_message::maple_msg_type::START_JOB) {
-                maple_start_job info = msg.get_msg_data<maple_start_job>();
+            if (msg.get_msg_type() == mj_message::mj_msg_type::START_JOB) {
+                mj_start_job info = msg.get_msg_data<mj_start_job>();
 
                 bool is_master;
                 string master_hostname;
@@ -95,20 +95,20 @@ void maple_master_impl::run_master() {
                 });
 
                 if (is_master) {
-                    handle_job(fd, info.maple_exe, info.num_maples, info.sdfs_intermediate_filename_prefix, info.sdfs_src_dir);
+                    handle_job(fd, info);
                 } else {
-                    lg->trace("Redirecting request to start job with executable " + info.maple_exe + " to master node");
+                    lg->trace("Redirecting request to start job with executable " + info.exe + " to master node");
 
                     // Send a message to the client informing them of the actual master node
-                    maple_message not_master_msg(hb->get_id(), maple_not_master{master_hostname});
+                    mj_message not_master_msg(hb->get_id(), mj_not_master{master_hostname});
                     server->write_to_client(fd, not_master_msg.serialize());
                     server->close_connection(fd);
                 }
                 return;
             }
 
-            while (msg.get_msg_type() == maple_message::maple_msg_type::REQUEST_APPEND_PERM) {
-                maple_request_append_perm info = msg.get_msg_data<maple_request_append_perm>();
+            while (msg.get_msg_type() == mj_message::mj_msg_type::REQUEST_APPEND_PERM) {
+                mj_request_append_perm info = msg.get_msg_data<mj_request_append_perm>();
 
                 bool allow_append;
                 {
@@ -116,25 +116,26 @@ void maple_master_impl::run_master() {
 
                     std::unordered_set<std::pair<string, string>, string_pair_hash> &committed_outputs =
                         job_states[info.job_id].committed_outputs;
-                    allow_append = (committed_outputs.find(std::make_pair(info.file, info.key)) == committed_outputs.end());
+                    allow_append = (committed_outputs.find(std::make_pair(info.input_file, info.output_file)) == committed_outputs.end());
                 }
 
                 lg->debug("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
-                    " requested permission to append values for key " + info.key + " from input file " + info.file +
+                    " requested permission to append values to output file " + info.output_file +
+                    " from input file " + info.input_file +
                     (allow_append ? ", allowing append" : ", disallowing append"));
 
                 // Send the permission back to the node
-                maple_message perm_msg(hb->get_id(), maple_append_perm{allow_append});
+                mj_message perm_msg(hb->get_id(), mj_append_perm{allow_append});
                 server->write_to_client(fd, perm_msg.serialize()); // Ignore failure, that will be handled in node_dropped
 
                 // TODO: use callback from SDFS to reliably mark the output as committed instead of this
                 {
                     std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
-                    job_states[info.job_id].committed_outputs.insert(std::make_pair(info.file, info.key));
+                    job_states[info.job_id].committed_outputs.insert(std::make_pair(info.input_file, info.output_file));
                 }
 
                 msg_str = server->read_from_client(fd);
-                msg = maple_message(msg_str.c_str(), msg_str.length());
+                msg = mj_message(msg_str.c_str(), msg_str.length());
                 if (!msg.is_well_formed()) {
                     lg->debug("Received ill-formed message from client after it requested permission to append");
                     server->close_connection(fd);
@@ -151,8 +152,8 @@ void maple_master_impl::run_master() {
             // Either we arrived here from a new connection OR after a REQUEST_APPEND_PERM from the previous if block
             // Either way, we should close the connection with the server
             server->close_connection(fd);
-            if (msg.get_msg_type() == maple_message::maple_msg_type::FILE_DONE) {
-                maple_file_done info = msg.get_msg_data<maple_file_done>();
+            if (msg.get_msg_type() == mj_message::mj_msg_type::FILE_DONE) {
+                mj_file_done info = msg.get_msg_data<mj_file_done>();
 
                 {
                     std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
@@ -182,11 +183,10 @@ void maple_master_impl::run_master() {
     }
 }
 
-void maple_master_impl::handle_job(int fd, string maple_exe, int num_maples,
-    string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
+void mj_master_impl::handle_job(int fd, mj_start_job info)
 {
-    // Assign the appropriate nodes an even partitioning of the input files
-    int job_id = assign_job(maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir);
+    // Assign the appropriate nodes a partitioning of the input files based on the specified partitioner
+    int job_id = assign_job(info);
 
     // Wait for the job to actually complete
     while (!job_complete(job_id)) {
@@ -194,12 +194,12 @@ void maple_master_impl::handle_job(int fd, string maple_exe, int num_maples,
     }
 
     // Tell the client that the job is complete
-    maple_message msg(hb->get_id(), maple_job_end{1});
+    mj_message msg(hb->get_id(), mj_job_end{1});
     server->write_to_client(fd, msg.serialize());
     server->close_connection(fd);
 }
 
-bool maple_master_impl::job_complete(int job_id) {
+bool mj_master_impl::job_complete(int job_id) {
     std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
 
     job_state &state = job_states[job_id];
@@ -211,40 +211,43 @@ bool maple_master_impl::job_complete(int job_id) {
     return true;
 }
 
-int maple_master_impl::assign_job(std::string maple_exe, int num_maples,
-    std::string sdfs_intermediate_filename_prefix, std::string sdfs_src_dir)
-{
+int mj_master_impl::assign_job(mj_start_job info) {
     int job_id = mt() & 0x7FFFFFFF;
 
-    lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", maple_exe=" + maple_exe +
-        ", num_maples=" + std::to_string(num_maples) + ", sdfs_intermediate_filename_prefix=" +
-        sdfs_intermediate_filename_prefix + ", sdfs_src_dir=" + sdfs_src_dir + "]");
+    lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", exe=" + info.exe +
+        ", num_workers=" + std::to_string(info.num_workers) + "partitioner=" + partitioner::print_type(info.partitioner_type) +
+        ", sdfs_src_dir=" + info.sdfs_src_dir + ", outputter=" + outputter::print_type(info.outputter_type) +
+        ", sdfs_output_dir=" + info.sdfs_output_dir + "]");
 
     // Get the list of input files
-    std::vector<std::string> input_files = sdfsm->get_files_by_prefix(sdfs_src_dir);
-
-    std::vector<member> members = get_least_busy_nodes(num_maples);
-
-    string members_log_str = "Assigning job with ID " + std::to_string(job_id) + " to: ";
-    for (unsigned i = 0; i < members.size(); i++) {
-        members_log_str += members[i].hostname;
-        if (i < members.size() - 1) {
-            members_log_str += ", ";
-        }
+    std::vector<std::string> input_files = sdfsm->get_files_by_prefix(info.sdfs_src_dir);
+    // Strip the directory from the input files
+    for (std::string &file : input_files) {
+        file = file.substr(info.sdfs_src_dir.length());
     }
-    lg->info(members_log_str);
 
-    { // Add files in a round robin fashion
+    // Assign files to nodes based on the specified partitioner and fill the job_state struct
+    std::unordered_map<std::string, std::unordered_set<std::string>> unprocessed_files_copy;
+    {
         std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
         std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
 
-        lg->info("[Job " + std::to_string(job_id) + "] Number of input files is " + std::to_string(input_files.size()));
-        for (unsigned i = 0; i < input_files.size(); i++) {
-            unsigned member_index = i % members.size();
-            string hostname = members[member_index].hostname;
-            node_states[hostname].num_files++;
-            job_states[job_id].unprocessed_files[hostname].insert(input_files[i]);
+        job_states[job_id].exe = info.exe;
+        job_states[job_id].sdfs_src_dir = info.sdfs_src_dir;
+        job_states[job_id].sdfs_output_dir = info.sdfs_output_dir;
+        job_states[job_id].outputter_type = info.outputter_type;
+
+        job_states[job_id].unprocessed_files =
+            partitioner_factory::get_partitioner(info.partitioner_type)->partition(hb->get_members(), info.num_workers, input_files);
+        unprocessed_files_copy = job_states[job_id].unprocessed_files;
+
+        string members_log_str = "Assigning job with ID " + std::to_string(job_id) + " to: ";
+        for (auto &pair : job_states[job_id].unprocessed_files) {
+            node_states[pair.first].num_files += pair.second.size();
+
+            members_log_str += pair.first + " ";
         }
+        lg->info(members_log_str);
     }
 
     { // Print the files assigned to each node
@@ -262,52 +265,53 @@ int maple_master_impl::assign_job(std::string maple_exe, int num_maples,
     }
 
     // Actually send the message to assign the job to each of the nodes
-    for (unsigned i = 0; i < members.size(); i++) {
-        assign_job_to_node(job_id, members[i].hostname, maple_exe, job_states[job_id].unprocessed_files[members[i].hostname],
-            sdfs_intermediate_filename_prefix);
+    for (auto &pair : unprocessed_files_copy) {
+        assign_job_to_node(job_id, pair.first, pair.second);
     }
 
     return job_id;
 }
 
-std::vector<member> maple_master_impl::get_least_busy_nodes(int n) {
-    std::vector<member> all_members = hb->get_members();
-    std::vector<member> members;
+member mj_master_impl::get_least_busy_node() {
+    std::vector<member> members = hb->get_members();
     // Choose the members that have the least amount of work currently
     {
         std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
 
-        for (int i = 0; i < n; i++) {
-            unsigned least_busy_index = -1;
-            unsigned least_busy_load = UINT_MAX;
+        unsigned least_busy_index = -1;
+        unsigned least_busy_load = UINT_MAX;
 
-            if (all_members.size() == 0) {
-                break;
+        for (unsigned j = 0; j < members.size(); j++) {
+            unsigned load = node_states[members[j].hostname].num_files;
+            if (load < least_busy_load) {
+                least_busy_load = load;
+                least_busy_index = j;
             }
-
-            for (unsigned j = 0; j < all_members.size(); j++) {
-                unsigned load = node_states[all_members[j].hostname].num_files;
-                if (load < least_busy_load) {
-                    least_busy_load = load;
-                    least_busy_index = j;
-                }
-            }
-
-            members.push_back(all_members[least_busy_index]);
-            all_members.erase(all_members.begin() + least_busy_index);
         }
+
+        return members[least_busy_index];
     }
-    return members;
 }
 
-void maple_master_impl::assign_job_to_node(int job_id, std::string hostname, std::string maple_exe,
-    std::unordered_set<std::string> input_files, std::string sdfs_intermediate_filename_prefix)
+void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files)
 {
+    std::string exe;
+    std::string sdfs_src_dir;
+    std::string sdfs_output_dir;
+    outputter::type outputter_type;
+    {
+        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+        exe = job_states[job_id].exe;
+        sdfs_src_dir = job_states[job_id].sdfs_src_dir;
+        sdfs_output_dir = job_states[job_id].sdfs_output_dir;
+        outputter_type = job_states[job_id].outputter_type;
+    }
+
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
-    maple_message msg(hb->get_id(), maple_assign_job{job_id, maple_exe, input_files_vec, sdfs_intermediate_filename_prefix});
+    mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec, outputter_type, sdfs_output_dir});
 
     std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-    int fd = client->setup_connection(hostname, config->get_maple_internal_port());
+    int fd = client->setup_connection(hostname, config->get_mj_internal_port());
     if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
         // The failure will be handled as normal by assigning the files for this node to another node
         lg->trace("Failed to send ASSIGN_JOB message for job with id " + std::to_string(job_id) + " to node at " + hostname);
@@ -317,13 +321,14 @@ void maple_master_impl::assign_job_to_node(int job_id, std::string hostname, std
         client->close_connection(fd);
 
         // Mark the job as assigned to this node
+        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
         node_states[hostname].jobs.insert(job_id);
     }
 }
 
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
-void maple_master_impl::node_dropped(std::string hostname) {
+void mj_master_impl::node_dropped(std::string hostname) {
     bool is_master = false;
     el->get_master_node([this, &is_master] (member m, bool succeeded) {
         if (succeeded && m.id == hb->get_id()) {
@@ -360,7 +365,7 @@ void maple_master_impl::node_dropped(std::string hostname) {
         std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
         std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
         for (int job_id : jobs) {
-            string target = get_least_busy_nodes(1)[0].hostname;
+            string target = get_least_busy_node().hostname;
             targets[job_id] = target;
 
             lg->info("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
@@ -374,10 +379,8 @@ void maple_master_impl::node_dropped(std::string hostname) {
 
     // Send the message to assign the new work to each of the nodes
     for (int job_id : jobs) {
-        assign_job_to_node(job_id, targets[job_id], participating_job_states[job_id].maple_exe,
-            participating_job_states[job_id].unprocessed_files[hostname],
-            participating_job_states[job_id].sdfs_intermediate_filename_prefix);
+        assign_job_to_node(job_id, targets[job_id], participating_job_states[job_id].unprocessed_files[hostname]);
     }
 }
 
-register_auto<maple_master, maple_master_impl> register_maple_master;
+register_auto<mj_master, mj_master_impl> register_mj_master;
