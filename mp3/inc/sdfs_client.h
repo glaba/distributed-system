@@ -16,6 +16,8 @@ public:
     virtual int del_operation(std::string sdfs_filename) = 0;
     // handles a ls request over the specified socket
     virtual int ls_operation(std::string sdfs_filename) = 0;
+    // handles a append request over the specified socket
+    virtual int append_operation(std::string local_filename, std::string sdfs_filename) = 0;
     // handles a store request
     virtual int store_operation() = 0;
     // handles a get_metadata request over the specified socket

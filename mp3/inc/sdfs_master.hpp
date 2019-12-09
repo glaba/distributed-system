@@ -30,6 +30,7 @@ public:
     int get_operation(int socket, std::string sdfs_filename);
     int del_operation(int socket, std::string sdfs_filename);
     int ls_operation(int socket, std::string sdfs_filename);
+    int append_operation(int socket, std::string metadata, std::string sdfs_filename);
 
     std::vector<std::string> get_files_by_prefix(std::string prefix);
 private:
@@ -46,6 +47,8 @@ private:
 
     bool sdfs_file_exists(std::string sdfs_filename);
     std::vector<std::string> get_hostnames();
+
+    std::string get_next_filename_by_prefix(std::string prefix);
 
     // Services that we depend on
     election *el;

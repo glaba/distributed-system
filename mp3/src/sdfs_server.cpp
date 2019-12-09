@@ -143,11 +143,6 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     return SDFS_SUCCESS;
 }
 
-int sdfs_server_impl::append_operation(int socket, int index, std::string sdfs_filename) {
-    // @TODO: implement
-    return SDFS_SUCCESS;
-}
-
 int sdfs_server_impl::send_master_files(int socket) {
     // @TODO: register this as a callback that occurs in a loop (in a separate thread)
     //        waiting to be run any time a new master is elected as the leader

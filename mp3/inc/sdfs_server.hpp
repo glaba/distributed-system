@@ -33,9 +33,6 @@ private:
     void process_loop();
     void handle_connection(int socket);
 
-    // functions to handle major sdfs operations
-    int append_operation(int socket, int index, std::string sdfs_filename);
-
     int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);
     int send_master_files(int socket);
 

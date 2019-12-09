@@ -139,15 +139,13 @@ int sdfs_client_impl::append_operation(std::string local_filename, std::string s
     if ((master_socket = sdfs_client_impl::get_master_socket()) == -1) return SDFS_FAILURE;
 
     // master node correspondence to get the internal hostname
-    std::string metadata = "test md";   // @TODO: get the metadata
+    std::string metadata;   // @TODO: get the metadata
+    std::cout << "here in client" << std::endl;
     std::vector<std::string> res = append_operation_master(master_socket, metadata, local_filename, sdfs_filename);
-    std::string hostname = "";
-    std::string filename = "";
-    if (res.size() == 2) {
-        hostname = res[0];
-        filename = res[1];
-    }
+    std::string hostname = res[0];
+    std::string filename = res[1];
 
+    std::cout << "client rerouted to " << hostname << " with new filename " << filename << std::endl;
     int internal_socket;
     internal_socket = sdfs_client_impl::get_internal_socket(hostname);
 
@@ -333,6 +331,7 @@ int sdfs_client_impl::get_metadata_operation_internal(int socket, std::string sd
     sdfs_message gmd_msg; gmd_msg.set_type_gmd(sdfs_filename);
     if (sdfs_utils::send_message(client.get(), socket, gmd_msg) == SDFS_FAILURE) return SDFS_FAILURE;
     if ((metadata = client->read_from_server(socket)) == "") return SDFS_FAILURE;
+    std::cout << "client received metadata : " << metadata << std::endl;
 
     return SDFS_SUCCESS;
 }

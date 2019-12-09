@@ -33,8 +33,13 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
             case msg_type::success:
                 break;
             case msg_type::rep:
+            case msg_type::mn_append:
                 sdfs_hostname = des.get_string();
                 sdfs_filename = des.get_string();
+                break;
+            case msg_type::append:
+                sdfs_filename = des.get_string();
+                data = des.get_string();
                 break;
             default:
                 throw "Unknown type";
@@ -81,8 +86,13 @@ std::string sdfs_message::serialize() {
         case msg_type::success:
             break;
         case msg_type::rep:
+        case msg_type::mn_append:
             ser.add_field(sdfs_hostname);
             ser.add_field(sdfs_filename);
+            break;
+        case msg_type::append:
+            ser.add_field(sdfs_filename);
+            ser.add_field(data);
             break;
         default:
             assert(false && "Memory corruption caused msg_type to be invalid");

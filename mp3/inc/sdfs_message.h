@@ -10,7 +10,7 @@ public:
     // Might squeeze some more specific operations here later
     // If the implementation demands
     enum msg_type {
-        empty, mn_put, mn_get, mn_ls, mn_gmd, put, get, del, ls, gmd, append, rep, ack, files, success, fail
+        empty, mn_put, mn_get, mn_ls, mn_gmd, mn_append, put, get, del, ls, gmd, append, rep, ack, files, success, fail
     };
 
     // Creates a message from a buffer
@@ -102,12 +102,18 @@ public:
         sdfs_filename = filename;
     }
 
-    // Sets the message to be a files message
-    void set_type_append(std::string hostname, std::string filename, std::string data) {
-        type = msg_type::files;
+    // Sets the message to be an append message
+    void set_type_append(std::string filename, std::string metadata) {
+        type = msg_type::append;
+        sdfs_filename = filename;
+        data = metadata;
+    }
+
+    // Sets the message to be an mn_append message
+    void set_type_mn_append(std::string hostname, std::string filename) {
+        type = msg_type::mn_append;
         sdfs_hostname = hostname;
         sdfs_filename = filename;
-        // data = files;
     }
 
     msg_type get_type() {

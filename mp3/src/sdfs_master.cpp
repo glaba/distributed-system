@@ -64,6 +64,9 @@ void sdfs_master_impl::handle_connection(int socket) {
             del_operation(socket, sdfs_filename);
         } else if (request.get_type() == sdfs_message::msg_type::ls) {
             ls_operation(socket, sdfs_filename);
+        } else if (request.get_type() == sdfs_message::msg_type::append) {
+            std::string metadata = request.get_data();
+            append_operation(socket, metadata, sdfs_filename);
         }
     }
 
@@ -241,6 +244,50 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     return SDFS_SUCCESS;
 }
 
+int sdfs_master_impl::append_operation(int socket, std::string metadata, std::string sdfs_filename) {
+    // RECEIVED APPEND REQUEST FROM CLIENT
+    lg->info("master received client append request for " + sdfs_filename);
+
+    // GET A LIST OF HOSTNAMES TO PUT TO
+    std::vector<std::string> hostnames = get_hostnames();
+    if (hostnames.size() == 0) return SDFS_FAILURE;
+
+    // RESPOND WITH APPROPRIATE LOCATION FOR CLIENT TO FORWARD REQUEST TO
+    std::string new_filename = get_next_filename_by_prefix(sdfs_filename);
+    sdfs_message sdfs_msg;
+    sdfs_msg.set_type_mn_append(hostnames[0], new_filename);
+
+    if (sdfs_utils::send_message(server.get(), socket, sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+
+    // RECEIVE CLIENT COMMAND STATUS MESSAGE
+    sdfs_message response;
+    if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
+
+    // UPDATE THE MAPS
+    file_to_hostnames[new_filename].push_back(hostnames[0]);
+    hostname_to_files[hostnames[0]].push_back(new_filename);
+
+    if (response.get_type() == sdfs_message::msg_type::fail) {
+        return SDFS_FAILURE;
+    } else if (response.get_type() == sdfs_message::msg_type::success) {
+        int in_socket;
+        if ((in_socket = client->setup_connection(hostnames[0], config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
+        for (unsigned i = 1; i < hostnames.size(); i++) {
+            rep_operation(in_socket, hostnames[i], new_filename);
+            // @TODO: INSERT ERROR CHECKING AND FURTHER REPLICATION HERE
+            // UPDATE THE MAPS
+            file_to_hostnames[new_filename].push_back(hostnames[i]);
+            hostname_to_files[hostnames[i]].push_back(new_filename);
+        }
+        client->close_connection(in_socket);
+        return SDFS_SUCCESS;
+    } else {
+        return SDFS_FAILURE;
+    }
+
+    return SDFS_SUCCESS;
+}
+
 std::vector<std::string> sdfs_master_impl::get_files_by_prefix(std::string prefix) {
     std::vector<std::string> ret;
 
@@ -286,6 +333,14 @@ std::vector<std::string> sdfs_master_impl::get_hostnames() {
     }
 
     return hostnames;
+}
+
+std::string sdfs_master_impl::get_next_filename_by_prefix(std::string prefix) {
+    std::string filename = prefix + ".";
+    int curr_suff = 0;
+    while (sdfs_file_exists(filename + std::to_string(curr_suff))) {curr_suff++;};
+    filename += std::to_string(curr_suff);
+    return filename;
 }
 
 register_auto<sdfs_master, sdfs_master_impl> register_sdfs_master;
