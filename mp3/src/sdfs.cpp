@@ -1,8 +1,14 @@
-#include "cli.h"
+#include "heartbeater.h"
+#include "udp.h"
 #include "logging.h"
-#include "environment.h"
-#include "configuration.h"
+#include "member_list.h"
 #include "test.h"
+#include "cli.h"
+#include "environment.h"
+#include "election.h"
+#include "sdfs_client.h"
+#include "sdfs_server.h"
+#include "sdfs_master.h"
 
 #include <string>
 #include <chrono>
@@ -88,6 +94,26 @@ int main(int argc, char **argv) {
         env.get<logger_factory>()->configure(log_level);
 
         // Start up SDFS services
+        // env.get<sdfs_client>()->start();
+        env.get<heartbeater>()->start();
+        env.get<election>()->start();
+        env.get<sdfs_server>()->start();
+        env.get<sdfs_master>()->start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        // env.get<sdfs_client>()->get_operation("my_file", "test");
+        env.get<sdfs_client>()->append_operation("files/md1", "ap_test");
+        std::cout << "append 1 complete" << std::endl;
+        env.get<sdfs_client>()->append_operation("files/md2", "ap_test");
+        std::cout << "append 2 complete" << std::endl;
+        env.get<sdfs_client>()->append_operation("files/md3", "ap_test");
+        std::cout << "append 3 complete" << std::endl;
+        // env.get<sdfs_client>()->get_operation("files/test_copy", "test");
+        // env.get<sdfs_client>()->get_metadata_operation("test");
+        // env.get<sdfs_client>()->del_operation("test");
+        // virtual int put_operation(std::string local_filename, std::string sdfs_filename) = 0;
+        // virtual int put_operation(int socket, std::string sdfs_filename) = 0;
+        // virtual int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename) = 0;
+        // std::thread *client_t = new std::thread([this, client] {handle_connection(client);});
 
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));

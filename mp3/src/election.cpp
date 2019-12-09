@@ -520,4 +520,17 @@ void election_impl::get_master_node(std::function<void(member, bool)> callback) 
     callback(master_node, state == normal);
 }
 
+void election_impl::wait_master_node(std::function<void(member)> callback) {
+    bool done = false;
+    while (!done) {
+        get_master_node([&done, &callback] (member master, bool succeeded) {
+            if (succeeded) {
+                callback(master);
+                done = true;
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+}
+
 register_auto<election, election_impl> register_election;

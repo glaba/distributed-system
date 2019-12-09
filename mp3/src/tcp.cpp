@@ -127,7 +127,7 @@ void tcp_server_impl::close_connection(int client_socket) {
 
 std::string tcp_server_impl::read_from_client(int client) {
     ssize_t message_size;
-    if ((message_size = tcp_utils::get_message_size(client)) == -1)
+    if ((message_size = get_message_size(client)) == -1)
         return "";
 
     unique_ptr<char[]> buf = make_unique<char[]>(message_size);
@@ -179,7 +179,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
 
 std::string tcp_client_impl::read_from_server(int socket) {
     ssize_t message_size;
-    if ((message_size = tcp_utils::get_message_size(socket)) == -1)
+    if ((message_size = get_message_size(socket)) == -1)
         return "";
 
     unique_ptr<char[]> buf = make_unique<char[]>(message_size);

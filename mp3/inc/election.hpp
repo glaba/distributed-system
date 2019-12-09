@@ -35,6 +35,7 @@ public:
     election_impl(environment &env);
 
     void get_master_node(std::function<void(member, bool)> callback);
+    void wait_master_node(std::function<void(member)> callback);
     void start();
     void stop();
 private:
