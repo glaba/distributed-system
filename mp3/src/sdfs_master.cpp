@@ -282,7 +282,9 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
 
     // CALL APPEND CALLBACKS
     for (auto callback : append_callbacks) {
-        callback(sdfs_filename, std::stoi(new_filename.substr(new_filename.find(".") + 1, new_filename.length())), metadata);
+        if (new_filename.substr(new_filename.find(".")) != std::string::npos) {
+            callback(sdfs_filename, std::stoi(new_filename.substr(new_filename.find(".") + 1, new_filename.length())), metadata);
+        }
     }
 
     // UPDATE THE MAPS
