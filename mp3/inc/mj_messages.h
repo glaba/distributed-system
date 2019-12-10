@@ -15,6 +15,8 @@ struct mj_start_job {
     std::string sdfs_src_dir;
     outputter::type outputter_type;
     std::string sdfs_output_dir;
+    int num_files_parallel;
+    int num_appends_parallel;
 };
 
 struct mj_not_master {
@@ -32,6 +34,8 @@ struct mj_assign_job {
     std::vector<std::string> input_files;
     outputter::type outputter_type;
     std::string sdfs_output_dir;
+    int num_files_parallel;
+    int num_appends_parallel;
 };
 
 struct mj_request_append_perm {

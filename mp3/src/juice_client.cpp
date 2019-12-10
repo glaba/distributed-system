@@ -25,7 +25,7 @@ bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_e
         sdfsc->put_operation(local_exe, juice_exe + ".0");
 
         mj_message msg(0, mj_start_job{juice_exe, num_juices, partitioner_type,
-            sdfs_intermediate_filename_prefix, outputter::type::juice, sdfs_dest_filename});
+            sdfs_intermediate_filename_prefix, outputter::type::juice, sdfs_dest_filename, 50, 4});
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client();

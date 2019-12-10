@@ -25,8 +25,7 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
         sdfsc->put_operation(local_exe, maple_exe + ".0");
 
         mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
-            sdfs_src_dir, outputter::type::maple, sdfs_intermediate_filename_prefix});
-
+            sdfs_src_dir, outputter::type::maple, sdfs_intermediate_filename_prefix, 10, 50});
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client();

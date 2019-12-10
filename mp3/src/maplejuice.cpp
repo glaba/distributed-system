@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
                 std::thread t([=] {
                     sdfsc->get_sharded(local_filename, sdfs_filename);
                 });
-                t.detach();
+                t.join();
             } else if (command == "append") {
                 std::thread t([=] {
                     sdfsc->append_operation(local_filename, sdfs_filename);

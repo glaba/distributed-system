@@ -51,6 +51,8 @@ private:
         std::string sdfs_src_dir;
         std::string sdfs_output_dir;
         outputter::type outputter_type;
+        int num_files_parallel;
+        int num_appends_parallel;
 
         // A map from node hostname to the files assigned to it that have not yet been processed
         std::unordered_map<std::string, std::unordered_set<std::string>> unprocessed_files;

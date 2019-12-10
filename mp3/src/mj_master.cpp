@@ -215,9 +215,10 @@ int mj_master_impl::assign_job(mj_start_job info) {
     int job_id = mt() & 0x7FFFFFFF;
 
     lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", exe=" + info.exe +
-        ", num_workers=" + std::to_string(info.num_workers) + "partitioner=" + partitioner::print_type(info.partitioner_type) +
+        ", num_workers=" + std::to_string(info.num_workers) + ", partitioner=" + partitioner::print_type(info.partitioner_type) +
         ", sdfs_src_dir=" + info.sdfs_src_dir + ", outputter=" + outputter::print_type(info.outputter_type) +
-        ", sdfs_output_dir=" + info.sdfs_output_dir + "]");
+        ", sdfs_output_dir=" + info.sdfs_output_dir + ", num_files_parallel=" + std::to_string(info.num_files_parallel) +
+        ", num_appends_parallel=" + std::to_string(info.num_appends_parallel) + "]");
 
     // Get the list of input files
     std::vector<std::string> input_files_raw = sdfsm->get_files_by_prefix(info.sdfs_src_dir);
@@ -243,6 +244,8 @@ int mj_master_impl::assign_job(mj_start_job info) {
         job_states[job_id].sdfs_src_dir = info.sdfs_src_dir;
         job_states[job_id].sdfs_output_dir = info.sdfs_output_dir;
         job_states[job_id].outputter_type = info.outputter_type;
+        job_states[job_id].num_files_parallel = info.num_files_parallel;
+        job_states[job_id].num_appends_parallel = info.num_appends_parallel;
 
         job_states[job_id].unprocessed_files =
             partitioner_factory::get_partitioner(info.partitioner_type)->partition(hb->get_members(), info.num_workers, input_files);
@@ -306,16 +309,21 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
     std::string sdfs_src_dir;
     std::string sdfs_output_dir;
     outputter::type outputter_type;
+    int num_files_parallel;
+    int num_appends_parallel;
     {
         std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
         exe = job_states[job_id].exe;
         sdfs_src_dir = job_states[job_id].sdfs_src_dir;
         sdfs_output_dir = job_states[job_id].sdfs_output_dir;
         outputter_type = job_states[job_id].outputter_type;
+        num_files_parallel = job_states[job_id].num_files_parallel;
+        num_appends_parallel = job_states[job_id].num_appends_parallel;
     }
 
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
-    mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec, outputter_type, sdfs_output_dir});
+    mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec,
+        outputter_type, sdfs_output_dir, num_files_parallel, num_appends_parallel});
 
     std::unique_ptr<tcp_client> client = fac->get_tcp_client();
     int fd = client->setup_connection(hostname, config->get_mj_internal_port());

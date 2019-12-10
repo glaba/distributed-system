@@ -77,13 +77,11 @@ int sdfs_client_impl::get_sharded(std::string local_filename, std::string sdfs_f
         rm_command += "\"" + temp_prefix + "_" + std::to_string(i) + "\" ";
     }
     cat_command += "> \"" + local_filename + "\"";
-    lg->info(cat_command);
 
     FILE *stream = popen(cat_command.c_str(), "r");
     if (pclose(stream)) {
         return -1;
     }
-    lg->info(rm_command);
     stream = popen(rm_command.c_str(), "r");
     pclose(stream);
 

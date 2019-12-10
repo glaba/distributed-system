@@ -17,6 +17,8 @@ mj_message::mj_message(const char *buf, unsigned length) {
                 d.sdfs_src_dir = des.get_string();
                 d.outputter_type = static_cast<outputter::type>(des.get_int());
                 d.sdfs_output_dir = des.get_string();
+                d.num_files_parallel = des.get_int();
+                d.num_appends_parallel = des.get_int();
                 data = d;
                 break;
             }
@@ -43,6 +45,8 @@ mj_message::mj_message(const char *buf, unsigned length) {
                 }
                 d.outputter_type = static_cast<outputter::type>(des.get_int());
                 d.sdfs_output_dir = des.get_string();
+                d.num_files_parallel = des.get_int();
+                d.num_appends_parallel = des.get_int();
                 data = d;
                 break;
             }
@@ -94,6 +98,8 @@ std::string mj_message::serialize() {
             ser.add_field(d.sdfs_src_dir);
             ser.add_field(d.outputter_type);
             ser.add_field(d.sdfs_output_dir);
+            ser.add_field(d.num_files_parallel);
+            ser.add_field(d.num_appends_parallel);
             break;
         }
         case NOT_MASTER: {
@@ -117,6 +123,8 @@ std::string mj_message::serialize() {
             }
             ser.add_field(d.outputter_type);
             ser.add_field(d.sdfs_output_dir);
+            ser.add_field(d.num_files_parallel);
+            ser.add_field(d.num_appends_parallel);
             break;
         }
         case REQUEST_APPEND_PERM: {

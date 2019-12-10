@@ -37,13 +37,14 @@ private:
     void server_thread_function();
     bool run_command(std::string command, std::function<bool(std::string)> callback);
     void run_job(int job_id);
-    void append_output(int job_id, outputter *outptr, std::string input_file);
+    void append_output(int job_id, outputter *outptr, std::string input_file, int num_appends_parallel);
     // Appends the lines from a single input file to the specified output file after getting permission from the master node
     // Returns either a thread that is working or nothing if the master denied permission
     std::optional<std::thread> append_lines(int job_id, tcp_client *client, int fd, std::string &input_file,
         std::string &output_file, std::vector<std::string> &vals, std::atomic<bool> *master_down);
 
-    bool retry(std::function<bool()> callback, int job_id, std::string description);
+    // Retries the callback with exponential backoff
+    bool retry(std::function<bool()> callback);
 
     struct job_state {
         std::string exe;
@@ -51,6 +52,8 @@ private:
         std::string sdfs_output_dir;
         outputter::type outputter_type;
         std::vector<std::string> files;
+        int num_files_parallel;
+        int num_appends_parallel;
     };
 
     // Map from job ID to the state of the job
