@@ -78,7 +78,7 @@ private:
 
 class tcp_factory_impl : public tcp_factory, public service_impl<tcp_factory_impl> {
 public:
-    tcp_factory_impl(environment &env) : lg_fac(env.get<logger_factory>()) {}
+    tcp_factory_impl(environment &env);
 
     std::unique_ptr<tcp_client> get_tcp_client();
     std::unique_ptr<tcp_server> get_tcp_server();

@@ -2,9 +2,18 @@
 #include "tcp.hpp"
 
 #include <memory>
+#include <signal.h>
 
 using std::unique_ptr;
 using std::make_unique;
+
+void signal_handler(int signum) {}
+
+tcp_factory_impl::tcp_factory_impl(environment &env)
+    : lg_fac(env.get<logger_factory>())
+{
+    signal(SIGPIPE, signal_handler);
+}
 
 unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client() {
     return unique_ptr<tcp_client>(new tcp_client_impl(lg_fac->get_logger("tcp_client")));
