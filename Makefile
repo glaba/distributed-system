@@ -57,4 +57,4 @@ $(MJE): $(MJE_TARGETS)
 .PHONY: all clean
 
 clean:
-	rm member sdfs maple maplejuice $(MJE_TARGETS) obj/*
+	rm member sdfs maple maplejuice juice $(MJE_TARGETS) obj/*

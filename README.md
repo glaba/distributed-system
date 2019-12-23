@@ -1,1 +1,0 @@
-Simply run make, which will produce two binaries: member and election. member is the old binary from MP2 which we still use to run tests. election is the binary that implements the filesystem. election has its own help menu that explains how to use it
