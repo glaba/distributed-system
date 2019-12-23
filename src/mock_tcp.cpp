@@ -9,12 +9,16 @@
 using std::unique_ptr;
 using std::make_unique;
 
-unique_ptr<tcp_client> mock_tcp_factory::get_tcp_client() {
-    return unique_ptr<tcp_client>(new mock_tcp_client(get_mock_udp_factory(), config->get_hostname()));
+unique_ptr<tcp_client> mock_tcp_factory::get_tcp_client(string host, int port) {
+    mock_tcp_client *retval = new mock_tcp_client(get_mock_udp_factory(), config->get_hostname());
+    retval->setup_connection(host, port);
+    return unique_ptr<tcp_client>(static_cast<tcp_client*>(retval));
 }
 
-unique_ptr<tcp_server> mock_tcp_factory::get_tcp_server() {
-    return unique_ptr<tcp_server>(new mock_tcp_server(get_mock_udp_factory(), config->get_hostname()));
+unique_ptr<tcp_server> mock_tcp_factory::get_tcp_server(int port) {
+    mock_tcp_server *retval = new mock_tcp_server(get_mock_udp_factory(), config->get_hostname());
+    retval->setup_server(port);
+    return unique_ptr<tcp_server>(static_cast<tcp_server*>(retval));
 }
 
 mock_udp_factory *mock_tcp_factory::get_mock_udp_factory() {
@@ -37,6 +41,11 @@ mock_udp_factory *mock_tcp_factory::get_mock_udp_factory() {
     mock_udp_factory *fac = dynamic_cast<mock_udp_factory*>(mock_udp_env->get<udp_factory>());
     fac->reinitialize(env); // Set the mock_udp_factory to get all its services from our env instead of the fake env
     return fac;
+}
+
+mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
+    stop_server();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
 void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
@@ -341,21 +350,22 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    fixed_socket = server_id;
     return server_id;
 }
 
-std::string mock_tcp_factory::mock_tcp_client::read_from_server(int socket) {
+std::string mock_tcp_factory::mock_tcp_client::read_from_server() {
     while (true) {
         { // Atomic block to touch message queue
             std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-            if (msg_queues.find(socket) == msg_queues.end()) {
+            if (msg_queues.find(fixed_socket) == msg_queues.end()) {
                 return "";
             }
 
-            if (msg_queues[socket].size() > 0) {
-                std::string msg = msg_queues[socket].front();
-                msg_queues[socket].pop();
+            if (msg_queues[fixed_socket].size() > 0) {
+                std::string msg = msg_queues[fixed_socket].front();
+                msg_queues[fixed_socket].pop();
 
                 return msg;
             }
@@ -365,11 +375,11 @@ std::string mock_tcp_factory::mock_tcp_client::read_from_server(int socket) {
     }
 }
 
-ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(int socket, std::string data) {
+ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(std::string data) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     // Return 0 if not connected
-    if (server_hostnames.find(socket) == server_hostnames.end()) {
+    if (server_hostnames.find(fixed_socket) == server_hostnames.end()) {
         return 0;
     }
 
@@ -379,15 +389,15 @@ ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(int socket, std::stri
     msg[0] = msg_magic_byte;
     serializer::write_uint32_to_char_buf(id, msg.get() + 1);
     std::memcpy(msg.get() + 5, data.c_str(), data.size());
-    clients[socket]->send(server_hostnames[socket] + "_server", server_ports[socket], std::string(msg.get(), 5 + data.size()));
+    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], std::string(msg.get(), 5 + data.size()));
     return data.size();
 }
 
-void mock_tcp_factory::mock_tcp_client::close_connection(int socket) {
+void mock_tcp_factory::mock_tcp_client::close_connection() {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     // The connection has already been closed
-    if (server_hostnames.find(socket) == server_hostnames.end()) {
+    if (server_hostnames.find(fixed_socket) == server_hostnames.end()) {
         return;
     }
 
@@ -395,10 +405,10 @@ void mock_tcp_factory::mock_tcp_client::close_connection(int socket) {
     char closed_msg[5];
     closed_msg[0] = close_magic_byte;
     serializer::write_uint32_to_char_buf(id, closed_msg + 1);
-    clients[socket]->send(server_hostnames[socket] + "_server", server_ports[socket], std::string(closed_msg, 5));
+    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], std::string(closed_msg, 5));
 
     // Delete all data related to the socket
-    delete_connection(socket);
+    delete_connection(fixed_socket);
 }
 
 void mock_tcp_factory::mock_tcp_client::delete_connection(int socket) {

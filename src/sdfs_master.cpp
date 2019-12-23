@@ -1,13 +1,14 @@
 #include "sdfs_master.hpp"
 
+using std::unique_ptr;
+
 auto key_selector = [](auto pair){return pair.first;};
 
 sdfs_master_impl::sdfs_master_impl(environment &env)
     : el(env.get<election>()),
       hb(env.get<heartbeater>()),
       lg(env.get<logger_factory>()->get_logger("sdfs_master")),
-      client(env.get<tcp_factory>()->get_tcp_client()),
-      server(env.get<tcp_factory>()->get_tcp_server()),
+      fac(env.get<tcp_factory>()),
       config(env.get<configuration>())
 {
 
@@ -19,7 +20,7 @@ void sdfs_master_impl::start() {
 
     // @TODO: THIS FUNCTION SHOULD ACCEPT NEW CONNECTIONS AND KICK OFF THREADS THAT
     //        HANDLE ERROR CHECKING AND STUFF
-    server->setup_server(config->get_sdfs_master_port());
+    server = fac->get_tcp_server(config->get_sdfs_master_port());
     std::thread *server_thread = new std::thread([this] {process_loop();});
     server_thread->detach();
     return;
@@ -28,8 +29,6 @@ void sdfs_master_impl::start() {
 void sdfs_master_impl::stop() {
     // @TODO: ADD LOGIC TO STOP ACCEPTING CONNECTIONS
     // @TODO: THIS SHOULD PROBABLY BE AS A CALLBACK FROM ELECTION
-
-    server->stop_server();
     return;
 }
 
@@ -112,12 +111,13 @@ int sdfs_master_impl::put_operation(int socket, std::string sdfs_filename) {
     if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
     } else if (response.get_type() == sdfs_message::msg_type::success) {
-        int in_socket;
-        if ((in_socket = client->setup_connection(hostnames[0], config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
-        for (unsigned i = 1; i < hostnames.size(); i++) {
-            rep_operation(in_socket, hostnames[i], sdfs_filename);
+        unique_ptr<tcp_client> in_socket;
+        if ((in_socket = fac->get_tcp_client(hostnames[0], config->get_sdfs_internal_port())).get() == nullptr) {
+            return SDFS_FAILURE;
         }
-        client->close_connection(in_socket);
+        for (unsigned i = 1; i < hostnames.size(); i++) {
+            rep_operation(in_socket.get(), hostnames[i], sdfs_filename);
+        }
         return SDFS_SUCCESS;
     } else {
         return SDFS_FAILURE;
@@ -175,18 +175,16 @@ int sdfs_master_impl::del_operation(int socket, std::string sdfs_filename) {
 
     if (!sdfs_file_exists(sdfs_filename)) return SDFS_FAILURE;
 
-    int internal_node;
-
     sdfs_message sdfs_msg;
     sdfs_msg.set_type_del(sdfs_filename);
     std::vector<std::string> hosts = file_to_hostnames[sdfs_filename];
     for (auto host : hosts) {
-        if ((internal_node = client->setup_connection(host, config->get_sdfs_internal_port())) != -1) {
-            sdfs_utils::send_message(client.get(), internal_node, sdfs_msg);
+        unique_ptr<tcp_client> internal_node;
+        if ((internal_node = fac->get_tcp_client(host, config->get_sdfs_internal_port())).get() != nullptr) {
+            sdfs_utils::send_message(internal_node.get(), sdfs_msg);
             hostname_to_files[host].erase(
                     std::remove(hostname_to_files[host].begin(), hostname_to_files[host].end(), sdfs_filename),
                     hostname_to_files[host].end());
-            client->close_connection(internal_node);
         }
         file_to_hostnames.erase(sdfs_filename);
     }
@@ -227,7 +225,7 @@ int sdfs_master_impl::ls_operation(int socket, std::string sdfs_filename) {
     return SDFS_SUCCESS;
 }
 
-int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::string sdfs_filename) {
+int sdfs_master_impl::rep_operation(tcp_client *client, std::string hostname, std::string sdfs_filename) {
     // SENDING REP REQUEST
     lg->debug("master and is now sending a rep for " + sdfs_filename + " to " + hostname);
 
@@ -236,11 +234,11 @@ int sdfs_master_impl::rep_operation(int socket, std::string hostname, std::strin
     sdfs_msg.set_type_rep(hostname, sdfs_filename);
 
     // SEND THE REQ REQUEST OVER THE SOCKET
-    if (sdfs_utils::send_message(server.get(), socket, sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client, sdfs_msg) == SDFS_FAILURE) return SDFS_FAILURE;
 
     // RECEIVE REPLICATING NODE COMMAND STATUS MESSAGE
     sdfs_message response;
-    if (sdfs_utils::receive_message(server.get(), socket, &response) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::receive_message(client, &response) == SDFS_FAILURE) return SDFS_FAILURE;
     if (response.get_type() == sdfs_message::msg_type::success) {
         // UPDATE RECORDS AND RETURN
         add_to_maps(hostname, sdfs_filename);
@@ -286,14 +284,13 @@ int sdfs_master_impl::append_operation(int socket, std::string metadata, std::st
     if (response.get_type() == sdfs_message::msg_type::fail) {
         return SDFS_FAILURE;
     } else if (response.get_type() == sdfs_message::msg_type::success) {
-        int in_socket;
-        if ((in_socket = client->setup_connection(hostnames[0], config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
+        unique_ptr<tcp_client> in_socket;
+        if ((in_socket = fac->get_tcp_client(hostnames[0], config->get_sdfs_internal_port())).get() == nullptr) return SDFS_FAILURE;
         for (unsigned i = 1; i < hostnames.size(); i++) {
             // UPDATE THE MAPS
-            rep_operation(in_socket, hostnames[i], new_filename);
+            rep_operation(in_socket.get(), hostnames[i], new_filename);
             add_to_maps(hostnames[i], new_filename);
         }
-        client->close_connection(in_socket);
         return SDFS_SUCCESS;
     } else {
         return SDFS_FAILURE;

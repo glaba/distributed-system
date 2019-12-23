@@ -42,7 +42,7 @@ private:
     void handle_connection(int socket);
 
     // used to replicate a given file
-    int rep_operation(int socket, std::string hostname, std::string sdfs_filename);
+    int rep_operation(tcp_client *client, std::string hostname, std::string sdfs_filename);
     // used to receive a list of files over a socket
     int files_operation(int socket, std::string hostname, std::string data);
 
@@ -63,7 +63,7 @@ private:
     election *el;
     heartbeater *hb;
     std::unique_ptr<logger> lg;
-    std::unique_ptr<tcp_client> client;
+    tcp_factory *fac;
     std::unique_ptr<tcp_server> server;
     std::unordered_map<std::string, std::vector<std::string>> file_to_hostnames;
     std::unordered_map<std::string, std::vector<std::string>> hostname_to_files;

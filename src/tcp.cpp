@@ -4,6 +4,7 @@
 #include <memory>
 #include <signal.h>
 
+using std::string;
 using std::unique_ptr;
 using std::make_unique;
 
@@ -15,12 +16,19 @@ tcp_factory_impl::tcp_factory_impl(environment &env)
     signal(SIGPIPE, signal_handler);
 }
 
-unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client() {
-    return unique_ptr<tcp_client>(new tcp_client_impl(lg_fac->get_logger("tcp_client")));
+unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client(string host, int port) {
+    tcp_client_impl *retval = new tcp_client_impl(lg_fac->get_logger("tcp_client"));
+    if (retval->setup_connection(host, port) < 0) {
+        return nullptr;
+    } else {
+        return unique_ptr<tcp_client>(static_cast<tcp_client*>(retval));
+    }
 }
 
-unique_ptr<tcp_server> tcp_factory_impl::get_tcp_server() {
-    return unique_ptr<tcp_server>(new tcp_server_impl(lg_fac->get_logger("tcp_server")));
+unique_ptr<tcp_server> tcp_factory_impl::get_tcp_server(int port) {
+    tcp_server_impl *retval = new tcp_server_impl(lg_fac->get_logger("tcp_server"));
+    retval->setup_server(port);
+    return unique_ptr<tcp_server>(static_cast<tcp_server*>(retval));
 }
 
 ssize_t tcp_utils::get_message_size(int socket) {
@@ -73,6 +81,10 @@ ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t co
     }
 
     return total;
+}
+
+tcp_server_impl::~tcp_server_impl() {
+    stop_server();
 }
 
 void tcp_server_impl::setup_server(int port) {
@@ -154,6 +166,10 @@ ssize_t tcp_server_impl::write_to_client(int client, std::string data) {
     return write_all_to_socket(client, data.c_str(), data.length());
 }
 
+tcp_client_impl::~tcp_client_impl() {
+    close_connection();
+}
+
 int tcp_client_impl::setup_connection(std::string host, int port) {
     struct addrinfo info, *res;
     memset(&info, 0, sizeof(info));
@@ -165,49 +181,53 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     if (s != 0) {
         // Get the error using gai
         lg->info("getaddrinfo failed -- " + std::string(gai_strerror(s)));
-        return -1;
+        fixed_socket = -1;
+        return fixed_socket;
     }
 
     // Get a socket for the client
     int client_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (client_socket == -1) {
         lg->info("socket failed -- " + std::string(strerror(errno)));
-        return -1;
+        fixed_socket = -1;
+        return fixed_socket;
     }
 
     // Connect the client to the server
     int connected = connect(client_socket, res->ai_addr, res->ai_addrlen);
     if (connected == -1) {
         lg->info("connect failed -- " + std::string(strerror(errno)));
-        return -1;
+        fixed_socket = -1;
+        return fixed_socket;
     }
 
-    return client_socket;
+    fixed_socket = client_socket;
+    return fixed_socket;
 }
 
-std::string tcp_client_impl::read_from_server(int socket) {
+std::string tcp_client_impl::read_from_server() {
     ssize_t message_size;
-    if ((message_size = get_message_size(socket)) == -1)
+    if ((message_size = get_message_size(fixed_socket)) == -1)
         return "";
 
     unique_ptr<char[]> buf = make_unique<char[]>(message_size);
-    if (read_all_from_socket(socket, buf.get(), message_size) == -1)
+    if (read_all_from_socket(fixed_socket, buf.get(), message_size) == -1)
         return "";
 
     return std::string(buf.get(), message_size);
 }
 
-ssize_t tcp_client_impl::write_to_server(int socket, std::string data) {
+ssize_t tcp_client_impl::write_to_server(std::string data) {
     size_t size = (size_t) data.length();
-    if (write_message_size(size, socket) == -1)
+    if (write_message_size(size, fixed_socket) == -1)
         return -1;
 
-    return write_all_to_socket(socket, data.c_str(), data.length());
+    return write_all_to_socket(fixed_socket, data.c_str(), data.length());
 }
 
-void tcp_client_impl::close_connection(int socket) {
+void tcp_client_impl::close_connection() {
     // No internal state being managed so this is fine
-    close(socket);
+    close(fixed_socket);
 }
 
 register_service<tcp_factory, tcp_factory_impl> register_tcp_factory;

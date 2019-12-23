@@ -34,7 +34,7 @@ private:
     void handle_connection(int socket);
 
     int rep_operation(int socket, std::string sdfs_hostname, std::string sdfs_filename);
-    int send_master_files(int socket);
+    int send_master_files(tcp_client *client);
 
     std::string get_files();
     int del_file(std::string sdfs_filename);
@@ -43,7 +43,7 @@ private:
     // Services that we depend on
     election *el;
     std::unique_ptr<logger> lg;
-    std::unique_ptr<tcp_client> client;
+    tcp_factory *fac;
     std::unique_ptr<tcp_server> server;
     configuration *config;
 };

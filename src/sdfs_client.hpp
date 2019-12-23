@@ -15,6 +15,7 @@
 #include <string.h>
 #include <random>
 #include <stdlib.h>
+#include <memory>
 
 // Defining the return value for failed operations
 #define SDFS_CLIENT_FAILURE -1
@@ -44,21 +45,20 @@ public:
     int store_operation();
     int get_sharded(std::string local_filename, std::string sdfs_filename_prefix);
 private:
-    std::string put_operation_master(int socket, std::string local_filename, std::string sdfs_filename);
-    std::string get_operation_master(int socket, std::string local_filename, std::string sdfs_filename);
-    std::string get_index_operation_master(int socket, std::string sdfs_filename);
-    std::vector<std::string> append_operation_master(int socket, std::string metadata, std::string local_filename, std::string sdfs_filename);
-    std::string get_metadata_operation_master(int socket, std::string sdfs_filename);
-    int del_operation_master(int socket, std::string sdfs_filename);
-    int ls_operation_master(int socket, std::string sdfs_filename);
+    std::string put_operation_master(tcp_client *client, std::string local_filename, std::string sdfs_filename);
+    std::string get_operation_master(tcp_client *client, std::string local_filename, std::string sdfs_filename);
+    std::string get_index_operation_master(tcp_client *client, std::string sdfs_filename);
+    std::vector<std::string> append_operation_master(tcp_client *client, std::string metadata, std::string local_filename, std::string sdfs_filename);
+    std::string get_metadata_operation_master(tcp_client *client, std::string sdfs_filename);
+    int del_operation_master(tcp_client *client, std::string sdfs_filename);
+    int ls_operation_master(tcp_client *client, std::string sdfs_filename);
 
-    // int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
-    int get_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
-    std::string get_metadata_operation_internal(int socket, std::string sdfs_filename);
-    int put_operation_internal(int socket, std::string local_filename, std::string sdfs_filename);
+    int get_operation_internal(tcp_client *client, std::string local_filename, std::string sdfs_filename);
+    std::string get_metadata_operation_internal(tcp_client *client, std::string sdfs_filename);
+    int put_operation_internal(tcp_client *client, std::string local_filename, std::string sdfs_filename);
 
-    int get_master_socket();
-    int get_internal_socket(std::string hostname);
+    std::unique_ptr<tcp_client> get_master_socket();
+    std::unique_ptr<tcp_client> get_internal_socket(std::string hostname);
 
     // master failure callback
     void send_files();
@@ -66,11 +66,9 @@ private:
     // Services that we depend on
     election *el;
     std::unique_ptr<logger> lg;
-    std::unique_ptr<tcp_client> client;
-    std::unique_ptr<tcp_server> server;
+    tcp_factory *fac;
     configuration *config;
 
-    std::string mn_hostname = "";
-
     std::mt19937 mt;
+    std::string mn_hostname;
 };

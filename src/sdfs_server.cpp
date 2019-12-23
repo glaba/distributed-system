@@ -4,15 +4,14 @@
 sdfs_server_impl::sdfs_server_impl(environment &env)
     : el(env.get<election>()),
       lg(env.get<logger_factory>()->get_logger("sdfs_server")),
-      client(env.get<tcp_factory>()->get_tcp_client()),
-      server(env.get<tcp_factory>()->get_tcp_server()),
+      fac(env.get<tcp_factory>()),
       config(env.get<configuration>())
 {
     // @TODO: ADD ELECTION SERVICE IN THE ABOVE
 }
 
 void sdfs_server_impl::start() {
-    server->setup_server(config->get_sdfs_internal_port());
+    server = fac->get_tcp_server(config->get_sdfs_internal_port());
 
     std::thread *server_thread = new std::thread([this] {process_loop();});
     server_thread->detach();
@@ -22,7 +21,6 @@ void sdfs_server_impl::start() {
 void sdfs_server_impl::stop() {
     // @TODO: ADD LOGIC TO STOP ACCEPTING CONNECTIONS
     // @TODO: ALSO REMOVE ALL FILES HERE
-    server->stop_server();
     return;
 }
 
@@ -129,21 +127,21 @@ int sdfs_server_impl::rep_operation(int socket, std::string sdfs_hostname, std::
     lg->debug("server received request from master to rep " + sdfs_filename + " to host " + sdfs_hostname);
 
     // GET INTERNAL SOCKET TO HOSTNAME
-    int internal_socket;
-    if ((internal_socket = client->setup_connection(sdfs_hostname, config->get_sdfs_internal_port())) == -1) return SDFS_FAILURE;
+    std::unique_ptr<tcp_client> client = fac->get_tcp_client(sdfs_hostname, config->get_sdfs_internal_port());
+    if (!client.get()) return SDFS_FAILURE;
 
     std::string local_filename = config->get_sdfs_dir() + sdfs_filename;
 
     // SEND THE PUT REQUEST AND THEN SEND THE FILE
     sdfs_message put_msg;
     put_msg.set_type_put(sdfs_filename);
-    if (sdfs_utils::send_message(client.get(), internal_socket, put_msg) == SDFS_FAILURE) return SDFS_FAILURE;
-    if (sdfs_utils::write_file_to_socket(client.get(), internal_socket, local_filename) == -1) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client.get(), put_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::write_file_to_socket(client.get(), local_filename) == -1) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }
 
-int sdfs_server_impl::send_master_files(int socket) {
+int sdfs_server_impl::send_master_files(tcp_client *client) {
     // @TODO: register this as a callback that occurs in a loop (in a separate thread)
     //        waiting to be run any time a new master is elected as the leader
     std::string files = get_files();
@@ -151,7 +149,7 @@ int sdfs_server_impl::send_master_files(int socket) {
     // SEND THE FILES TO THE MASTER
     sdfs_message files_msg;
     files_msg.set_type_files(config->get_hostname(), files);
-    if (sdfs_utils::send_message(client.get(), socket, files_msg) == SDFS_FAILURE) return SDFS_FAILURE;
+    if (sdfs_utils::send_message(client, files_msg) == SDFS_FAILURE) return SDFS_FAILURE;
 
     return SDFS_SUCCESS;
 }

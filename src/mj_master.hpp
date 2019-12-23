@@ -10,6 +10,7 @@
 #include "tcp.h"
 #include "sdfs_master.h"
 #include "processor.h"
+#include "threadpool.h"
 
 #include <memory>
 #include <atomic>
@@ -25,14 +26,22 @@ public:
     void stop();
 
 private:
+    // Server thread which listens for incoming TCP messages
     void run_master();
+    // Initiates a new job, waits for it to complete, and informs the client that started the job
     void handle_job(int fd, mj_start_job info);
-    // Assigns files to nodes in the cluster, sends them a message assigning them work, and returns the job ID, which is negative on failure
+    // Assigns files to nodes in the cluster, sends them a message assigning them work,
+    // and returns the job ID, which is negative on failure
     int assign_job(mj_start_job info);
+    // Specifically assigns a list of input files to the provided node
     void assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files);
+    // Returns the node with the current least amount of files being processed
     member get_least_busy_node();
+    // Notifies all worker nodes to stop working on the specified job, and cleans up any related data
     void stop_job(int job_id);
+    // Checks whether or not a previously running job has completed
     bool job_complete(int job_id);
+    // Callback called by heartbeater when a node goes down, which will redistribute its work to other nodes
     void node_dropped(std::string hostname);
 
     struct string_pair_hash {
@@ -83,6 +92,7 @@ private:
     tcp_factory *fac;
     sdfs_master *sdfsm;
     std::unique_ptr<tcp_server> server;
+    threadpool_factory *tp_fac;
 
     std::atomic<bool> running;
 };

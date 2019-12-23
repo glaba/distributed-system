@@ -13,15 +13,15 @@
 
 extern int errno;
 
-int sdfs_utils::send_message(tcp_client *client, int socket, sdfs_message sdfs_msg) {
+int sdfs_utils::send_message(tcp_client *client, sdfs_message sdfs_msg) {
     std::string msg = sdfs_msg.serialize();
-    if (client->write_to_server(socket, msg) == -1) return SDFS_FAILURE;
+    if (client->write_to_server(msg) == -1) return SDFS_FAILURE;
     return SDFS_SUCCESS;
 }
 
-int sdfs_utils::receive_message(tcp_client *client, int socket, sdfs_message *sdfs_msg) {
+int sdfs_utils::receive_message(tcp_client *client, sdfs_message *sdfs_msg) {
     std::string message;
-    if ((message = client->read_from_server(socket)) == "") return SDFS_FAILURE;
+    if ((message = client->read_from_server()) == "") return SDFS_FAILURE;
 
     // determine if response was valid sdfs_message
     char message_cstr[message.length() + 1];
@@ -53,7 +53,7 @@ int sdfs_utils::receive_message(tcp_server *server, int socket, sdfs_message *sd
 
 /* @TODO: ADD THREAD-SAFE ACCESS VIA FLOCK TO ALL WRITES AND READS OF A FILE */
 
-ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::string filename) {
+ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, std::string filename) {
     int fd;
 
     if ((fd = open(filename.c_str(), O_RDONLY)) < 0) return -1;
@@ -69,7 +69,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
     }
 
     // write total size of file to socket
-    if ((client->write_to_server(socket, std::to_string(filesize))) == -1) {
+    if ((client->write_to_server(std::to_string(filesize))) == -1) {
         release_lock(fd);
         return -1;
     }
@@ -84,7 +84,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_client *client, int socket, std::st
         std::string data(contents + pos, num_to_write);
         // virtual ssize_t write_to_server(int socket, std::string data) = 0;
 
-        if ((num_written = client->write_to_server(socket, data)) == -1) {
+        if ((num_written = client->write_to_server(data)) == -1) {
             release_lock(fd);
             return -1;
         }
@@ -147,7 +147,7 @@ ssize_t sdfs_utils::write_file_to_socket(tcp_server *server, int socket, std::st
     return filesize;
 }
 
-ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::string filename) {
+ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, std::string filename) {
     int fd;
 
     if ((fd = open(filename.c_str(), O_RDWR | O_CREAT, (mode_t) 0644)) < 0) return -1;
@@ -156,7 +156,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
 
     // read total size of file from socket
     std::string size_str;
-    if ((size_str = client->read_from_server(socket)) == "") {
+    if ((size_str = client->read_from_server()) == "") {
         release_lock(fd);
         return -1;
     }
@@ -178,7 +178,7 @@ ssize_t sdfs_utils::read_file_from_socket(tcp_client *client, int socket, std::s
     std::string data;
     while (bytes_left > 0) {
         // read file in CHUNK_SIZE chunks
-        if ((data = client->read_from_server(socket)) == "") {
+        if ((data = client->read_from_server()) == "") {
             release_lock(fd);
             return -1;
         }

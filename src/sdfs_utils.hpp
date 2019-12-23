@@ -11,13 +11,13 @@
 
 class sdfs_utils {
 public:
-    static int send_message(tcp_client *client, int socket, sdfs_message sdfs_msg);
-    static int receive_message(tcp_client *client, int socket, sdfs_message *sdfs_msg);
+    static int send_message(tcp_client *client, sdfs_message sdfs_msg);
+    static int receive_message(tcp_client *client, sdfs_message *sdfs_msg);
     static int send_message(tcp_server *server, int socket, sdfs_message sdfs_msg);
     static int receive_message(tcp_server *server, int socket, sdfs_message *sdfs_msg);
 
-    static ssize_t write_file_to_socket(tcp_client *client, int socket, std::string filename);
-    static ssize_t read_file_from_socket(tcp_client *client, int socket, std::string filename);
+    static ssize_t write_file_to_socket(tcp_client *client, std::string filename);
+    static ssize_t read_file_from_socket(tcp_client *client, std::string filename);
     static ssize_t write_file_to_socket(tcp_server *server, int socket, std::string filename);
     static ssize_t read_file_from_socket(tcp_server *server, int socket, std::string filename);
 

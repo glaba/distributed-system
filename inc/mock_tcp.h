@@ -34,8 +34,8 @@ public:
         state->udp_env_group = std::make_unique<environment_group>(true);
         return std::unique_ptr<service_state>(state);
     }
-    std::unique_ptr<tcp_client> get_tcp_client();
-    std::unique_ptr<tcp_server> get_tcp_server();
+    std::unique_ptr<tcp_client> get_tcp_client(std::string host, int port);
+    std::unique_ptr<tcp_server> get_tcp_server(int port);
 
     // Tests can call this method directly after safely casting tcp_factory to mock_tcp_factory
     void show_packets() {
@@ -65,6 +65,7 @@ private:
     public:
         mock_tcp_server(mock_udp_factory *factory_, string hostname_)
             : factory(factory_), hostname(hostname_) {}
+        ~mock_tcp_server();
 
         void setup_server(int port_);
         void stop_server();
@@ -107,12 +108,15 @@ private:
         mock_tcp_client(mock_udp_factory *factory_, string hostname_)
             : factory(factory_), hostname(hostname_), mt(std::chrono::system_clock::now().time_since_epoch().count()),
               id(mt() & 0x7FFFFFFF) {}
-        ~mock_tcp_client() {std::this_thread::sleep_for(std::chrono::milliseconds(500));}
+        ~mock_tcp_client() {
+            close_connection();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
 
         int setup_connection(std::string host, int port);
-        std::string read_from_server(int socket);
-        ssize_t write_to_server(int socket, std::string data);
-        void close_connection(int socket);
+        std::string read_from_server();
+        ssize_t write_to_server(std::string data);
+        void close_connection();
     private:
         // Deletes all information stored about the specified socket
         void delete_connection(int socket);
@@ -141,6 +145,8 @@ private:
         std::unordered_map<uint32_t, std::string> server_hostnames;
         // A map of server IDs to server ports
         std::unordered_map<uint32_t, int> server_ports;
+
+        int fixed_socket;
     };
 
     environment &env;

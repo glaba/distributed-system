@@ -28,16 +28,14 @@ bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_e
             sdfs_intermediate_filename_prefix, processor::type::juice, sdfs_dest_filename, 50, 4});
 
         // Send the data to the node
-        std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-        int fd = client->setup_connection(mj_node, config->get_mj_master_port());
-        if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
+        std::unique_ptr<tcp_client> client = fac->get_tcp_client(mj_node, config->get_mj_master_port());
+        if (client.get() == nullptr || client->write_to_server(msg.serialize()) <= 0) {
             error = "Node at " + mj_node + " is not running MapleJuice, retry";
             return false;
         }
 
         // This response will either indicate that the server is not the master node or that the job is complete
-        string response = client->read_from_server(fd);
-        client->close_connection(fd);
+        string response = client->read_from_server();
 
         // Check if the connection was closed unexpectedly during the read
         if (response.length() == 0) {

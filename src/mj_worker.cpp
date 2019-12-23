@@ -18,7 +18,6 @@ mj_worker_impl::mj_worker_impl(environment &env)
     : lg(env.get<logger_factory>()->get_logger("mj_worker"))
     , config(env.get<configuration>())
     , fac(env.get<tcp_factory>())
-    , server(env.get<tcp_factory>()->get_tcp_server())
     , hb(env.get<heartbeater>())
     , el(env.get<election>())
     , mm(env.get<mj_master>())
@@ -64,7 +63,6 @@ void mj_worker_impl::stop() {
         }
     }
 
-    server->stop_server();
     mm->stop();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -72,7 +70,7 @@ void mj_worker_impl::stop() {
 }
 
 void mj_worker_impl::server_thread_function() {
-    server->setup_server(config->get_mj_internal_port());
+    server = fac->get_tcp_server(config->get_mj_internal_port());
 
     while (true) {
         // Wait for the master node to connect to us and assign us work
@@ -113,11 +111,16 @@ void mj_worker_impl::server_thread_function() {
 
                     // Spin up a thread to process the job if it isn't already running
                     if (!already_running) {
-                        std::thread job_thread([=] {run_job(job_id, data);});
+                        std::thread job_thread([=] {
+                            start_job(job_id, data);
+                            monitor_job(job_id);
+                        });
                         job_thread.detach();
                         lg->info("Starting new job with ID " + std::to_string(job_id));
                     } else {
-                        std::thread job_thread([=] {add_files_to_job(job_id, data.input_files);});
+                        std::thread job_thread([=] {
+                            add_files_to_job(job_id, data.input_files);
+                        });
                         job_thread.detach();
                         lg->info("Accepting extra work due to loss of a node for job with ID " + std::to_string(job_id));
                     }
@@ -134,7 +137,7 @@ void mj_worker_impl::server_thread_function() {
                     if (job_states.find(job_id) != job_states.end()) {
                         job_state *state = job_states[job_id].get();
 
-                        // Notify the condition variable that the job is over, which run_job is waiting on
+                        // Notify the condition variable that the job is over, which monitor_job is waiting on
                         {
                             std::lock_guard<std::mutex> guard_done_mutex(state->done_mutex);
                             state->job_complete = true;
@@ -149,7 +152,7 @@ void mj_worker_impl::server_thread_function() {
     }
 }
 
-void mj_worker_impl::run_job(int job_id, mj_assign_job data) {
+void mj_worker_impl::start_job(int job_id, mj_assign_job data) {
     job_state *state;
 
     { // Create an entry in job_states and store a pointer to it
@@ -184,6 +187,15 @@ void mj_worker_impl::run_job(int job_id, mj_assign_job data) {
 
         state->state_mutex.unlock();
     }
+}
+
+void mj_worker_impl::monitor_job(int job_id) {
+    job_state *state;
+
+    {
+        std::lock_guard<std::recursive_mutex> guard(job_states_mutex);
+        state = job_states[job_id].get();
+    }
 
     // Wait on the condition variable that indicates that one of the workers failed OR that the job completed
     // Repeat until the master tells us the job is done (job_complete is true), at which point we can delete the job
@@ -205,33 +217,9 @@ void mj_worker_impl::run_job(int job_id, mj_assign_job data) {
             job_complete = state->job_complete;
         }
 
+        // If some portion of the job irrecoverably failed and we haven't told the master yet
         if (failed && !sent_job_failed_msg) {
-            mj_message failed_msg(hb->get_id(), mj_job_failed{job_id});
-
-            // Loop in order to send the message to the correct master node in the case of master failure
-            while (true) {
-                string master_hostname = "";
-                el->wait_master_node([this, &master_hostname, job_id] (member master) {
-                    master_hostname = master.hostname;
-                });
-
-                // TODO: prevent clients from flooding master with requests immediately after election
-                std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-                int fd = client->setup_connection(master_hostname, config->get_mj_master_port());
-                if (fd < 0) {
-                    continue;
-                }
-
-                if (client->write_to_server(fd, failed_msg.serialize()) <= 0) {
-                    continue;
-                }
-
-                lg->info("Informed master node that job with ID " + std::to_string(job_id) + " has failed");
-
-                client->close_connection(fd);
-                break;
-            }
-
+            notify_job_failed(job_id);
             sent_job_failed_msg = true;
         }
 
@@ -240,6 +228,7 @@ void mj_worker_impl::run_job(int job_id, mj_assign_job data) {
             state->tp->finish();
 
             // Delete the exe for this job
+            string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
             pclose(popen(("rm " + exe_path).c_str(), "r"));
 
             // Delete the job
@@ -252,6 +241,31 @@ void mj_worker_impl::run_job(int job_id, mj_assign_job data) {
     } while (true);
 }
 
+void mj_worker_impl::notify_job_failed(int job_id) {
+    mj_message failed_msg(hb->get_id(), mj_job_failed{job_id});
+
+    // Loop in order to send the message to the correct master node in the case of master failure
+    while (running.load()) {
+        string master_hostname = "";
+        el->wait_master_node([this, &master_hostname, job_id] (member master) {
+            master_hostname = master.hostname;
+        });
+
+        // TODO: prevent clients from flooding master with requests immediately after election
+        std::unique_ptr<tcp_client> client = fac->get_tcp_client(master_hostname, config->get_mj_master_port());
+        if (client.get() == nullptr) {
+            continue;
+        }
+
+        if (client->write_to_server(failed_msg.serialize()) <= 0) {
+            continue;
+        }
+
+        lg->info("Informed master node that job with ID " + std::to_string(job_id) + " has failed");
+        break;
+    }
+}
+
 void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_files) {
     job_state *state;
 
@@ -260,11 +274,9 @@ void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_f
             return;
         }
         state = job_states[job_id].get();
-
         state->state_mutex.lock();
     }
 
-    string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
     { // Safely access the state object since state_mutex is locked
         // Store some values from the state object that the individual threads will use
         processor::type processor_type = state->processor_type;
@@ -272,44 +284,52 @@ void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_f
         int num_appends_parallel = state->num_appends_parallel;
 
         for (auto &filename : new_files) {
-            string sdfs_file_path = job_states[job_id]->sdfs_src_dir + filename;
-
             lg->debug("[Job " + std::to_string(job_id) + "] Processing file " + filename);
 
-            // Enqueue a thread to download the file, process it, and write the results back to SDFS
+            // Enqueue a thread to download the file, run the exe on it, and write the results back to SDFS
             state->tp->enqueue([=] {
-                // Download filename from the SDFS
-                string local_file_path = config->get_mj_dir() + filename + "_" + std::to_string(job_id) + "_" + std::to_string(mt());
-                utils::backoff([&] {
-                    return sdfsc->get_sharded(local_file_path, sdfs_file_path) == 0;
-                });
-                lg->trace("[Job " + std::to_string(job_id) + "] Downloaded input file " + filename + " from SDFS");
-
-                // Construct the processor object which will process the output of the command and determine where in SDFS it goes
-                std::unique_ptr<processor> proc = processor_factory::get_processor(processor_type, sdfs_output_dir);
-
-                // Actually run the program on the input file, processing it line by line
-                lg->trace("[Job " + std::to_string(job_id) + "] Running command " + exe_path + " " + local_file_path);
-                bool success = run_command(exe_path + " " + local_file_path + " " + filename, [&] (string line) {
-                    return proc->process_line(line);
-                });
-
-                // The provided executable was not valid
-                if (!success) {
-                    // Notify the job monitor that the job is failed
-                    std::lock_guard<std::mutex> guard_done_mutex(state->done_mutex);
-                    state->job_failed = false;
-                    state->cv_done.notify_all();
-                    return;
-                }
-
-                append_output(job_id, proc.get(), filename, num_appends_parallel);
-                pclose(popen(("rm " + local_file_path).c_str(), "r"));
+                process_file(job_id, filename, job_states[job_id]->sdfs_src_dir, sdfs_output_dir, processor_type, num_appends_parallel);
             });
         }
 
         state->state_mutex.unlock();
     }
+}
+
+void mj_worker_impl::process_file(int job_id, string filename, string sdfs_src_dir, string sdfs_output_dir,
+    processor::type processor_type, int num_appends_parallel)
+{
+    string sdfs_file_path = sdfs_src_dir + filename;
+    string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
+
+    // Download the file from the SDFS
+    string local_file_path = config->get_mj_dir() + filename + "_" + std::to_string(job_id) + "_" + std::to_string(mt());
+    utils::backoff([&] {
+        return sdfsc->get_sharded(local_file_path, sdfs_file_path) == 0;
+    });
+    lg->trace("[Job " + std::to_string(job_id) + "] Downloaded input file " + filename + " from SDFS");
+
+    // Construct the processor object which will process the output of the command and determine where in SDFS it goes
+    std::unique_ptr<processor> proc = processor_factory::get_processor(processor_type, sdfs_output_dir);
+
+    // Actually run the program on the input file, processing it line by line
+    lg->trace("[Job " + std::to_string(job_id) + "] Running command " + exe_path + " " + local_file_path);
+    bool success = run_command(exe_path + " " + local_file_path + " " + filename, [&] (string line) {
+        return proc->process_line(line);
+    });
+
+    // The provided executable was not valid
+    if (!success) {
+        // Notify the job monitor that the job is failed
+        std::lock_guard<std::recursive_mutex> guard_job_states_mutex(job_states_mutex);
+        std::lock_guard<std::mutex> guard_done_mutex(job_states[job_id]->done_mutex);
+        job_states[job_id]->job_failed = false;
+        job_states[job_id]->cv_done.notify_all();
+        return;
+    }
+
+    append_output(job_id, proc.get(), filename, num_appends_parallel);
+    pclose(popen(("rm " + local_file_path).c_str(), "r"));
 }
 
 void mj_worker_impl::append_output(int job_id, processor *proc, string input_file, int num_appends_parallel) {
@@ -321,66 +341,59 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
             master_hostname = master.hostname;
         });
 
-        std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-        int fd = client->setup_connection(master_hostname, config->get_mj_master_port());
-        try {
-            if (fd < 0) {
-                throw client.get();
-            }
-
-            std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(num_appends_parallel);
-            std::atomic<bool> master_down = false;
-
-            for (auto &[output_file, vals] : *proc) {
-                if (master_down.load()) {
-                    break;
-                }
-
-                std::optional<std::function<void()>> append_lambda =
-                    append_lines(job_id, client.get(), fd, input_file, output_file, vals, &master_down);
-
-                if (append_lambda) {
-                    tp->enqueue(append_lambda.value());
-                }
-            }
-
-            tp->finish();
-
-            // Restart everything if the master went down
-            if (master_down.load()) {
-                throw client.get();
-            }
-
-            // Inform the master node that the file is complete
-            mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
-
-            if (client->write_to_server(fd, complete_msg.serialize()) <= 0) {
-                throw client.get();
-            }
-            client->close_connection(fd);
-            break;
-        } catch (tcp_client *failed_client) {
-            failed_client->close_connection(fd);
+        std::unique_ptr<tcp_client> client = fac->get_tcp_client(master_hostname, config->get_mj_master_port());
+        if (client.get() == nullptr) {
             continue;
         }
+
+        std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(num_appends_parallel);
+        std::atomic<bool> master_down = false;
+
+        for (auto &[output_file, vals] : *proc) {
+            if (master_down.load()) {
+                break;
+            }
+
+            std::optional<std::function<void()>> append_lambda =
+                append_lines(job_id, client.get(), input_file, output_file, vals, &master_down);
+
+            if (append_lambda) {
+                tp->enqueue(append_lambda.value());
+            }
+        }
+
+        tp->finish();
+
+        // Restart everything if the master went down
+        if (master_down.load()) {
+            continue;
+        }
+
+        // Inform the master node that the file is complete
+        mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
+
+        if (client->write_to_server(complete_msg.serialize()) <= 0) {
+            continue;
+        }
+        break;
     }
 }
 
-std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, int fd, string &input_file,
+std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, string &input_file,
     string &output_file, std::vector<string> &vals, std::atomic<bool> *master_down)
 {
-    // Then, construct the message request permission to append
+    // Then, construct the message requesting permission to append
     mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file});
     string msg_str = msg.serialize();
 
     // Connect to the master and send the message, and wait for either a yes or no response
-    if (client->write_to_server(fd, msg_str) <= 0) {
+    if (client->write_to_server(msg_str) <= 0) {
         lg->trace("[Job " + std::to_string(job_id) + "] Request to append to output file " + output_file + " failed to send to master");
         *master_down = true;
         return std::nullopt;
     }
 
-    string response_str = client->read_from_server(fd);
+    string response_str = client->read_from_server();
 
     mj_message response(response_str.c_str(), response_str.length());
     if (!response.is_well_formed() || response.get_msg_type() != mj_message::mj_msg_type::APPEND_PERM) {

@@ -1,12 +1,13 @@
 #include "threadpool.h"
+#include "threadpool.hpp"
 
 #include <iostream>
 
-std::unique_ptr<threadpool> threadpool_factory::get_threadpool(unsigned num_threads) {
+std::unique_ptr<threadpool> threadpool_factory_impl::get_threadpool(unsigned num_threads) {
     return std::unique_ptr<threadpool>(new threadpool_impl(env, num_threads));
 }
 
-threadpool_factory::threadpool_impl::threadpool_impl(environment &env, unsigned num_threads_)
+threadpool_impl::threadpool_impl(environment &env, unsigned num_threads_)
     : num_threads(num_threads_)
     , lg(env.get<logger_factory>()->get_logger("threadpool"))
 {
@@ -22,13 +23,13 @@ threadpool_factory::threadpool_impl::threadpool_impl(environment &env, unsigned 
     }
 }
 
-threadpool_factory::threadpool_impl::~threadpool_impl() {
+threadpool_impl::~threadpool_impl() {
     if (running.load()) {
         finish();
     }
 }
 
-void threadpool_factory::threadpool_impl::finish() {
+void threadpool_impl::finish() {
     {
         std::unique_lock<std::mutex> lock(cv_mutex);
         cv_finished.wait(lock, [this] {
@@ -42,7 +43,7 @@ void threadpool_factory::threadpool_impl::finish() {
     }
 }
 
-void threadpool_factory::threadpool_impl::enqueue(std::function<void()> task) {
+void threadpool_impl::enqueue(std::function<void()> task) {
     {
         std::lock_guard<std::mutex> guard(cv_mutex);
         tasks.push(task);
@@ -50,7 +51,7 @@ void threadpool_factory::threadpool_impl::enqueue(std::function<void()> task) {
     cv_task.notify_one();
 }
 
-void threadpool_factory::threadpool_impl::thread_fn(unsigned thread_index) {
+void threadpool_impl::thread_fn(unsigned thread_index) {
     while (running.load()) {
         num_started++;
 
@@ -79,4 +80,4 @@ void threadpool_factory::threadpool_impl::thread_fn(unsigned thread_index) {
     }
 }
 
-register_auto<threadpool_factory, threadpool_factory> register_threadpool_factory;
+register_auto<threadpool_factory, threadpool_factory_impl> register_threadpool_factory;

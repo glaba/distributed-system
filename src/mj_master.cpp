@@ -20,7 +20,7 @@ mj_master_impl::mj_master_impl(environment &env)
     , el(env.get<election>())
     , fac(env.get<tcp_factory>())
     , sdfsm(env.get<sdfs_master>())
-    , server(env.get<tcp_factory>()->get_tcp_server()), running(false) {}
+    , tp_fac(env.get<threadpool_factory>()), running(false) {}
 
 void mj_master_impl::start() {
     if (running.load()) {
@@ -49,13 +49,10 @@ void mj_master_impl::stop() {
 
     lg->info("Stopping MapleJuice master");
     running = false;
-    server->stop_server();
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 
 void mj_master_impl::run_master() {
-    server->setup_server(config->get_mj_master_port());
+    server = fac->get_tcp_server(config->get_mj_master_port());
 
     while (true) {
         if (!running.load()) {
@@ -261,14 +258,12 @@ void mj_master_impl::stop_job(int job_id) {
         stop_threads.push_back(std::thread([=] {
             mj_message done_msg(hb->get_id(), mj_job_end_worker{job_id});
 
-            std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-            int fd = client->setup_connection(worker, config->get_mj_internal_port());
-            if (fd < 0) {
+            std::unique_ptr<tcp_client> client = fac->get_tcp_client(worker, config->get_mj_internal_port());
+            if (client.get() == nullptr) {
                 return;
             }
 
-            client->write_to_server(fd, done_msg.serialize());
-            client->close_connection(fd);
+            client->write_to_server(done_msg.serialize());
         }));
     }
     for (std::thread &t : stop_threads) {
@@ -340,9 +335,11 @@ int mj_master_impl::assign_job(mj_start_job info) {
     }
 
     // Actually send the message to assign the job to each of the nodes
+    std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(unprocessed_files_copy.size());
     for (auto &pair : unprocessed_files_copy) {
-        assign_job_to_node(job_id, pair.first, pair.second);
+        tp->enqueue([=] {assign_job_to_node(job_id, pair.first, pair.second);});
     }
+    tp->finish();
 
     return job_id;
 }
@@ -378,6 +375,9 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
     int num_appends_parallel;
     {
         std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+        if (job_states.find(job_id) == job_states.end()) {
+            return;
+        }
         exe = job_states[job_id].exe;
         sdfs_src_dir = job_states[job_id].sdfs_src_dir;
         sdfs_output_dir = job_states[job_id].sdfs_output_dir;
@@ -390,15 +390,12 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
     mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec,
         processor_type, sdfs_output_dir, num_files_parallel, num_appends_parallel});
 
-    std::unique_ptr<tcp_client> client = fac->get_tcp_client();
-    int fd = client->setup_connection(hostname, config->get_mj_internal_port());
-    if (fd < 0 || client->write_to_server(fd, msg.serialize()) <= 0) {
+    std::unique_ptr<tcp_client> client = fac->get_tcp_client(hostname, config->get_mj_internal_port());
+    if (client.get() == nullptr || client->write_to_server(msg.serialize()) <= 0) {
         // The failure will be handled as normal by assigning the files for this node to another node
         lg->trace("Failed to send ASSIGN_JOB message for job with id " + std::to_string(job_id) + " to node at " + hostname);
-        client->close_connection(fd);
     } else {
         lg->debug("Sent ASSIGN_JOB message for job with id " + std::to_string(job_id) + " to node at " + hostname);
-        client->close_connection(fd);
 
         // Mark the job as assigned to this node
         std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);

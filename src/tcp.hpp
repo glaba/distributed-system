@@ -53,6 +53,7 @@ public:
 class tcp_server_impl : public tcp_server, public tcp_utils {
 public:
     tcp_server_impl(std::unique_ptr<logger> lg_): lg(std::move(lg_)) {}
+    ~tcp_server_impl();
     void setup_server(int port);
     void stop_server();
     int accept_connection();
@@ -68,20 +69,22 @@ private:
 class tcp_client_impl : public tcp_client, public tcp_utils {
 public:
     tcp_client_impl(std::unique_ptr<logger> lg_) : lg(std::move(lg_)) {}
+    ~tcp_client_impl();
     int setup_connection(std::string host, int port);
-    void close_connection(int socket);
-    std::string read_from_server(int socket);
-    ssize_t write_to_server(int socket, std::string data);
+    void close_connection();
+    std::string read_from_server();
+    ssize_t write_to_server(std::string data);
 private:
     std::unique_ptr<logger> lg;
+    int fixed_socket;
 };
 
 class tcp_factory_impl : public tcp_factory, public service_impl<tcp_factory_impl> {
 public:
     tcp_factory_impl(environment &env);
 
-    std::unique_ptr<tcp_client> get_tcp_client();
-    std::unique_ptr<tcp_server> get_tcp_server();
+    std::unique_ptr<tcp_client> get_tcp_client(std::string host, int port);
+    std::unique_ptr<tcp_server> get_tcp_server(int port);
 
 private:
     logger_factory *lg_fac;
