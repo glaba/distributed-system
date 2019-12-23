@@ -460,4 +460,4 @@ int sdfs_client_impl::get_internal_socket(std::string hostname) {
     return socket;
 }
 
-register_auto<sdfs_client, sdfs_client_impl> register_sdfs_client;
+register_service<sdfs_client, sdfs_client_impl> register_sdfs_client;

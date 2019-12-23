@@ -9,7 +9,7 @@
 #include "election.h"
 #include "tcp.h"
 #include "sdfs_master.h"
-#include "outputter.h"
+#include "processor.h"
 
 #include <memory>
 #include <atomic>
@@ -31,6 +31,7 @@ private:
     int assign_job(mj_start_job info);
     void assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files);
     member get_least_busy_node();
+    void stop_job(int job_id);
     bool job_complete(int job_id);
     void node_dropped(std::string hostname);
 
@@ -50,7 +51,7 @@ private:
         std::string exe;
         std::string sdfs_src_dir;
         std::string sdfs_output_dir;
-        outputter::type outputter_type;
+        processor::type processor_type;
         int num_files_parallel;
         int num_appends_parallel;
 
@@ -59,6 +60,7 @@ private:
         std::unordered_map<std::string, std::unordered_set<std::string>> processed_files;
 
         // A set of (input file, output file) pairs that have been committed to the SDFS
+        // TODO: this is actually not sufficient, since there might be multiple outputs from a given input file
         std::unordered_set<std::pair<std::string, std::string>, string_pair_hash> committed_outputs;
     };
 

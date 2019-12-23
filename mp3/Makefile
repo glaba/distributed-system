@@ -1,5 +1,5 @@
 INC_DIR        := inc
-CXX            := g++
+CXX            := g++-9
 CXXFLAGS       := -I$(INC_DIR) -std=c++17 -Wall -DDEBUG -O3 -g
 LDFLAGS        := -pthread
 

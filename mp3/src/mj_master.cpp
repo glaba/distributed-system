@@ -79,7 +79,7 @@ void mj_master_impl::run_master() {
 
             // Make sure the message is coming from within the group
             if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
-                lg->info("Received message from member outside of group");
+                lg->trace("Received message from member outside of group");
                 server->close_connection(fd);
                 return;
             }
@@ -107,6 +107,14 @@ void mj_master_impl::run_master() {
                 return;
             }
 
+            if (msg.get_msg_type() == mj_message::mj_msg_type::JOB_FAILED) {
+                mj_job_failed info = msg.get_msg_data<mj_job_failed>();
+
+                lg->info("Received notice from worker node that job with ID " + std::to_string(info.job_id) + " failed, stopping");
+                stop_job(info.job_id);
+                return;
+            }
+
             while (msg.get_msg_type() == mj_message::mj_msg_type::REQUEST_APPEND_PERM) {
                 mj_request_append_perm info = msg.get_msg_data<mj_request_append_perm>();
 
@@ -119,7 +127,7 @@ void mj_master_impl::run_master() {
                     allow_append = (committed_outputs.find(std::make_pair(info.input_file, info.output_file)) == committed_outputs.end());
                 }
 
-                lg->debug("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
+                lg->trace("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
                     " requested permission to append values to output file " + info.output_file +
                     " from input file " + info.input_file +
                     (allow_append ? ", allowing append" : ", disallowing append"));
@@ -137,13 +145,13 @@ void mj_master_impl::run_master() {
                 msg_str = server->read_from_client(fd);
                 msg = mj_message(msg_str.c_str(), msg_str.length());
                 if (!msg.is_well_formed()) {
-                    lg->debug("Received ill-formed message from client after it requested permission to append");
+                    lg->trace("Received ill-formed message from client after it requested permission to append");
                     server->close_connection(fd);
                     return;
                 }
                 // Check if the client has left the group
                 if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
-                    lg->info("Received message from member outside of group");
+                    lg->trace("Received message from member outside of group");
                     server->close_connection(fd);
                     return;
                 }
@@ -159,9 +167,13 @@ void mj_master_impl::run_master() {
                     std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
                     std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
 
+                    if (job_states.find(info.job_id) == job_states.end()) {
+                        return;
+                    }
+
                     std::unordered_set<std::string> &unprocessed_files = job_states[info.job_id].unprocessed_files[info.hostname];
                     std::unordered_set<std::string> &processed_files = job_states[info.job_id].processed_files[info.hostname];
-                    lg->info("Node at " + info.hostname + " completed processing file " + info.file +
+                    lg->debug("Node at " + info.hostname + " completed processing file " + info.file +
                         " for job with ID " + std::to_string(info.job_id));
                     assert(unprocessed_files.find(info.file) != unprocessed_files.end() ||
                            processed_files.find(info.file) != processed_files.end() ||
@@ -197,12 +209,22 @@ void mj_master_impl::handle_job(int fd, mj_start_job info)
     mj_message msg(hb->get_id(), mj_job_end{1});
     server->write_to_client(fd, msg.serialize());
     server->close_connection(fd);
+
+    // Clean up all data and tell the worker nodes that the job is complete
+    stop_job(job_id);
 }
 
 bool mj_master_impl::job_complete(int job_id) {
     std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
 
+    // If the job doesn't exist, that means it is complete
+    if (job_states.find(job_id) == job_states.end()) {
+        return true;
+    }
+
+    // Otherwise, check if there are no more files left in the job
     job_state &state = job_states[job_id];
+
     for (auto pair : state.unprocessed_files) {
         if (pair.second.size() > 0) {
             return false;
@@ -211,12 +233,55 @@ bool mj_master_impl::job_complete(int job_id) {
     return true;
 }
 
+void mj_master_impl::stop_job(int job_id) {
+    // Delete the job information, storing the list of workers
+    std::vector<string> workers;
+    {
+        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
+        std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+        if (job_states.find(job_id) == job_states.end()) {
+            return;
+        }
+
+        for (auto &[worker, _] : job_states[job_id].unprocessed_files) {
+            workers.push_back(worker);
+        }
+
+        // Delete the job from the node_states, keeping the number of files assigned to the node correct
+        for (auto &[worker, state] : node_states) {
+            state.jobs.erase(job_id);
+            state.num_files -= job_states[job_id].unprocessed_files[worker].size();
+        }
+        job_states.erase(job_id);
+    }
+
+    // Tell all the nodes in parallel that the job is over
+    std::vector<std::thread> stop_threads;
+    for (string worker : workers) {
+        stop_threads.push_back(std::thread([=] {
+            mj_message done_msg(hb->get_id(), mj_job_end_worker{job_id});
+
+            std::unique_ptr<tcp_client> client = fac->get_tcp_client();
+            int fd = client->setup_connection(worker, config->get_mj_internal_port());
+            if (fd < 0) {
+                return;
+            }
+
+            client->write_to_server(fd, done_msg.serialize());
+            client->close_connection(fd);
+        }));
+    }
+    for (std::thread &t : stop_threads) {
+        t.join();
+    }
+}
+
 int mj_master_impl::assign_job(mj_start_job info) {
     int job_id = mt() & 0x7FFFFFFF;
 
     lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", exe=" + info.exe +
         ", num_workers=" + std::to_string(info.num_workers) + ", partitioner=" + partitioner::print_type(info.partitioner_type) +
-        ", sdfs_src_dir=" + info.sdfs_src_dir + ", outputter=" + outputter::print_type(info.outputter_type) +
+        ", sdfs_src_dir=" + info.sdfs_src_dir + ", processor=" + processor::print_type(info.processor_type) +
         ", sdfs_output_dir=" + info.sdfs_output_dir + ", num_files_parallel=" + std::to_string(info.num_files_parallel) +
         ", num_appends_parallel=" + std::to_string(info.num_appends_parallel) + "]");
 
@@ -243,7 +308,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
         job_states[job_id].exe = info.exe;
         job_states[job_id].sdfs_src_dir = info.sdfs_src_dir;
         job_states[job_id].sdfs_output_dir = info.sdfs_output_dir;
-        job_states[job_id].outputter_type = info.outputter_type;
+        job_states[job_id].processor_type = info.processor_type;
         job_states[job_id].num_files_parallel = info.num_files_parallel;
         job_states[job_id].num_appends_parallel = info.num_appends_parallel;
 
@@ -308,7 +373,7 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
     std::string exe;
     std::string sdfs_src_dir;
     std::string sdfs_output_dir;
-    outputter::type outputter_type;
+    processor::type processor_type;
     int num_files_parallel;
     int num_appends_parallel;
     {
@@ -316,14 +381,14 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
         exe = job_states[job_id].exe;
         sdfs_src_dir = job_states[job_id].sdfs_src_dir;
         sdfs_output_dir = job_states[job_id].sdfs_output_dir;
-        outputter_type = job_states[job_id].outputter_type;
+        processor_type = job_states[job_id].processor_type;
         num_files_parallel = job_states[job_id].num_files_parallel;
         num_appends_parallel = job_states[job_id].num_appends_parallel;
     }
 
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
     mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec,
-        outputter_type, sdfs_output_dir, num_files_parallel, num_appends_parallel});
+        processor_type, sdfs_output_dir, num_files_parallel, num_appends_parallel});
 
     std::unique_ptr<tcp_client> client = fac->get_tcp_client();
     int fd = client->setup_connection(hostname, config->get_mj_internal_port());

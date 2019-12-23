@@ -7,6 +7,8 @@
 #include "heartbeater.h"
 #include "sdfs_client.h"
 
+#include "threadpool.h"
+
 #include <string>
 #include <chrono>
 #include <thread>
@@ -118,7 +120,7 @@ int main(int argc, char **argv) {
             std::cin >> sdfs_filename;
 
             if (command == "put") {
-                sdfsc->put_operation(local_filename, sdfs_filename + ".0");
+                sdfsc->put_operation(local_filename, sdfs_filename);
             } else if (command == "get") {
                 sdfsc->get_sharded(local_filename, sdfs_filename);
             } else if (command == "append") {

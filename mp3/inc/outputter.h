@@ -4,20 +4,63 @@
 #include <vector>
 #include <unordered_map>
 #include <cassert>
+#include <optional>
 
+template <typename T>
 class outputter {
 public:
-    enum type {
-        maple, juice
+    outputter(std::function<std::optional<T>()> sink_) : sink(sink_) {}
+    virtual ~outputter() {}
+
+    class output_object {
+    public:
+        // The function sink will be called whenever output_object is assigned a value of type T
+        // This is guaranteed to be called at most once, throwing a runtime exception if it is called more
+        output_object(std::function<void(T&)> sink_) : called(false), complete(false), sink(sink_) {}
+        output_object &operator=(T &obj) {
+            assert(!called && "Outputter iterator should only be assigned to once, as it is not idempotent");
+            complete = sink(obj);
+            called = true;
+        }
+        bool is_complete() {
+            return complete;
+        }
+    private:
+        bool called, complete;
+        std::function<void(T&)> sink;
     };
 
-    static std::string print_type(type t) {
-        switch (t) {
-            case maple: return "maple_outputter";
-            case juice: return "juice_outputter";
-            default: assert(false);
+    class iterator {
+    public:
+        iterator(std::function<std::optional<T>()> sink_) : sink(sink_), end(false) {}
+        iterator() : end(true) {}
+        bool operator==(const iterator &a) {
+            return a.end == end;
         }
-        return "";
+        bool operator!=(const iterator &a) {
+            return a.end != end;
+        }
+        output_object &operator*() {
+            curval = output_object(sink);
+            return curval;
+        }
+        iterator &operator++() {
+            end = curval.is_complete();
+            return *this;
+        }
+
+    private:
+        output_object curval;
+        std::function<std::optional<T>()> sink;
+        bool end;
+    };
+
+    iterator begin() {
+        return iterator(sink);
+    }
+
+    iterator end() {
+        return iterator();
     }
 
     // Processes a single line of the output of the executable
@@ -28,40 +71,7 @@ public:
     virtual std::pair<std::string, std::vector<std::string>> emit() = 0;
     // Whether or not there is more data to emit
     virtual bool more() = 0;
-};
-
-class outputter_factory {
-public:
-    static std::unique_ptr<outputter> get_outputter(outputter::type t, std::string output_dir);
 
 private:
-    class maple_outputter : public outputter {
-    public:
-        maple_outputter(std::string output_dir_)
-            : output_dir(output_dir_) {}
-
-        bool process_line(std::string line);
-        void reset();
-        std::pair<std::string, std::vector<std::string>> emit();
-        bool more();
-
-    private:
-        std::unordered_map<std::string, std::vector<std::string>> kv_pairs;
-        std::string output_dir;
-    };
-
-    class juice_outputter : public outputter {
-    public:
-        juice_outputter(std::string output_dir_)
-            : output_file(output_dir_) {}
-
-        bool process_line(std::string line);
-        void reset();
-        std::pair<std::string, std::vector<std::string>> emit();
-        bool more();
-
-    private:
-        std::vector<std::string> values;
-        std::string output_file;
-    };
+    std::function<std::optional<T>()> sink;
 };

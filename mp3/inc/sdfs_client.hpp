@@ -32,10 +32,12 @@ public:
         mn_hostname = hostname;
     };
     int put_operation(std::string local_filename, std::string sdfs_filename);
+    int put_operation(inputter<std::string> in, std::string sdfs_filename) {return -1;}
     int get_operation(std::string local_filename, std::string sdfs_filename);
     int del_operation(std::string sdfs_filename);
     int ls_operation(std::string sdfs_filename);
     int append_operation(std::string local_filename, std::string sdfs_filename);
+    int append_operation(inputter<std::string> in, std::string sdfs_filename) {return -1;}
     int get_index_operation(std::string sdfs_filename);
     std::string get_metadata_operation(std::string sdfs_filename);
 

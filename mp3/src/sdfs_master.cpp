@@ -412,4 +412,4 @@ std::string sdfs_master_impl::get_hostname_from_map(std::string filename, int id
     return file_to_hostnames[filename][idx];
 }
 
-register_auto<sdfs_master, sdfs_master_impl> register_sdfs_master;
+register_service<sdfs_master, sdfs_master_impl> register_sdfs_master;

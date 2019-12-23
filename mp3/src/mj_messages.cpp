@@ -15,7 +15,7 @@ mj_message::mj_message(const char *buf, unsigned length) {
                 d.num_workers = des.get_int();
                 d.partitioner_type = static_cast<partitioner::type>(des.get_int());
                 d.sdfs_src_dir = des.get_string();
-                d.outputter_type = static_cast<outputter::type>(des.get_int());
+                d.processor_type = static_cast<processor::type>(des.get_int());
                 d.sdfs_output_dir = des.get_string();
                 d.num_files_parallel = des.get_int();
                 d.num_appends_parallel = des.get_int();
@@ -43,7 +43,7 @@ mj_message::mj_message(const char *buf, unsigned length) {
                 for (int i = 0; i < num_input_files; i++) {
                     d.input_files.push_back(des.get_string());
                 }
-                d.outputter_type = static_cast<outputter::type>(des.get_int());
+                d.processor_type = static_cast<processor::type>(des.get_int());
                 d.sdfs_output_dir = des.get_string();
                 d.num_files_parallel = des.get_int();
                 d.num_appends_parallel = des.get_int();
@@ -73,6 +73,18 @@ mj_message::mj_message(const char *buf, unsigned length) {
                 data = d;
                 break;
             }
+            case JOB_FAILED: {
+                mj_job_failed d;
+                d.job_id = des.get_int();
+                data = d;
+                break;
+            }
+            case JOB_END_WORKER: {
+                mj_job_end_worker d;
+                d.job_id = des.get_int();
+                data = d;
+                break;
+            }
             default: throw "Invalid message type";
         }
 
@@ -96,7 +108,7 @@ std::string mj_message::serialize() {
             ser.add_field(d.num_workers);
             ser.add_field(d.partitioner_type);
             ser.add_field(d.sdfs_src_dir);
-            ser.add_field(d.outputter_type);
+            ser.add_field(d.processor_type);
             ser.add_field(d.sdfs_output_dir);
             ser.add_field(d.num_files_parallel);
             ser.add_field(d.num_appends_parallel);
@@ -121,7 +133,7 @@ std::string mj_message::serialize() {
             for (unsigned i = 0; i < d.input_files.size(); i++) {
                 ser.add_field(d.input_files[i]);
             }
-            ser.add_field(d.outputter_type);
+            ser.add_field(d.processor_type);
             ser.add_field(d.sdfs_output_dir);
             ser.add_field(d.num_files_parallel);
             ser.add_field(d.num_appends_parallel);
@@ -147,6 +159,16 @@ std::string mj_message::serialize() {
             ser.add_field(d.file);
             break;
         }
+        case JOB_FAILED: {
+            mj_job_failed d = std::get<mj_job_failed>(data);
+            ser.add_field(d.job_id);
+            break;
+        }
+        case JOB_END_WORKER: {
+            mj_job_end_worker d = std::get<mj_job_end_worker>(data);
+            ser.add_field(d.job_id);
+            break;
+        }
         default: assert(false && "Invalid message type provided, meaning memory corruption has occurred");
     }
 
@@ -161,5 +183,7 @@ void mj_message::set_msg_type() {
     else if (std::holds_alternative<mj_request_append_perm>(data)) msg_type = REQUEST_APPEND_PERM;
     else if (std::holds_alternative<mj_append_perm>(data))         msg_type = APPEND_PERM;
     else if (std::holds_alternative<mj_file_done>(data))           msg_type = FILE_DONE;
+    else if (std::holds_alternative<mj_job_failed>(data))          msg_type = JOB_FAILED;
+    else if (std::holds_alternative<mj_job_end_worker>(data))      msg_type = JOB_END_WORKER;
     else assert(false && "Invalid message data provided");
 }

@@ -13,8 +13,10 @@
 #include "election.h"
 #include "mj_master.h"
 #include "heartbeater.h"
-#include "outputter.h"
+#include "processor.h"
 #include "sdfs_master.h"
+#include "threadpool.h"
+#include "mj_messages.h"
 
 #include <memory>
 #include <atomic>
@@ -25,6 +27,7 @@
 #include <stdlib.h>
 #include <random>
 #include <optional>
+#include <condition_variable>
 
 class mj_worker_impl : public mj_worker, public service_impl<mj_worker_impl> {
 public:
@@ -36,29 +39,38 @@ public:
 private:
     void server_thread_function();
     bool run_command(std::string command, std::function<bool(std::string)> callback);
-    void run_job(int job_id);
-    void append_output(int job_id, outputter *outptr, std::string input_file, int num_appends_parallel);
+    void run_job(int job_id, mj_assign_job data);
+    void add_files_to_job(int job_id, std::vector<std::string> files);
+    void append_output(int job_id, processor *proc, std::string input_file, int num_appends_parallel);
     // Appends the lines from a single input file to the specified output file after getting permission from the master node
-    // Returns either a thread that is working or nothing if the master denied permission
-    std::optional<std::thread> append_lines(int job_id, tcp_client *client, int fd, std::string &input_file,
+    // Returns either a lambda that will perform the appends or nothing if the master denied permission
+    std::optional<std::function<void()>> append_lines(int job_id, tcp_client *client, int fd, std::string &input_file,
         std::string &output_file, std::vector<std::string> &vals, std::atomic<bool> *master_down);
 
     // Retries the callback with exponential backoff
-    bool retry(std::function<bool()> callback);
+    void backoff(std::function<bool()> callback);
 
     struct job_state {
+        std::recursive_mutex state_mutex;
+
         std::string exe;
         std::string sdfs_src_dir;
         std::string sdfs_output_dir;
-        outputter::type outputter_type;
-        std::vector<std::string> files;
+        processor::type processor_type;
         int num_files_parallel;
         int num_appends_parallel;
+        std::unique_ptr<threadpool> tp;
+
+        // Condition variable and indicator for when the job completes (successfully or unsuccessfully)
+        std::condition_variable cv_done;
+        std::mutex done_mutex;
+        bool job_complete = false;
+        bool job_failed = false;
     };
 
     // Map from job ID to the state of the job
-    std::mutex job_states_mutex;
-    std::unordered_map<int, job_state> job_states;
+    std::recursive_mutex job_states_mutex;
+    std::unordered_map<int, std::unique_ptr<job_state>> job_states;
 
     // Services that this service depends on
     std::unique_ptr<logger> lg;
@@ -71,6 +83,7 @@ private:
     sdfs_client *sdfsc;
     sdfs_server *sdfss;
     sdfs_master *sdfsm;
+    threadpool_factory *tp_fac;
 
     std::atomic<bool> running;
     std::mt19937 mt;

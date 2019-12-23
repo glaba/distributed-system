@@ -1,7 +1,7 @@
 #pragma once
 
 #include "partitioner.h"
-#include "outputter.h"
+#include "processor.h"
 
 #include <string>
 #include <variant>
@@ -13,7 +13,7 @@ struct mj_start_job {
     int num_workers;
     partitioner::type partitioner_type;
     std::string sdfs_src_dir;
-    outputter::type outputter_type;
+    processor::type processor_type;
     std::string sdfs_output_dir;
     int num_files_parallel;
     int num_appends_parallel;
@@ -32,7 +32,7 @@ struct mj_assign_job {
     std::string exe;
     std::string sdfs_src_dir;
     std::vector<std::string> input_files;
-    outputter::type outputter_type;
+    processor::type processor_type;
     std::string sdfs_output_dir;
     int num_files_parallel;
     int num_appends_parallel;
@@ -55,11 +55,19 @@ struct mj_file_done {
     std::string file;
 };
 
+struct mj_job_failed {
+    int job_id;
+};
+
+struct mj_job_end_worker {
+    int job_id;
+};
+
 class mj_message {
 public:
     using msg_data = std::variant<
         mj_start_job, mj_not_master, mj_job_end,
-        mj_assign_job, mj_request_append_perm, mj_append_perm, mj_file_done>;
+        mj_assign_job, mj_request_append_perm, mj_append_perm, mj_file_done, mj_job_failed, mj_job_end_worker>;
 
     enum mj_msg_type {
         START_JOB,
@@ -69,6 +77,8 @@ public:
         REQUEST_APPEND_PERM,
         APPEND_PERM,
         FILE_DONE,
+        JOB_FAILED,
+        JOB_END_WORKER,
         INVALID
     };
 

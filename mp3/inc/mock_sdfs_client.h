@@ -3,10 +3,12 @@
 #include "sdfs_client.h"
 #include "environment.h"
 #include "configuration.h"
+#include "inputter.h"
 
 #include <atomic>
 #include <string>
 #include <functional>
+#include <random>
 
 class mock_sdfs_client : public sdfs_client, public service_impl<mock_sdfs_client> {
 public:
@@ -22,12 +24,14 @@ public:
     }
     // handles a put request
     int put_operation(std::string local_filename, std::string sdfs_filename);
+    int put_operation(inputter<std::string> in, std::string sdfs_filename);
     // handles a get request
     int get_operation(std::string local_filename, std::string sdfs_filename);
     // handles a del request
     int del_operation(std::string sdfs_filename);
     // handles an append request
     int append_operation(std::string local_filename, std::string sdfs_filename);
+    int append_operation(inputter<std::string> in, std::string sdfs_filename);
     // handles a ls request
     int ls_operation(std::string sdfs_filename);
     // handles a store request
@@ -47,24 +51,31 @@ public:
     }
 
 private:
+    int put_helper(std::string sdfs_filename, std::function<bool()> callback);
+    int append_helper(std::string sdfs_filename, std::function<bool(unsigned)> callback);
+
     class mock_sdfs_state : public service_state {
     public:
         std::string sdfs_dir;
 
-        // A map from SDFS filename to the number of pieces there are for that file
+        // A map from SDFS filename to the number of pieces there are for that file, and a mutex for each
+        std::unordered_map<std::string, std::unique_ptr<std::mutex>> file_mutexes;
+        // If num_pieces is 0, that means that any operation done on the file must result in failure
+        // This prevents deletion of a file from racing with puts and appends
         std::unordered_map<std::string, unsigned> num_pieces;
     };
 
-    void access_pieces(std::function<void(std::unordered_map<std::string, unsigned>&)> callback);
+    void access_pieces(std::function<void(std::unordered_map<std::string, unsigned>&,
+        std::unordered_map<std::string, std::unique_ptr<std::mutex>>&)> callback);
 
     bool isolated = false;
     std::atomic<bool> running;
 
     std::string mn_hostname;
 
-    // Mutex for accessing files (very broad and very inefficient but it's just a mock)
-    std::mutex file_mutex;
-
     // Services this depends on
     configuration *config;
+
+    // RNG to generate temporary filenames
+    std::mt19937 mt;
 };

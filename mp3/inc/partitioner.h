@@ -9,6 +9,8 @@
 
 class partitioner {
 public:
+    virtual ~partitioner() {}
+
     enum type {
         round_robin, hash, range
     };

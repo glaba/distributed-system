@@ -182,4 +182,4 @@ int sdfs_server_impl::del_file(std::string sdfs_filename) {
     return remove(full_path.c_str());
 }
 
-register_auto<sdfs_server, sdfs_server_impl> register_sdfs_server;
+register_service<sdfs_server, sdfs_server_impl> register_sdfs_server;

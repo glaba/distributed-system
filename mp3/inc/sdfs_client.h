@@ -1,5 +1,7 @@
 #pragma once
 
+#include "inputter.h"
+
 #include <string>
 
 class sdfs_client {
@@ -12,6 +14,7 @@ public:
     virtual void set_master_node(std::string hostname) = 0;
     // handles a put request over the specified socket
     virtual int put_operation(std::string local_filename, std::string sdfs_filename) = 0;
+    virtual int put_operation(inputter<std::string> in, std::string sdfs_filename) = 0;
     // handles a get request over the specified socket
     virtual int get_operation(std::string local_filename, std::string sdfs_filename) = 0;
     // handles a del request over the specified socket
@@ -20,6 +23,7 @@ public:
     virtual int ls_operation(std::string sdfs_filename) = 0;
     // handles a append request over the specified socket
     virtual int append_operation(std::string local_filename, std::string sdfs_filename) = 0;
+    virtual int append_operation(inputter<std::string> in, std::string sdfs_filename) = 0;
     // handles a store request
     virtual int store_operation() = 0;
     // handles a get_index request over the specified socket
