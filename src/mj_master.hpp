@@ -26,7 +26,7 @@ public:
     void stop();
 
 private:
-    // Server thread which listens for incoming TCP messages
+    // Server thread which listens for incoming TCP messages as a master node
     void run_master();
     // Initiates a new job, waits for it to complete, and informs the client that started the job
     void handle_job(int fd, mj_start_job info);
@@ -71,6 +71,8 @@ private:
         // A set of (input file, output file) pairs that have been committed to the SDFS
         // TODO: this is actually not sufficient, since there might be multiple outputs from a given input file
         std::unordered_set<std::pair<std::string, std::string>, string_pair_hash> committed_outputs;
+
+        bool failed;
     };
 
     // RNG to generate job IDs

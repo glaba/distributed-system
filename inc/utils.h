@@ -3,5 +3,5 @@
 #include <functional>
 
 namespace utils {
-    void backoff(std::function<bool()> callback);
+    bool backoff(std::function<bool()> callback, std::function<bool()> give_up = [] {return false;});
 }

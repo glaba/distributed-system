@@ -23,7 +23,9 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
     do {
         lg->info("Starting job");
         sdfsc->set_master_node(mj_node);
-        sdfsc->put_operation(local_exe, maple_exe);
+        if (sdfsc->put(local_exe, maple_exe) != 0) {
+            return false;
+        }
 
         mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
             sdfs_src_dir, processor::type::maple, sdfs_intermediate_filename_prefix, 10, 50});

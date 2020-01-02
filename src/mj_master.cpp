@@ -3,6 +3,8 @@
 #include "environment.h"
 #include "mj_messages.h"
 #include "member_list.h"
+#include "sdfs.h"
+#include "serialization.h"
 
 #include <thread>
 #include <chrono>
@@ -29,14 +31,43 @@ void mj_master_impl::start() {
 
     lg->info("Starting MapleJuice master");
     el->start();
+    sdfsm->start();
     running = true;
 
-    // Add callbacks for nodes leaving or failing
-    std::function<void(member)> callback = [this] (member m) {
-        node_dropped(m.hostname);
-    };
-    hb->on_leave(callback);
-    hb->on_fail(callback);
+    std::thread election_thread([this] {
+        bool is_master;
+        do {
+            el->wait_master_node([&] (member m) {
+                is_master = (m.id == hb->get_id());
+            });
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        } while (!is_master && running.load());
+        if (!running.load()) {
+            return;
+        }
+
+        // Add callbacks for nodes leaving or failing
+        std::function<void(member)> callback = [this] (member m) {
+            node_dropped(m.hostname);
+        };
+        hb->on_leave(callback);
+        hb->on_fail(callback);
+
+        // Add callbacks for files being appended to in SDFS so that work can be marked as committed
+        sdfsm->on_append({"maplejuice"}, [this] (const string &sdfs_path, unsigned index, const sdfs_metadata &metadata) {
+            assert(metadata.find("maplejuice") != metadata.end() && "SDFS master callback logic is incorrect");
+            const string &mj_metadata = metadata.find("maplejuice")->second;
+
+            deserializer des(mj_metadata.c_str(), mj_metadata.length());
+            string input_file = des.get_string();
+            int job_id = des.get_int();
+
+            std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+            job_states[job_id].committed_outputs.insert({input_file, sdfs_path});
+            lg->trace("Marking " + input_file + ", " + sdfs_path + " as committed");
+        });
+    });
+    election_thread.detach();
 
     std::thread master_thread([this] {run_master();});
     master_thread.detach();
@@ -74,22 +105,22 @@ void mj_master_impl::run_master() {
                 return;
             }
 
-            // Make sure the message is coming from within the group
-            if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
+            // Make sure the message is coming from within the group (unless it's a START_JOB message)
+            if (hb->get_member_by_id(msg.get_id()).id != msg.get_id() && msg.get_msg_type() != mj_message::mj_msg_type::START_JOB) {
                 lg->trace("Received message from member outside of group");
                 server->close_connection(fd);
                 return;
             }
 
+            bool is_master;
+            string master_hostname;
+            el->wait_master_node([&] (member m) {
+                is_master = (m.id == hb->get_id());
+                master_hostname = m.hostname;
+            });
+
             if (msg.get_msg_type() == mj_message::mj_msg_type::START_JOB) {
                 mj_start_job info = msg.get_msg_data<mj_start_job>();
-
-                bool is_master;
-                string master_hostname;
-                el->wait_master_node([this, &is_master, &master_hostname] (member m) {
-                    is_master = (m.id == hb->get_id());
-                    master_hostname = m.hostname;
-                });
 
                 if (is_master) {
                     handle_job(fd, info);
@@ -104,11 +135,21 @@ void mj_master_impl::run_master() {
                 return;
             }
 
+            if (!is_master) {
+                server->close_connection(fd);
+                return;
+            }
+
             if (msg.get_msg_type() == mj_message::mj_msg_type::JOB_FAILED) {
                 mj_job_failed info = msg.get_msg_data<mj_job_failed>();
 
-                lg->info("Received notice from worker node that job with ID " + std::to_string(info.job_id) + " failed, stopping");
-                stop_job(info.job_id);
+                lg->info("Received notice from worker node that job with ID " + std::to_string(info.job_id) + " failed, stopping job");
+
+                // Mark the job as failed, which will automatically cause it to complete
+                std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+                if (job_states.find(info.job_id) != job_states.end()) {
+                    job_states[info.job_id].failed = true;
+                }
                 return;
             }
 
@@ -121,7 +162,7 @@ void mj_master_impl::run_master() {
 
                     std::unordered_set<std::pair<string, string>, string_pair_hash> &committed_outputs =
                         job_states[info.job_id].committed_outputs;
-                    allow_append = (committed_outputs.find(std::make_pair(info.input_file, info.output_file)) == committed_outputs.end());
+                    allow_append = (committed_outputs.find({info.input_file, info.output_file}) == committed_outputs.end());
                 }
 
                 lg->trace("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
@@ -133,11 +174,7 @@ void mj_master_impl::run_master() {
                 mj_message perm_msg(hb->get_id(), mj_append_perm{allow_append});
                 server->write_to_client(fd, perm_msg.serialize()); // Ignore failure, that will be handled in node_dropped
 
-                // TODO: use callback from SDFS to reliably mark the output as committed instead of this
-                {
-                    std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
-                    job_states[info.job_id].committed_outputs.insert(std::make_pair(info.input_file, info.output_file));
-                }
+                // We do not mark the file as committed now, we will mark it when we get a callback from SDFS
 
                 msg_str = server->read_from_client(fd);
                 msg = mj_message(msg_str.c_str(), msg_str.length());
@@ -176,7 +213,7 @@ void mj_master_impl::run_master() {
                            processed_files.find(info.file) != processed_files.end() ||
                            !"File that node claims to have completed was not assigned to node");
 
-                    node_states[info.hostname].num_files--; // Even if the node fails, this is OK because this will be erased
+                    node_states[info.hostname].num_files--;
 
                     if (processed_files.find(info.file) == processed_files.end()) {
                         unprocessed_files.erase(info.file);
@@ -203,7 +240,13 @@ void mj_master_impl::handle_job(int fd, mj_start_job info)
     }
 
     // Tell the client that the job is complete
-    mj_message msg(hb->get_id(), mj_job_end{1});
+    int succeeded;
+    {
+        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+        assert(job_states.find(job_id) != job_states.end());
+        succeeded = job_states[job_id].failed ? 0 : 1;
+    }
+    mj_message msg(hb->get_id(), mj_job_end{succeeded});
     server->write_to_client(fd, msg.serialize());
     server->close_connection(fd);
 
@@ -214,13 +257,21 @@ void mj_master_impl::handle_job(int fd, mj_start_job info)
 bool mj_master_impl::job_complete(int job_id) {
     std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
 
-    // If the job doesn't exist, that means it is complete
-    if (job_states.find(job_id) == job_states.end()) {
+    assert(job_states.find(job_id) != job_states.end());
+
+    // If the job has failed, it has also completed
+    if (job_states[job_id].failed) {
         return true;
     }
 
     // Otherwise, check if there are no more files left in the job
     job_state &state = job_states[job_id];
+
+    unsigned num_files = 0;
+    for (auto pair : state.unprocessed_files) {
+        num_files += pair.second.size();
+    }
+    lg->info("Waiting on " + std::to_string(num_files) + " files");
 
     for (auto pair : state.unprocessed_files) {
         if (pair.second.size() > 0) {
@@ -281,18 +332,12 @@ int mj_master_impl::assign_job(mj_start_job info) {
         ", num_appends_parallel=" + std::to_string(info.num_appends_parallel) + "]");
 
     // Get the list of input files
-    std::vector<std::string> input_files_raw = sdfsm->get_files_by_prefix(info.sdfs_src_dir);
-    std::unordered_set<std::string> input_files_set;
-    std::vector<std::string> input_files;
-    // Strip the directory from the input files as well as shard numbers
-    for (std::string &file : input_files_raw) {
-        file = file.substr(info.sdfs_src_dir.length());
-        file = file.substr(0, file.find_last_of("."));
-        input_files_set.insert(file);
+    std::optional<std::vector<std::string>> input_files_opt = sdfsm->ls_files(info.sdfs_src_dir);
+    if (!input_files_opt) {
+        // TODO: handle failure here
     }
-    for (const std::string &file : input_files_set) {
-        input_files.push_back(file);
-    }
+
+    std::vector<std::string> input_files = input_files_opt.value();
 
     // Assign files to nodes based on the specified partitioner and fill the job_state struct
     std::unordered_map<std::string, std::unordered_set<std::string>> unprocessed_files_copy;
@@ -306,6 +351,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
         job_states[job_id].processor_type = info.processor_type;
         job_states[job_id].num_files_parallel = info.num_files_parallel;
         job_states[job_id].num_appends_parallel = info.num_appends_parallel;
+        job_states[job_id].failed = false;
 
         job_states[job_id].unprocessed_files =
             partitioner_factory::get_partitioner(info.partitioner_type)->partition(hb->get_members(), info.num_workers, input_files);
@@ -406,16 +452,6 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
 void mj_master_impl::node_dropped(std::string hostname) {
-    bool is_master = false;
-    el->get_master_node([this, &is_master] (member m, bool succeeded) {
-        if (succeeded && m.id == hb->get_id()) {
-            is_master = true;
-        }
-    });
-    if (!is_master) {
-        return;
-    }
-
     std::unordered_set<int> jobs;
 
     lg->info("Lost node at " + hostname + ", reassigning its work to other nodes");
@@ -454,10 +490,16 @@ void mj_master_impl::node_dropped(std::string hostname) {
         }
     }
 
-    // Send the message to assign the new work to each of the nodes
-    for (int job_id : jobs) {
-        assign_job_to_node(job_id, targets[job_id], participating_job_states[job_id].unprocessed_files[hostname]);
-    }
+    std::thread assign_thread([=] () mutable {
+        // Wait for any transactions that are running to complete so that files this node was in the middle of writing get written
+        sdfsm->wait_transactions();
+
+        // Send the message to assign the new work to each of the nodes
+        for (int job_id : jobs) {
+            assign_job_to_node(job_id, targets[job_id], participating_job_states[job_id].unprocessed_files[hostname]);
+        }
+    });
+    assign_thread.detach();
 }
 
 register_auto<mj_master, mj_master_impl> register_mj_master;

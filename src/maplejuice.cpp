@@ -120,11 +120,11 @@ int main(int argc, char **argv) {
             std::cin >> sdfs_filename;
 
             if (command == "put") {
-                sdfsc->put_operation(local_filename, sdfs_filename);
+                sdfsc->put(local_filename, sdfs_filename);
             } else if (command == "get") {
-                sdfsc->get_sharded(local_filename, sdfs_filename);
+                sdfsc->get(local_filename, sdfs_filename);
             } else if (command == "append") {
-                sdfsc->append_operation(local_filename, sdfs_filename);
+                sdfsc->append(local_filename, sdfs_filename);
             } else {
                 std::cout << "Usage: put/get/append <local_filename> <sdfs_filename>" << std::endl;
             }

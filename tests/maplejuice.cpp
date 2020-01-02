@@ -86,7 +86,7 @@ namespace maplejuice_test {
 void check_wc_ram(environment &env) {
     // Check that all the files are there
     // First, delete exe because we don't want to include that in the diff if it's different
-    std::string sdfs_dir = dynamic_cast<mock_sdfs_client*>(env.get<sdfs_client>())->get_sdfs_dir();
+    std::string sdfs_dir = dynamic_cast<mock_sdfs_client*>(env.get<sdfs_client>())->get_sdfs_root_dir();
     maplejuice_test::delete_file(sdfs_dir + "wc_maple.0");
     maplejuice_test::diff_directories(sdfs_dir, "./mje/test_files/wc_ram_maple_output/");
 }
@@ -107,12 +107,18 @@ testing::register_test single_node_maple("maple.single_node",
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Put the input file into the SDFS
-    if (node_env->get<sdfs_client>()->put_operation("./mje/test_files/wc_ram", "wc_data_ram") != 0)
-        assert(false && "Test file wc_ram is missing");
+    sdfs_client *sdfsc = node_env->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_data") == 0);
+    assert(sdfsc->put("./mje/test_files/wc_ram", "wc_data/ram") == 0 &&
+        "Test file wc_ram is missing or put operation failed unexpectedly");
+
+    // Create output directory
+    assert(sdfsc->mkdir("intermediate") == 0);
 
     // Have node_env initiate the job
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_env->get<maple_client>();
-    assert(client->run_job("master", "./mje/wc_maple", "wc_maple", 1, "intermediate_", "wc_data_"));
+    assert(client->run_job("master", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
 
     check_wc_ram(*node_env);
 
@@ -121,7 +127,7 @@ testing::register_test single_node_maple("maple.single_node",
     stop_master.join();
 });
 
-testing::register_test single_node_mj("maplejuice.mj_single_node",
+testing::register_test single_node_mj("maplejuice.single_node",
     "Tests assigning a full job to a single MapleJuice node",
     26, [] (logger::log_level level)
 {
@@ -130,26 +136,33 @@ testing::register_test single_node_mj("maplejuice.mj_single_node",
     std::unique_ptr<environment> master_env = env_group.get_env();
     std::unique_ptr<environment> node_env = env_group.get_env();
 
-    maplejuice_test::setup_env(*master_env, level, "master", "", true);
-    maplejuice_test::setup_env(*node_env, level, "node", "master", false);
+    maplejuice_test::setup_env(*master_env, level, "mster", "", true);
+    maplejuice_test::setup_env(*node_env, level, "node", "mster", false);
 
     // Wait for all services to get set up
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Put the input file into the SDFS
-    if (node_env->get<sdfs_client>()->put_operation("./mje/test_files/wc_ram", "wc_data_ram") != 0)
-        assert(false && "Test file wc_ram is missing");
+    sdfs_client *sdfsc = node_env->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_data") == 0);
+    assert(sdfsc->put("./mje/test_files/wc_ram", "wc_data/ram") == 0 &&
+        "Test file wc_ram is missing or put failed");
+
+    // Create output directories
+    assert(sdfsc->mkdir("intermediate") == 0);
+    assert(sdfsc->mkdir("ram_wordcount") == 0);
 
     // Have node_env initiate the Maple job
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *mclient = node_env->get<maple_client>();
-    assert(mclient->run_job("master", "./mje/wc_maple", "wc_maple", 1, "intermediate_", "wc_data_"));
+    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
 
     check_wc_ram(*node_env);
 
     // Have node_env initiate the Juice job
     juice_client *jclient = node_env->get<juice_client>();
-    assert(jclient->run_job("master", "./mje/wc_juice", "wc_juice", 1,
-        partitioner::type::round_robin, "intermediate_", "ram_wordcount"));
+    assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 1,
+        partitioner::type::round_robin, "intermediate", "ram_wordcount"));
 
     std::thread stop_master([&] {master_env->get<mj_worker>()->stop();});
     node_env->get<mj_worker>()->stop();
@@ -172,22 +185,28 @@ testing::register_test contact_not_master("maple.contact_not_master",
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Put the input file into the SDFS
-    if (node_env->get<sdfs_client>()->put_operation("./mje/test_files/wc_ram", "wc_data_ram") != 0)
-        assert(false && "Test file wc_ram is missing");
+    sdfs_client *sdfsc = node_env->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_data") == 0);
+    assert(sdfsc->put("./mje/test_files/wc_ram", "wc_data/ram") == 0
+        && "Test file wc_ram is missing or put failed");
+
+    // Create output directory
+    assert(sdfsc->mkdir("intermediate") == 0);
 
     // Have node_env initiate the job and send it to node instead of master
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_env->get<maple_client>();
-    assert(client->run_job("node", "./mje/wc_maple", "wc_maple", 1, "intermediate_", "wc_data_"));
+    assert(client->run_job("node", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
 
-    // check_wc_ram(*node_env);
+    check_wc_ram(*node_env);
 
     std::thread stop_master([&] {master_env->get<mj_worker>()->stop();});
     node_env->get<mj_worker>()->stop();
     stop_master.join();
 });
 
-testing::register_test multiple_nodes("maple.multiple_nodes",
-    "Tests assigning a job (word count) to multiple Maple nodes",
+testing::register_test multiple_nodes("maplejuice.multiple_nodes",
+    "Tests assigning a job (word count) to multiple nodes",
     130, [] (logger::log_level level)
 {
     environment_group env_group(true);
@@ -206,25 +225,34 @@ testing::register_test multiple_nodes("maple.multiple_nodes",
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Put the input files into the SDFS
+    sdfs_client *sdfsc = node_envs[0]->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_hitchhiker") == 0);
+
     std::vector<string> input_files = maplejuice_test::ls("./mje/test_files/wc_hitchhiker_full");
     for (string file : input_files) {
-        node_envs[0]->get<sdfs_client>()->put_operation("./mje/test_files/wc_hitchhiker_full/" + file, file);
+        assert(sdfsc->put("./mje/test_files/wc_hitchhiker_full/" + file, "wc_hitchhiker/" + file) == 0);
     }
 
+    // Create output directories
+    assert(sdfsc->mkdir("intermediate") == 0);
+    assert(sdfsc->mkdir("hitchhiker_wordcount") == 0);
+
     // Have node_envs[0] initiate the job and send it to node instead of master
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *mclient = node_envs[0]->get<maple_client>();
-    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker_"));
+    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
 
     juice_client *jclient = node_envs[0]->get<juice_client>();
     assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 5,
         partitioner::type::range, "intermediate", "hitchhiker_wordcount"));
 
     // Get the file and check its validity
-    node_envs[0]->get<sdfs_client>()->get_sharded("result", "hitchhiker_wordcount");
-    pclose(popen("cat result | sort > results_sorted", "r"));
-    maplejuice_test::delete_file("result");
-    maplejuice_test::diff_files("results_sorted", "./mje/test_files/wc_hitchhiker_results");
-    maplejuice_test::delete_file("results_sorted");
+    string temp_dir = node_envs[0]->get<configuration>()->get_mj_dir();
+    assert(node_envs[0]->get<sdfs_client>()->get(temp_dir + "result", "hitchhiker_wordcount/output") == 0);
+    pclose(popen(const_cast<char*>(("cat " + temp_dir + "result | sort > " + temp_dir + "results_sorted").c_str()), "r"));
+    maplejuice_test::delete_file(temp_dir + "result");
+    maplejuice_test::diff_files(temp_dir + "results_sorted", "./mje/test_files/wc_hitchhiker_results");
+    maplejuice_test::delete_file(temp_dir + "results_sorted");
 
     std::vector<std::thread> stop_nodes;
     for (unsigned i = 0; i < NUM_NODES; i++) {
@@ -236,8 +264,8 @@ testing::register_test multiple_nodes("maple.multiple_nodes",
     }
 });
 
-testing::register_test drop_nodes("maple.drop_nodes",
-    "Tests assigning a job (word count) to multiple Maple nodes",
+testing::register_test drop_maple("maplejuice.drop_maple",
+    "Tests assigning a job (word count) to multiple nodes, with a node failing during the Maple portion",
     150, [] (logger::log_level level)
 {
     environment_group env_group(true);
@@ -256,10 +284,90 @@ testing::register_test drop_nodes("maple.drop_nodes",
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     // Put the input files into the SDFS
+    sdfs_client *sdfsc = node_envs[0]->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_hitchhiker") == 0);
+
     std::vector<string> input_files = maplejuice_test::ls("./mje/test_files/wc_hitchhiker_full");
     for (string file : input_files) {
-        node_envs[0]->get<sdfs_client>()->put_operation("./mje/test_files/wc_hitchhiker_full/" + file, file);
+        assert(sdfsc->put("./mje/test_files/wc_hitchhiker_full/" + file, "wc_hitchhiker/" + file) == 0);
     }
+
+    // Create output directories
+    assert(sdfsc->mkdir("intermediate") == 0);
+    assert(sdfsc->mkdir("hitchhiker_wordcount") == 0);
+
+    std::thread drop_thread([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        node_envs[0]->get<mj_worker>()->stop();
+    });
+    drop_thread.detach();
+
+    // Have node_envs[0] initiate the job and send it to node instead of master
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
+    maple_client *client = node_envs[0]->get<maple_client>();
+    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
+
+    juice_client *jclient = node_envs[0]->get<juice_client>();
+    assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 5,
+        partitioner::type::range, "intermediate", "hitchhiker_wordcount"));
+
+    // Get the file and check its validity
+    string temp_dir = node_envs[0]->get<configuration>()->get_mj_dir();
+    assert(node_envs[0]->get<sdfs_client>()->get(temp_dir + "result", "hitchhiker_wordcount/output") == 0);
+    pclose(popen(const_cast<char*>(("cat " + temp_dir + "result | sort > " + temp_dir + "results_sorted").c_str()), "r"));
+    maplejuice_test::delete_file(temp_dir + "result");
+    maplejuice_test::diff_files(temp_dir + "results_sorted", "./mje/test_files/wc_hitchhiker_results");
+    maplejuice_test::delete_file(temp_dir + "results_sorted");
+
+    std::vector<std::thread> stop_nodes;
+    for (unsigned i = 0; i < NUM_NODES; i++) {
+        if (i == 0) {
+            stop_nodes.push_back(std::thread([&] {master_env->get<mj_worker>()->stop();}));
+        } else {
+            stop_nodes.push_back(std::thread([&, i] {node_envs[i]->get<mj_worker>()->stop();}));
+        }
+    }
+    for (unsigned i = 0; i < NUM_NODES; i++) {
+        stop_nodes[i].join();
+    }
+});
+
+testing::register_test drop_juice("maplejuice.drop_juice",
+    "Tests assigning a job (word count) to multiple nodes, with a node failing during the Juice portion",
+    150, [] (logger::log_level level)
+{
+    environment_group env_group(true);
+
+    unsigned NUM_NODES = 4;
+
+    std::unique_ptr<environment> master_env = env_group.get_env();
+    std::vector<std::unique_ptr<environment>> node_envs = env_group.get_envs(NUM_NODES);
+
+    maplejuice_test::setup_env(*master_env, level, "mster", "", true);
+    for (unsigned i = 0; i < NUM_NODES; i++) {
+        maplejuice_test::setup_env(*node_envs[i], level, "node" + std::to_string(i), "mster", false);
+    }
+
+    // Wait for all services to get set up
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // Put the input files into the SDFS
+    sdfs_client *sdfsc = node_envs[0]->get<sdfs_client>();
+    assert(sdfsc->mkdir("wc_hitchhiker") == 0);
+
+    std::vector<string> input_files = maplejuice_test::ls("./mje/test_files/wc_hitchhiker_full");
+    for (string file : input_files) {
+        assert(sdfsc->put("./mje/test_files/wc_hitchhiker_full/" + file, "wc_hitchhiker/" + file) == 0);
+    }
+
+    // Create output directories
+    assert(sdfsc->mkdir("intermediate") == 0);
+    assert(sdfsc->mkdir("hitchhiker_wordcount") == 0);
+
+    // Have node_envs[0] initiate the job and send it to node instead of master
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
+    maple_client *client = node_envs[0]->get<maple_client>();
+    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
 
     std::thread drop_thread([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
@@ -267,20 +375,17 @@ testing::register_test drop_nodes("maple.drop_nodes",
     });
     drop_thread.detach();
 
-    // Have node_envs[0] initiate the job and send it to node instead of master
-    maple_client *client = node_envs[0]->get<maple_client>();
-    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker_"));
-
     juice_client *jclient = node_envs[0]->get<juice_client>();
     assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 5,
         partitioner::type::range, "intermediate", "hitchhiker_wordcount"));
 
     // Get the file and check its validity
-    node_envs[0]->get<sdfs_client>()->get_sharded("result", "hitchhiker_wordcount");
-    pclose(popen("cat result | sort > results_sorted", "r"));
-    maplejuice_test::delete_file("result");
-    maplejuice_test::diff_files("results_sorted", "./mje/test_files/wc_hitchhiker_results");
-    maplejuice_test::delete_file("results_sorted");
+    string temp_dir = node_envs[1]->get<configuration>()->get_mj_dir();
+    assert(node_envs[1]->get<sdfs_client>()->get(temp_dir + "result", "hitchhiker_wordcount/output") == 0);
+    pclose(popen(const_cast<char*>(("cat " + temp_dir + "result | sort > " + temp_dir + "results_sorted").c_str()), "r"));
+    maplejuice_test::delete_file(temp_dir + "result");
+    maplejuice_test::diff_files(temp_dir + "results_sorted", "./mje/test_files/wc_hitchhiker_results");
+    maplejuice_test::delete_file(temp_dir + "results_sorted");
 
     std::vector<std::thread> stop_nodes;
     for (unsigned i = 0; i < NUM_NODES; i++) {

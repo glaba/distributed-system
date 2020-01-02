@@ -47,11 +47,11 @@ public:
         bool end;
     };
 
-    iterator begin() {
+    iterator begin() const {
         return iterator(source);
     }
 
-    iterator end() {
+    iterator end() const {
         return iterator();
     }
 

@@ -533,6 +533,9 @@ void election_impl::get_master_node(std::function<void(member, bool)> callback) 
 void election_impl::wait_master_node(std::function<void(member)> callback) {
     bool done = false;
     while (!done) {
+        if (!running.load()) {
+            callback(member());
+        }
         get_master_node([&done, &callback] (member master, bool succeeded) {
             if (succeeded) {
                 callback(master);

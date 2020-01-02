@@ -6,6 +6,9 @@
 #include <functional>
 #include <string>
 
+// The amount of time it takes for the loss or join of any node to be reflected in all nodes
+#define HEARTBEATER_STABILIZATION_TIME 6000
+
 class heartbeater {
 public:
     virtual ~heartbeater() {}

@@ -6,14 +6,15 @@
 #include <string>
 
 namespace utils {
-    void backoff(std::function<bool()> callback) {
+    bool backoff(std::function<bool()> callback, std::function<bool()> give_up) {
         unsigned delay = 1;
         while (!callback()) {
+            if (give_up()) {
+                return false;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(std::rand() % delay));
             delay *= 2;
-            if (delay >= 1000) {
-                std::cout << "Waiting in a backoff" << std::endl;
-            }
         }
+        return true;
     }
 }

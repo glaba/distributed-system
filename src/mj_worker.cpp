@@ -63,6 +63,9 @@ void mj_worker_impl::stop() {
         }
     }
 
+    sdfsc->stop();
+    sdfss->stop();
+    sdfsm->stop();
     mm->stop();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -177,7 +180,9 @@ void mj_worker_impl::start_job(int job_id, mj_assign_job data) {
 
         // Download exe from the SDFS
         utils::backoff([&] {
-            return sdfsc->get_sharded(exe_path, state->exe) == 0;
+            // TODO: handle the executable being missing, as opposed to a failed get
+            lg->info("Getting " + state->exe + " to " + exe_path);
+            return sdfsc->get(exe_path, state->exe) == 0;
         });
         FILE *stream = popen(("chmod +x \"" + exe_path + "\"").c_str(), "r");
         pclose(stream);
@@ -299,18 +304,21 @@ void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_f
 void mj_worker_impl::process_file(int job_id, string filename, string sdfs_src_dir, string sdfs_output_dir,
     processor::type processor_type, int num_appends_parallel)
 {
-    string sdfs_file_path = sdfs_src_dir + filename;
+    string sdfs_file_path = sdfs_src_dir + "/" + filename;
     string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
 
     // Download the file from the SDFS
     string local_file_path = config->get_mj_dir() + filename + "_" + std::to_string(job_id) + "_" + std::to_string(mt());
-    utils::backoff([&] {
-        return sdfsc->get_sharded(local_file_path, sdfs_file_path) == 0;
-    });
+    if (!utils::backoff([&] {
+            return sdfsc->get(local_file_path, sdfs_file_path) == 0;
+        }, [&] {return !running.load();}))
+    {
+        return;
+    }
     lg->trace("[Job " + std::to_string(job_id) + "] Downloaded input file " + filename + " from SDFS");
 
     // Construct the processor object which will process the output of the command and determine where in SDFS it goes
-    std::unique_ptr<processor> proc = processor_factory::get_processor(processor_type, sdfs_output_dir);
+    std::unique_ptr<processor> proc = processor_factory::get_processor(processor_type);
 
     // Actually run the program on the input file, processing it line by line
     lg->trace("[Job " + std::to_string(job_id) + "] Running command " + exe_path + " " + local_file_path);
@@ -328,11 +336,11 @@ void mj_worker_impl::process_file(int job_id, string filename, string sdfs_src_d
         return;
     }
 
-    append_output(job_id, proc.get(), filename, num_appends_parallel);
+    append_output(job_id, proc.get(), filename, sdfs_output_dir, num_appends_parallel);
     pclose(popen(("rm " + local_file_path).c_str(), "r"));
 }
 
-void mj_worker_impl::append_output(int job_id, processor *proc, string input_file, int num_appends_parallel) {
+void mj_worker_impl::append_output(int job_id, processor *proc, string input_file, string sdfs_output_dir, int num_appends_parallel) {
     while (running.load()) {
         // First, get the master hostname from the election service
         string master_hostname = "";
@@ -349,13 +357,13 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
         std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(num_appends_parallel);
         std::atomic<bool> master_down = false;
 
-        for (auto &[output_file, vals] : *proc) {
+        for (auto &[output_filename, vals] : *proc) {
             if (master_down.load()) {
                 break;
             }
 
             std::optional<std::function<void()>> append_lambda =
-                append_lines(job_id, client.get(), input_file, output_file, vals, &master_down);
+                append_lines(job_id, client.get(), input_file, sdfs_output_dir + "/" + output_filename, vals, &master_down);
 
             if (append_lambda) {
                 tp->enqueue(append_lambda.value());
@@ -369,6 +377,11 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
             continue;
         }
 
+        // Quit if we stopped in the middle instead of incorrectly informing master node that we are done
+        if (!running.load()) {
+            return;
+        }
+
         // Inform the master node that the file is complete
         mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
 
@@ -379,16 +392,16 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
     }
 }
 
-std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, string &input_file,
-    string &output_file, std::vector<string> &vals, std::atomic<bool> *master_down)
+std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, const string &input_file,
+    const string &output_file_path, std::vector<string> &vals, std::atomic<bool> *master_down)
 {
     // Then, construct the message requesting permission to append
-    mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file});
+    mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file_path});
     string msg_str = msg.serialize();
 
     // Connect to the master and send the message, and wait for either a yes or no response
     if (client->write_to_server(msg_str) <= 0) {
-        lg->trace("[Job " + std::to_string(job_id) + "] Request to append to output file " + output_file + " failed to send to master");
+        lg->trace("[Job " + std::to_string(job_id) + "] Request to append to output file " + output_file_path + " failed to send to master");
         *master_down = true;
         return std::nullopt;
     }
@@ -398,14 +411,14 @@ std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tc
     mj_message response(response_str.c_str(), response_str.length());
     if (!response.is_well_formed() || response.get_msg_type() != mj_message::mj_msg_type::APPEND_PERM) {
         lg->trace("[Job " + std::to_string(job_id) + "] Lost connection with master node while " +
-            "requesting permission to append to output file " + output_file);
+            "requesting permission to append to output file " + output_file_path);
         *master_down = true;
         return std::nullopt;
     }
 
     bool got_permission = (response.get_msg_data<mj_append_perm>().allowed != 0);
     lg->trace("[Job " + std::to_string(job_id) + "] " + (got_permission ? "Received " : "Did not receive ") +
-        "permission to append to output file " + output_file);
+        "permission to append to output file " + output_file_path);
 
     if (got_permission) {
         return std::optional<std::function<void()>>([=] {
@@ -415,24 +428,29 @@ std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tc
                 append += val + "\n";
             }
 
+            // TODO: create a type for Maplejuice metadata instead of adhoc serialization
+            serializer ser;
+            ser.add_field(input_file);
+            ser.add_field(job_id);
+            string metadata_val = ser.serialize();
+
+            // Include the metadata {maplejuice: input_file} so the master can record the append as successful
             utils::backoff([&] {
                 bool complete = false;
-                return sdfsc->append_operation(inputter<string>([&] () -> std::optional<string> {
+                return sdfsc->append(inputter<string>([&] () -> std::optional<string> {
                     if (complete) {
                         return std::nullopt;
                     } else {
                         complete = true;
                         return append;
                     }
-                }), output_file) == 0;
-            });
+                }), output_file_path, {{"maplejuice", metadata_val}}) == 0;
+            }, [&] {return !running.load();});
 
-            // TODO: add metadata key=maple, value=input_file to SDFS entry
-
-            lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file + " from input file " + input_file);
+            lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file_path + " from input file " + input_file);
         });
     } else {
-        lg->debug("[Job " + std::to_string(job_id) + "] Not appending values to output file " + output_file + " from input file " + input_file);
+        lg->debug("[Job " + std::to_string(job_id) + "] Not appending values to output file " + output_file_path + " from input file " + input_file);
         return std::nullopt;
     }
 }

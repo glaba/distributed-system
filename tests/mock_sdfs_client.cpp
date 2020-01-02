@@ -25,15 +25,15 @@ void create_file(environment &env, string filename, string contents) {
 }
 
 int put_file_sdfs(environment &env, string filename, string sdfs_filename) {
-    return env.get<sdfs_client>()->put_operation(env.get<configuration>()->get_dir() + filename, sdfs_filename);
+    return env.get<sdfs_client>()->put(env.get<configuration>()->get_dir() + filename, sdfs_filename);
 }
 
 int append_file_sdfs(environment &env, string filename, string sdfs_filename) {
-    return env.get<sdfs_client>()->append_operation(env.get<configuration>()->get_dir() + filename, sdfs_filename);
+    return env.get<sdfs_client>()->append(env.get<configuration>()->get_dir() + filename, sdfs_filename);
 }
 
 int get_file_sdfs(environment &env, string filename, string sdfs_filename) {
-    return env.get<sdfs_client>()->get_operation(env.get<configuration>()->get_dir() + filename, sdfs_filename);
+    return env.get<sdfs_client>()->get(env.get<configuration>()->get_dir() + filename, sdfs_filename);
 }
 
 void diff_files(environment &env, string first, string second) {
@@ -53,7 +53,7 @@ void delete_file(environment &env, string filename) {
 }
 
 int delete_file_sdfs(environment &env, string sdfs_filename) {
-    return env.get<sdfs_client>()->del_operation(sdfs_filename);
+    return env.get<sdfs_client>()->del(sdfs_filename);
 }
 
 testing::register_test put_get("mock_sdfs_client.put_get",

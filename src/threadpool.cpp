@@ -24,9 +24,13 @@ threadpool_impl::threadpool_impl(environment &env, unsigned num_threads_)
 }
 
 threadpool_impl::~threadpool_impl() {
-    if (running.load()) {
-        finish();
+    {
+        std::unique_lock<std::mutex> lock(cv_mutex);
+        if (!running.load()) {
+            return;
+        }
     }
+    finish();
 }
 
 void threadpool_impl::finish() {
@@ -52,9 +56,8 @@ void threadpool_impl::enqueue(std::function<void()> task) {
 }
 
 void threadpool_impl::thread_fn(unsigned thread_index) {
-    while (running.load()) {
-        num_started++;
-
+    num_started++;
+    while (true) {
         std::function<void()> task;
         {
             std::unique_lock<std::mutex> lock(cv_mutex);

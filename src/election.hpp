@@ -20,11 +20,11 @@
 // The minimum amount of time it will take for the member list to stabilize
 //  6s in the worst case for all nodes to notice the failure of the master node and prevent new nodes from joining
 //  and 6s more for any nodes that joined in the meantime to join all membership lists
-#define MEMBER_LIST_STABILIZATION_TIME 12000
+#define MEMBER_LIST_STABILIZATION_TIME (2 * HEARTBEATER_STABILIZATION_TIME)
 // The range we will wait for the member list to stabilize before starting an election is in
 // the range (STABILIZATION_TIME, STABILIZATION_TIME + STABILIZATION_RANGE), so that elections
 // are not all initiated at roughly the same time
-#define MEMBER_LIST_STABILIZATION_RANGE 6000
+#define MEMBER_LIST_STABILIZATION_RANGE HEARTBEATER_STABILIZATION_TIME
 // The amount of time we will wait before the election times out
 #define ELECTION_TIMEOUT_TIME 15000
 // The amount of time a node that has been elected will wait before the ELECTED message goes around the ring

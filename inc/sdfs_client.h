@@ -1,8 +1,12 @@
 #pragma once
 
+#include "sdfs.h"
 #include "inputter.h"
 
 #include <string>
+#include <optional>
+#include <vector>
+#include <unordered_map>
 
 class sdfs_client {
 public:
@@ -11,25 +15,26 @@ public:
     // Stops all client logic for the filesystem
     virtual void stop() = 0;
     // Optionally sets the master node, if this sdfs_client is not running in an environment with election
-    virtual void set_master_node(std::string hostname) = 0;
-    // handles a put request over the specified socket
-    virtual int put_operation(std::string local_filename, std::string sdfs_filename) = 0;
-    virtual int put_operation(inputter<std::string> in, std::string sdfs_filename) = 0;
-    // handles a get request over the specified socket
-    virtual int get_operation(std::string local_filename, std::string sdfs_filename) = 0;
-    // handles a del request over the specified socket
-    virtual int del_operation(std::string sdfs_filename) = 0;
-    // handles a ls request over the specified socket
-    virtual int ls_operation(std::string sdfs_filename) = 0;
-    // handles a append request over the specified socket
-    virtual int append_operation(std::string local_filename, std::string sdfs_filename) = 0;
-    virtual int append_operation(inputter<std::string> in, std::string sdfs_filename) = 0;
-    // handles a store request
-    virtual int store_operation() = 0;
-    // handles a get_index request over the specified socket
-    virtual int get_index_operation(std::string sdfs_filename) = 0;
-    // handles a get_metadata request over the specified socket
-    virtual std::string get_metadata_operation(std::string sdfs_filename) = 0;
-    // gets all the pieces of a sharded file
-    virtual int get_sharded(std::string local_filename, std::string sdfs_filename_prefix) = 0;
+    virtual void set_master_node(const std::string &hostname) = 0;
+    // Puts some data into a file in the SDFS, overwriting whatever was previously there
+    virtual int put(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata = sdfs_metadata()) = 0;
+    virtual int put(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata = sdfs_metadata()) = 0;
+    // Appends the provided data to a file in the SDFS
+    virtual int append(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata = sdfs_metadata()) = 0;
+    virtual int append(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata = sdfs_metadata()) = 0;
+    // Gets a file from the SDFS, storing it into a local file
+    virtual int get(const std::string &local_filename, const std::string &sdfs_path) = 0;
+    // Gets the metadata associated with a file in the SDFS
+    virtual std::optional<sdfs_metadata> get_metadata(const std::string &sdfs_path) = 0;
+    // Deletes a file in the SDFS
+    virtual int del(const std::string &sdfs_path) = 0;
+    // Creates a subdirectory in the SDFS
+    virtual int mkdir(const std::string &sdfs_dir) = 0;
+    // Removes a subdirectory from the SDFS, deleting all the files within
+    virtual int rmdir(const std::string &sdfs_dir) = 0;
+    // Returns a list of files / directories within the provided directory
+    virtual std::optional<std::vector<std::string>> ls_files(const std::string &sdfs_dir) = 0;
+    virtual std::optional<std::vector<std::string>> ls_dirs(const std::string &sdfs_dir) = 0;
+    // Gets the number of shards that a file is split into
+    virtual int get_num_shards(const std::string &sdfs_path) = 0;
 };

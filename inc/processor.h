@@ -24,33 +24,33 @@ public:
     virtual bool process_line(std::string line) = 0;
     // Resets any internal state accumulated from processing lines
     virtual void reset() = 0;
+
+    // Inputter will provided key-value pairs where the key is the name of the output file
+    // and the value is a vector of values corresponding to the key
+    // The same key should never be emitted more than once!
 };
 
 class processor_factory {
 public:
-    static std::unique_ptr<processor> get_processor(processor::type type, std::string output_dir);
+    static std::unique_ptr<processor> get_processor(processor::type type);
 };
 
 class maple_processor : public processor {
 public:
-    maple_processor(std::string output_dir_);
-
+    maple_processor();
     bool process_line(std::string line);
     void reset();
 
 private:
     std::unordered_map<std::string, std::vector<std::string>> kv_pairs;
-    std::string output_dir;
 };
 
 class juice_processor : public processor {
 public:
-    juice_processor(std::string output_dir_);
-
+    juice_processor();
     bool process_line(std::string line);
     void reset();
 
 private:
     std::vector<std::string> values;
-    std::string output_file;
 };

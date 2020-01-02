@@ -1,10 +1,11 @@
 #pragma once
 
+#include "sdfs.h"
+
 #include <string>
 #include <vector>
 #include <functional>
-#include <vector>
-#include <string>
+#include <unordered_set>
 
 class sdfs_master {
 public:
@@ -12,20 +13,17 @@ public:
     virtual void start() = 0;
     // Stops all master logic for the filesystem
     virtual void stop() = 0;
-    // handles a put request over the specified socket
-    virtual int put_operation(int socket, std::string sdfs_filename) = 0;
-    // handles a get request over the specified socket
-    virtual int get_operation(int socket, std::string sdfs_filename) = 0;
-    // handles a del request over the specified socket
-    virtual int del_operation(int socket, std::string sdfs_filename) = 0;
-    // handles a ls request over the specified socket
-    virtual int ls_operation(int socket, std::string sdfs_filename) = 0;
-    // handles a append request over the specified socket
-    virtual int append_operation(int socket, std::string metadata, std::string sdfs_filename) = 0;
-    // handles a get_index request over the specified socket
-    virtual int get_index_operation(int socket, std::string sdfs_filename) = 0;
-    // callback for append request
-    virtual void on_append(std::function<void(std::string filename, int offset, std::string metadata)> callback) = 0;
-    // returns a list of sdfs files matching a given prefix
-    virtual std::vector<std::string> get_files_by_prefix(std::string prefix) = 0;
+    // Register callbacks for various operations in the filesystem, which will be called if and only if
+    // the file in question has metadata with keys matching one or more of the keys in the provided set
+    virtual void on_put(const std::unordered_set<std::string> &keys, const sdfs::put_callback &callback) = 0;
+    virtual void on_append(const std::unordered_set<std::string> &keys, const sdfs::append_callback &callback) = 0;
+    virtual void on_get(const std::unordered_set<std::string> &keys, const sdfs::get_callback &callback) = 0;
+    virtual void on_del(const std::unordered_set<std::string> &keys, const sdfs::del_callback &callback) = 0;
+    // Returns a list of files / directories within the provided directory
+    virtual std::optional<std::vector<std::string>> ls_files(std::string sdfs_dir) = 0;
+    virtual std::optional<std::vector<std::string>> ls_dirs(std::string sdfs_dir) = 0;
+    // Gets the metadata associated with a file in the SDFS
+    virtual std::optional<sdfs_metadata> get_metadata(const std::string &sdfs_path) = 0;
+    // Waits for all in-flight transactions to complete
+    virtual void wait_transactions() = 0;
 };
