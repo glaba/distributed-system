@@ -86,35 +86,35 @@ public:
     mj_message(const char *buf, unsigned length);
 
     // Creates an empty message
-    mj_message(uint32_t id_, msg_data d) {
+    mj_message(uint32_t id_, msg_data const& d) {
         id = id_;
         data = d;
         set_msg_type();
     }
 
     // Returns true if the deserialized message is not malformed
-    bool is_well_formed() {
+    auto is_well_formed() const -> bool {
         return (msg_type != INVALID);
     }
 
     // Gets the type of the message
-    mj_msg_type get_msg_type() {
+    auto get_msg_type() const -> mj_msg_type {
         return msg_type;
     }
 
-    uint32_t get_id() {
+    auto get_id() const -> uint32_t {
         return id;
     }
 
     // Gets the data contained in the message
     template <typename T> // T is the type of the data
-    T get_msg_data() {
+    auto get_msg_data() const -> T {
         assert(std::holds_alternative<T>(data));
         return std::get<T>(data);
     }
 
     // Serializes the message and returns a string containing the message
-    std::string serialize();
+    auto serialize() const -> std::string;
 
 private:
     // Sets the message type based on the value stored in data

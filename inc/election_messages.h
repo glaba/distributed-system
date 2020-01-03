@@ -16,7 +16,7 @@ public:
     // Creates a message that will be empty by default
     election_message(uint32_t id_, uint32_t uuid_) : id(id_), type(), uuid(uuid_) {}
 
-    bool operator==(const election_message &m);
+    auto operator==(const election_message &m) -> bool;
 
     // Sets the message to be an INTRODUCTION message
     void set_type_introduction(uint32_t master_id_) {
@@ -43,33 +43,33 @@ public:
     }
 
     // Returns true if the deserialized message is not malformed
-    bool is_well_formed() {
+    auto is_well_formed() const -> bool {
         return id != 0;
     }
 
     // Gets the ID of the node that produced the message
-    uint32_t get_id() {
+    auto get_id() const -> uint32_t {
         return id;
     }
     // Gets the type of the message
-    msg_type get_type() {
+    auto get_type() const -> msg_type {
         return type;
     }
     // Getters for the message contents
-    uint32_t get_initiator_id() {
+    auto get_initiator_id() const -> uint32_t {
         return initiator_id;
     }
-    uint32_t get_vote_id() {
+    auto get_vote_id() const -> uint32_t {
         return vote_id;
     }
-    uint32_t get_master_id() {
+    auto get_master_id() const -> uint32_t {
         return master_id;
     }
-    uint32_t get_uuid() {
+    auto get_uuid() const -> uint32_t {
         return uuid;
     }
 
-    std::string print_type() {
+    auto print_type() const -> std::string {
         switch (type) {
             case msg_type::empty: return "EMPTY";
             case msg_type::introduction: return "INTRODUCTION";
@@ -81,7 +81,7 @@ public:
     }
 
     // Serializes the message and returns a string containing the message
-    std::string serialize();
+    auto serialize() const -> std::string;
 
 private:
     uint32_t id; // The ID of the node that produced the message

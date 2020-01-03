@@ -12,27 +12,28 @@ class serializer {
 public:
     using field = std::variant<uint32_t, std::string>;
 
-    void add_field(field f);
-    std::string serialize();
+    void add_field(field const& f);
+    auto serialize() const -> std::string;
 
     static void write_uint32_to_char_buf(uint32_t n, char *buf);
-private:
 
+private:
     std::vector<field> fields;
 };
 
 class deserializer {
 public:
-    deserializer(const char *buf_, unsigned length_)
+    deserializer(char const* buf_, unsigned length_)
         : buf(buf_), length(length_), pos(0) {}
 
-    uint32_t get_int();
-    std::string get_string();
+    auto get_int() -> uint32_t;
+    auto get_string() -> std::string;
     void done();
 
-    static uint32_t read_uint32_from_char_buf(const char *buf);
+    static auto read_uint32_from_char_buf(char const* buf) -> uint32_t;
+
 private:
-    const char *buf;
+    char const* buf;
     unsigned length;
     unsigned pos;
 };

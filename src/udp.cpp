@@ -5,6 +5,8 @@
 
 extern int errno;
 
+using std::string;
+
 // Starts the server on the given port
 void udp_server_impl::start_server(int port) {
     server_fd = create_udp_server(port);
@@ -16,7 +18,7 @@ void udp_server_impl::stop_server() {
 }
 
 // Wrapper function around recvfrom that handles errors
-int udp_server_impl::recv(char *buf, unsigned length) {
+auto udp_server_impl::recv(char *buf, unsigned length) -> int {
     struct sockaddr_in client_sa;
     socklen_t client_len = sizeof(client_sa);
 
@@ -30,7 +32,7 @@ int udp_server_impl::recv(char *buf, unsigned length) {
 
 // Creates fd to receive incoming messages sent via UDP
 // Returns a socket fd, otherwise -1 on failure.
-int udp_server_impl::create_udp_server(int port) {
+auto udp_server_impl::create_udp_server(int port) -> int {
     int server_fd;
     struct sockaddr_in server_sa;
 
@@ -53,7 +55,7 @@ int udp_server_impl::create_udp_server(int port) {
 }
 
 // Sends a UDP packet to the specified destination
-void udp_client_impl::send(string host, int port, std::string msg) {
+void udp_client_impl::send(string const& host, int port, string const& msg) {
     udp_client_info conn = create_udp_client(host, std::to_string(port));
     if (conn.client_socket == -1) return;
 
@@ -64,7 +66,7 @@ void udp_client_impl::send(string host, int port, std::string msg) {
 
 // Creates a UDP connection to a given host and port.
 // Returns a socket fd to the host, otherwise crashes on failure.
-udp_client_info udp_client_impl::create_udp_client(string host, string port) {
+auto udp_client_impl::create_udp_client(string const& host, string const& port) -> udp_client_info {
     int client_socket;
     udp_client_info ret;
 

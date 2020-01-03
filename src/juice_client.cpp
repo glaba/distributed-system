@@ -13,12 +13,12 @@ juice_client_impl::juice_client_impl(environment &env)
     , fac(env.get<tcp_factory>())
     , lg(env.get<logger_factory>()->get_logger("juice_client")) {}
 
-std::string juice_client_impl::get_error() {
+auto juice_client_impl::get_error() const -> std::string {
     return error;
 }
 
-bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_exe, int num_juices,
-    partitioner::type partitioner_type, string sdfs_intermediate_filename_prefix, string sdfs_dest_filename)
+auto juice_client_impl::run_job(string const& mj_node, string const& local_exe, string const& juice_exe, int num_juices,
+    partitioner::type partitioner_type, string const& sdfs_src_dir, string const& sdfs_output_dir) -> bool
 {
     do {
         sdfsc->set_master_node(mj_node);
@@ -27,7 +27,7 @@ bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_e
         }
 
         mj_message msg(0, mj_start_job{juice_exe, num_juices, partitioner_type,
-            sdfs_intermediate_filename_prefix, processor::type::juice, sdfs_dest_filename, 50, 4});
+            sdfs_src_dir, processor::type::juice, sdfs_output_dir, 50, 4});
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client(mj_node, config->get_mj_master_port());
@@ -64,7 +64,7 @@ bool juice_client_impl::run_job(string mj_node, string local_exe, string juice_e
             } else {
                 lg->info("Contacted node was not the master, but told us that the master is at " + master_node);
                 return run_job(master_node, local_exe, juice_exe, num_juices, partitioner_type,
-                    sdfs_dest_filename, sdfs_intermediate_filename_prefix);
+                    sdfs_src_dir, sdfs_output_dir);
             }
         } else if (response_msg.get_msg_type() == mj_message::mj_msg_type::JOB_END) {
             if (response_msg.get_msg_data<mj_job_end>().succeeded) {

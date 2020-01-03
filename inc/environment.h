@@ -42,7 +42,7 @@ public:
         disabled_mocks.insert(id);
     }
 
-    service *get(std::string id) {
+    auto get(std::string const& id) -> service* {
         spawning_mutex.lock();
 
         // If it is not being constructed / done being constructed already, we will construct the service ourselves
@@ -108,7 +108,7 @@ public:
 
     // Returns a pointer to the service of type T
     template <typename T>
-    T *get() {
+    auto get() -> T* {
         std::string id = abi::__cxa_demangle(typeid(T).name(), 0, 0, 0);
         return dynamic_cast<T*>(get(id));
     }
@@ -122,8 +122,8 @@ private:
 
     void wait_for_registry();
 
-    static void add_to_service_registry(std::string id, std::function<std::unique_ptr<service>(environment&)> callback);
-    static void add_to_test_service_registry(std::string id, std::function<std::unique_ptr<service>(environment&)> callback);
+    static void add_to_service_registry(std::string const& id, std::function<std::unique_ptr<service>(environment&)> const& callback);
+    static void add_to_test_service_registry(std::string const& id, std::function<std::unique_ptr<service>(environment&)> const& callback);
 
     bool is_test_env;
     uint32_t env_id;
@@ -168,11 +168,11 @@ public:
         env_id = environment::mt_rand();
     }
 
-    std::unique_ptr<environment> get_env() {
+    auto get_env() const -> std::unique_ptr<environment> {
         return std::unique_ptr<environment>(new environment(is_test_env, env_id));
     }
 
-    std::vector<std::unique_ptr<environment>> get_envs(unsigned n) {
+    auto get_envs(unsigned n) const -> std::vector<std::unique_ptr<environment>> {
         std::vector<std::unique_ptr<environment>> retval;
         for (unsigned i = 0; i < n; i++) {
             retval.push_back(get_env());

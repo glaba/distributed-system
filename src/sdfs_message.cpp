@@ -54,7 +54,7 @@ sdfs_message::sdfs_message(char *buf, unsigned length) {
     }
 }
 
-std::string sdfs_message::serialize() {
+auto sdfs_message::serialize() const -> std::string {
     // do some serialization here
     if (type == msg_type::empty) {
         return "";
@@ -105,7 +105,7 @@ std::string sdfs_message::serialize() {
     return ser.serialize();
 }
 
-std::string sdfs_message::get_type_as_string() {
+auto sdfs_message::get_type_as_string() const -> std::string {
     if (type == msg_type::empty) {
         return "";
     }

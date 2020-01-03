@@ -29,13 +29,13 @@ public:
         : env(env_),
           config(env.get<configuration>()) {}
 
-    std::unique_ptr<service_state> init_state() {
+    auto init_state() -> std::unique_ptr<service_state> {
         mock_tcp_state *state = new mock_tcp_state();
         state->udp_env_group = std::make_unique<environment_group>(true);
         return std::unique_ptr<service_state>(state);
     }
-    std::unique_ptr<tcp_client> get_tcp_client(std::string host, int port);
-    std::unique_ptr<tcp_server> get_tcp_server(int port);
+    auto get_tcp_client(std::string const& host, int port) -> std::unique_ptr<tcp_client>;
+    auto get_tcp_server(int port) -> std::unique_ptr<tcp_server>;
 
     // Tests can call this method directly after safely casting tcp_factory to mock_tcp_factory
     void show_packets() {
@@ -44,7 +44,7 @@ public:
 private:
 
     // Wait until the mock_udp_env is obtained, and then get a mock_udp_factory from it
-    mock_udp_factory *get_mock_udp_factory();
+    auto get_mock_udp_factory() -> mock_udp_factory*;
 
     // Initiate messages are of the format <magic byte><ID><hostname>
     static const char initiate_magic_byte = 0x0;
@@ -63,19 +63,19 @@ private:
     // close_connection and stop_server MUST be called in the mock, and will cause a failure if not
     class mock_tcp_server : public tcp_server {
     public:
-        mock_tcp_server(mock_udp_factory *factory_, string hostname_)
+        mock_tcp_server(mock_udp_factory *factory_, std::string hostname_)
             : factory(factory_), hostname(hostname_) {}
         ~mock_tcp_server();
 
         void setup_server(int port_);
         void stop_server();
-        int accept_connection();
+        auto accept_connection() -> int;
         // Closes the connection with the client at the given FD
         // There is a race condition between calling this function and the client receiving messages sent just before!
         // This race condition technically also exists with TCP although it is unlikely -- here it is likely!
         void close_connection(int client_socket);
-        std::string read_from_client(int client_fd);
-        ssize_t write_to_client(int client_fd, std::string data);
+        auto read_from_client(int client_fd) -> std::string;
+        auto write_to_client(int client_fd, std::string const& data) -> ssize_t;
     private:
         // Deletes all information stored about the specified client
         void delete_connection(int client_fd);
@@ -83,7 +83,7 @@ private:
         mock_udp_factory *factory;
         std::unique_ptr<udp_server> server;
         std::unique_ptr<udp_client> client;
-        string hostname;
+        std::string hostname;
         int id;
         int port;
 
@@ -105,7 +105,7 @@ private:
     // close_connection MUST be called in the mock, and will cause a failure if not
     class mock_tcp_client : public tcp_client {
     public:
-        mock_tcp_client(mock_udp_factory *factory_, string hostname_)
+        mock_tcp_client(mock_udp_factory *factory_, std::string hostname_)
             : factory(factory_), hostname(hostname_), mt(std::chrono::system_clock::now().time_since_epoch().count()),
               id(mt() & 0x7FFFFFFF) {}
         ~mock_tcp_client() {
@@ -113,9 +113,9 @@ private:
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 
-        int setup_connection(std::string host, int port);
-        std::string read_from_server();
-        ssize_t write_to_server(std::string data);
+        auto setup_connection(std::string const& host, int port) -> int;
+        auto read_from_server() -> std::string;
+        auto write_to_server(std::string const& data) -> ssize_t;
         void close_connection();
     private:
         // Deletes all information stored about the specified socket
@@ -124,7 +124,7 @@ private:
         mock_udp_factory *factory;
         std::unordered_map<uint32_t, std::unique_ptr<udp_server>> servers;
         std::unordered_map<uint32_t, std::unique_ptr<udp_client>> clients;
-        string hostname;
+        std::string hostname;
 
         // RNG to generate the ID and the ID itself
         std::mt19937 mt;

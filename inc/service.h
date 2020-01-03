@@ -25,11 +25,11 @@ class service {
 public:
     virtual ~service() {}
 
-    virtual std::string get_service_id() = 0;
+    virtual auto get_service_id() const -> std::string = 0;
 
 protected:
     // Returns a service_state object that represents the default state of the service
-    virtual std::unique_ptr<service_state> init_state() {
+    virtual auto init_state() -> std::unique_ptr<service_state> {
         return std::make_unique<service_state>();
     }
 
@@ -57,13 +57,13 @@ class service_impl : public service {
 public:
     virtual ~service_impl() {}
 
-    std::string get_service_id() final {
+    auto get_service_id() const -> std::string final {
         return abi::__cxa_demangle(typeid(Impl).name(), 0, 0, 0);
     }
 
 protected:
     // Gives atomic access to the service_state object for the singleton environment or environment group
-    void access_state(std::function<void(service_state*)> callback) {
+    void access_state(std::function<void(service_state*)> const& callback) {
         std::string id = get_service_id();
 
         while (true) {

@@ -40,27 +40,28 @@ private:
     // Runs continuously waiting for commands from the master
     void server_thread_function();
     // Runs a Linux command and feeds the results line by line to the callback
-    bool run_command(std::string command, std::function<bool(std::string)> callback);
+    auto run_command(std::string const& command, std::function<bool(std::string const&)> const& callback) const -> bool;
     // Starts a new job, filling in its job_state struct and starting work on the initial set of files
-    void start_job(int job_id, mj_assign_job data);
+    void start_job(int job_id, mj_assign_job const& data);
     // Monitors the progress of a job, informing the master on failure and ending the job when master says it's over
     void monitor_job(int job_id);
     // Notifies the master node that the specified job has failed
     void notify_job_failed(int job_id);
     // Adds the provided files to the queue of files to be processed for the specified job
-    void add_files_to_job(int job_id, std::vector<std::string> files);
+    void add_files_to_job(int job_id, std::vector<std::string> const& files);
     // Processes a specified file, sending the results into the specified processor, and appending its output into the SDFS
-    void process_file(int job_id, std::string filename, std::string sdfs_src_dir,
-        std::string sdfs_output_dir, processor::type processor_type, int num_appends_parallel);
+    void process_file(int job_id, std::string const& filename, std::string const& sdfs_src_dir,
+        std::string const& sdfs_output_dir, processor::type processor_type, int num_appends_parallel);
     // Appends the output accumulated in the provided processor to files in the SDFS
-    void append_output(int job_id, processor *proc, std::string input_file, std::string sdfs_output_dir, int num_appends_parallel);
+    void append_output(int job_id, processor *proc, std::string const& input_file,
+        std::string const& sdfs_output_dir, int num_appends_parallel);
     // Appends the lines from a single input file to the specified output file after getting permission from the master node
     // Returns either a lambda that will perform the appends or nothing if the master denied permission
-    std::optional<std::function<void()>> append_lines(int job_id, tcp_client *client, const std::string &input_file,
-        const std::string &output_file_path, std::vector<std::string> &vals, std::atomic<bool> *master_down);
+    std::optional<std::function<void()>> append_lines(int job_id, tcp_client *client, std::string const& input_file,
+        std::string const& output_file_path, std::vector<std::string> const& vals, std::atomic<bool> *master_down);
 
     struct job_state {
-        std::recursive_mutex state_mutex;
+        mutable std::recursive_mutex state_mutex;
         std::string exe;
         std::string sdfs_src_dir;
         std::string sdfs_output_dir;
@@ -70,8 +71,8 @@ private:
         std::unique_ptr<threadpool> tp;
 
         // Condition variable and indicator for when the job completes (successfully or unsuccessfully)
-        std::condition_variable cv_done;
-        std::mutex done_mutex;
+        mutable std::condition_variable cv_done;
+        mutable std::mutex done_mutex;
         bool job_complete = false;
         bool job_failed = false;
     };

@@ -16,7 +16,7 @@ tcp_factory_impl::tcp_factory_impl(environment &env)
     signal(SIGPIPE, signal_handler);
 }
 
-unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client(string host, int port) {
+auto tcp_factory_impl::get_tcp_client(string const& host, int port) -> unique_ptr<tcp_client> {
     tcp_client_impl *retval = new tcp_client_impl(lg_fac->get_logger("tcp_client"));
     if (retval->setup_connection(host, port) < 0) {
         return nullptr;
@@ -25,13 +25,13 @@ unique_ptr<tcp_client> tcp_factory_impl::get_tcp_client(string host, int port) {
     }
 }
 
-unique_ptr<tcp_server> tcp_factory_impl::get_tcp_server(int port) {
+auto tcp_factory_impl::get_tcp_server(int port) -> unique_ptr<tcp_server> {
     tcp_server_impl *retval = new tcp_server_impl(lg_fac->get_logger("tcp_server"));
     retval->setup_server(port);
     return unique_ptr<tcp_server>(static_cast<tcp_server*>(retval));
 }
 
-ssize_t tcp_utils::get_message_size(int socket) {
+auto tcp_utils::get_message_size(int socket) -> ssize_t {
     int32_t size;
     ssize_t read_bytes =
         read_all_from_socket(socket, (char *) &size, sizeof(int32_t));
@@ -41,7 +41,7 @@ ssize_t tcp_utils::get_message_size(int socket) {
     return (ssize_t) ntohl(size);
 }
 
-ssize_t tcp_utils::write_message_size(size_t size, int socket) {
+auto tcp_utils::write_message_size(size_t size, int socket) -> ssize_t {
     uint32_t nsize = htonl(size);
     ssize_t written_bytes =
         write_all_to_socket(socket, (char *)&nsize, sizeof(uint32_t));
@@ -51,7 +51,7 @@ ssize_t tcp_utils::write_message_size(size_t size, int socket) {
     return (ssize_t) size;
 }
 
-ssize_t tcp_utils::read_all_from_socket(int socket, char *buffer, size_t count) {
+auto tcp_utils::read_all_from_socket(int socket, char *buffer, size_t count) -> ssize_t {
     size_t total = 0;
     ssize_t r = 0;
     while (total < count && (r = read(socket, buffer + total, count - total))) {
@@ -67,7 +67,7 @@ ssize_t tcp_utils::read_all_from_socket(int socket, char *buffer, size_t count) 
     return total;
 }
 
-ssize_t tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t count) {
+auto tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t count) -> ssize_t {
     size_t total = 0;
     ssize_t r = 0;
     while (total < count && (r = write(socket, buffer + total, count - total))) {
@@ -105,14 +105,14 @@ void tcp_server_impl::setup_server(int port) {
     int s = getaddrinfo(NULL, std::to_string(port).c_str(), &info, &res);
     if (s != 0) {
         // Get the error using gai
-        lg->info("getaddrinfo failed -- " + std::string(gai_strerror(s)));
+        lg->info("getaddrinfo failed -- " + string(gai_strerror(s)));
         free(res);
         exit(1);
     }
 
     // Bind server socket to port and address
     if (bind(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        lg->info("bind failed -- " + std::string(strerror(errno)));
+        lg->info("bind failed -- " + string(strerror(errno)));
         free(res);
         exit(1);
     }
@@ -120,7 +120,7 @@ void tcp_server_impl::setup_server(int port) {
 
     // Set up listening for clients
     if (listen(fd, MAX_CLIENTS) != 0) {
-        lg->info("listen failed -- " + std::string(strerror(errno)));
+        lg->info("listen failed -- " + string(strerror(errno)));
         exit(1);
     }
 
@@ -133,7 +133,7 @@ void tcp_server_impl::stop_server() {
     close(server_fd);
 }
 
-int tcp_server_impl::accept_connection() {
+auto tcp_server_impl::accept_connection() -> int {
     int client_fd = accept(server_fd, NULL, NULL);
     if (client_fd < 0) {
         return -1;
@@ -147,7 +147,7 @@ void tcp_server_impl::close_connection(int client_socket) {
     close(client_socket);
 }
 
-std::string tcp_server_impl::read_from_client(int client) {
+auto tcp_server_impl::read_from_client(int client) -> string {
     ssize_t message_size;
     if ((message_size = get_message_size(client)) == -1)
         return "";
@@ -156,10 +156,10 @@ std::string tcp_server_impl::read_from_client(int client) {
     if (read_all_from_socket(client, buf.get(), message_size) == -1)
         return "";
 
-    return std::string(buf.get(), message_size);
+    return string(buf.get(), message_size);
 }
 
-ssize_t tcp_server_impl::write_to_client(int client, std::string data) {
+auto tcp_server_impl::write_to_client(int client, string const& data) -> ssize_t {
     size_t size = (size_t) data.length();
     if (write_message_size(size, client) == -1) return -1;
 
@@ -170,7 +170,7 @@ tcp_client_impl::~tcp_client_impl() {
     close_connection();
 }
 
-int tcp_client_impl::setup_connection(std::string host, int port) {
+auto tcp_client_impl::setup_connection(string const& host, int port) -> int {
     struct addrinfo info, *res;
     memset(&info, 0, sizeof(info));
 
@@ -180,7 +180,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     int s = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &info, &res);
     if (s != 0) {
         // Get the error using gai
-        lg->info("getaddrinfo failed -- " + std::string(gai_strerror(s)));
+        lg->info("getaddrinfo failed -- " + string(gai_strerror(s)));
         fixed_socket = -1;
         return fixed_socket;
     }
@@ -188,7 +188,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     // Get a socket for the client
     int client_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (client_socket == -1) {
-        lg->info("socket failed -- " + std::string(strerror(errno)));
+        lg->info("socket failed -- " + string(strerror(errno)));
         fixed_socket = -1;
         return fixed_socket;
     }
@@ -196,7 +196,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     // Connect the client to the server
     int connected = connect(client_socket, res->ai_addr, res->ai_addrlen);
     if (connected == -1) {
-        lg->info("connect failed -- " + std::string(strerror(errno)));
+        lg->info("connect failed -- " + string(strerror(errno)));
         fixed_socket = -1;
         return fixed_socket;
     }
@@ -205,7 +205,7 @@ int tcp_client_impl::setup_connection(std::string host, int port) {
     return fixed_socket;
 }
 
-std::string tcp_client_impl::read_from_server() {
+auto tcp_client_impl::read_from_server() -> string {
     ssize_t message_size;
     if ((message_size = get_message_size(fixed_socket)) == -1)
         return "";
@@ -214,10 +214,10 @@ std::string tcp_client_impl::read_from_server() {
     if (read_all_from_socket(fixed_socket, buf.get(), message_size) == -1)
         return "";
 
-    return std::string(buf.get(), message_size);
+    return string(buf.get(), message_size);
 }
 
-ssize_t tcp_client_impl::write_to_server(std::string data) {
+auto tcp_client_impl::write_to_server(string const& data) -> ssize_t {
     size_t size = (size_t) data.length();
     if (write_message_size(size, fixed_socket) == -1)
         return -1;

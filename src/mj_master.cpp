@@ -37,7 +37,7 @@ void mj_master_impl::start() {
     std::thread election_thread([this] {
         bool is_master;
         do {
-            el->wait_master_node([&] (member m) {
+            el->wait_master_node([&] (member const& m) {
                 is_master = (m.id == hb->get_id());
             });
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -47,7 +47,7 @@ void mj_master_impl::start() {
         }
 
         // Add callbacks for nodes leaving or failing
-        std::function<void(member)> callback = [this] (member m) {
+        std::function<void(member const&)> callback = [this] (member const& m) {
             node_dropped(m.hostname);
         };
         hb->on_leave(callback);
@@ -114,7 +114,7 @@ void mj_master_impl::run_master() {
 
             bool is_master;
             string master_hostname;
-            el->wait_master_node([&] (member m) {
+            el->wait_master_node([&] (member const& m) {
                 is_master = (m.id == hb->get_id());
                 master_hostname = m.hostname;
             });
@@ -229,7 +229,7 @@ void mj_master_impl::run_master() {
     }
 }
 
-void mj_master_impl::handle_job(int fd, mj_start_job info)
+void mj_master_impl::handle_job(int fd, mj_start_job const& info)
 {
     // Assign the appropriate nodes a partitioning of the input files based on the specified partitioner
     int job_id = assign_job(info);
@@ -254,7 +254,7 @@ void mj_master_impl::handle_job(int fd, mj_start_job info)
     stop_job(job_id);
 }
 
-bool mj_master_impl::job_complete(int job_id) {
+auto mj_master_impl::job_complete(int job_id) -> bool {
     std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
 
     assert(job_states.find(job_id) != job_states.end());
@@ -268,12 +268,12 @@ bool mj_master_impl::job_complete(int job_id) {
     job_state &state = job_states[job_id];
 
     unsigned num_files = 0;
-    for (auto pair : state.unprocessed_files) {
+    for (auto const& pair : state.unprocessed_files) {
         num_files += pair.second.size();
     }
     lg->info("Waiting on " + std::to_string(num_files) + " files");
 
-    for (auto pair : state.unprocessed_files) {
+    for (auto const& pair : state.unprocessed_files) {
         if (pair.second.size() > 0) {
             return false;
         }
@@ -291,7 +291,7 @@ void mj_master_impl::stop_job(int job_id) {
             return;
         }
 
-        for (auto &[worker, _] : job_states[job_id].unprocessed_files) {
+        for (auto const& [worker, _] : job_states[job_id].unprocessed_files) {
             workers.push_back(worker);
         }
 
@@ -305,7 +305,7 @@ void mj_master_impl::stop_job(int job_id) {
 
     // Tell all the nodes in parallel that the job is over
     std::vector<std::thread> stop_threads;
-    for (string worker : workers) {
+    for (string const& worker : workers) {
         stop_threads.push_back(std::thread([=] {
             mj_message done_msg(hb->get_id(), mj_job_end_worker{job_id});
 
@@ -322,7 +322,7 @@ void mj_master_impl::stop_job(int job_id) {
     }
 }
 
-int mj_master_impl::assign_job(mj_start_job info) {
+auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
     int job_id = mt() & 0x7FFFFFFF;
 
     lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", exe=" + info.exe +
@@ -358,7 +358,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
         unprocessed_files_copy = job_states[job_id].unprocessed_files;
 
         string members_log_str = "Assigning job with ID " + std::to_string(job_id) + " to: ";
-        for (auto &pair : job_states[job_id].unprocessed_files) {
+        for (auto const& pair : job_states[job_id].unprocessed_files) {
             node_states[pair.first].num_files += pair.second.size();
 
             members_log_str += pair.first + " ";
@@ -368,7 +368,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
 
     { // Print the files assigned to each node
         std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-        for (auto &pair : job_states[job_id].unprocessed_files) {
+        for (auto const& pair : job_states[job_id].unprocessed_files) {
             string log_str = "[Job " + std::to_string(job_id) + "] Files assigned to node at " + pair.first + ": ";
             for (auto it = pair.second.begin(); it != pair.second.end(); ++it) {
                 log_str += *it;
@@ -382,7 +382,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
 
     // Actually send the message to assign the job to each of the nodes
     std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(unprocessed_files_copy.size());
-    for (auto &pair : unprocessed_files_copy) {
+    for (auto const& pair : unprocessed_files_copy) {
         tp->enqueue([=] {assign_job_to_node(job_id, pair.first, pair.second);});
     }
     tp->finish();
@@ -390,7 +390,7 @@ int mj_master_impl::assign_job(mj_start_job info) {
     return job_id;
 }
 
-member mj_master_impl::get_least_busy_node() {
+auto mj_master_impl::get_least_busy_node() -> member {
     std::vector<member> members = hb->get_members();
     // Choose the members that have the least amount of work currently
     {
@@ -411,7 +411,7 @@ member mj_master_impl::get_least_busy_node() {
     }
 }
 
-void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files)
+void mj_master_impl::assign_job_to_node(int job_id, std::string const& hostname, std::unordered_set<std::string> const& input_files)
 {
     std::string exe;
     std::string sdfs_src_dir;
@@ -451,7 +451,7 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string hostname, std::u
 
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
-void mj_master_impl::node_dropped(std::string hostname) {
+void mj_master_impl::node_dropped(std::string const& hostname) {
     std::unordered_set<int> jobs;
 
     lg->info("Lost node at " + hostname + ", reassigning its work to other nodes");
@@ -483,7 +483,7 @@ void mj_master_impl::node_dropped(std::string hostname) {
 
             lg->info("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
 
-            for (string file : participating_job_states[job_id].unprocessed_files[hostname]) {
+            for (string const& file : participating_job_states[job_id].unprocessed_files[hostname]) {
                 job_states[job_id].unprocessed_files[target].insert(file);
             }
             node_states[target].num_files += participating_job_states[job_id].unprocessed_files[hostname].size();

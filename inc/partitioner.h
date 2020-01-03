@@ -15,7 +15,7 @@ public:
         round_robin, hash, range
     };
 
-    static std::string print_type(type t) {
+    static auto print_type(type t) -> std::string {
         switch (t) {
             case round_robin: return "round_robin";
             case hash: return "hash";
@@ -27,30 +27,30 @@ public:
 
     // Returns a map of hostnames to a set of files assigned to each host, given the load of each host,
     //  the number of desired workers, and the list of input files
-    virtual std::unordered_map<std::string, std::unordered_set<std::string>> partition(std::vector<member> members,
-        unsigned num_workers, std::vector<std::string> input_files) = 0;
+    virtual auto partition(std::vector<member> const& members, unsigned num_workers, std::vector<std::string> const& input_files)
+        const -> std::unordered_map<std::string, std::unordered_set<std::string>> = 0;
 };
 
 class partitioner_factory {
 public:
-    static std::unique_ptr<partitioner> get_partitioner(partitioner::type t);
+    static auto get_partitioner(partitioner::type t) -> std::unique_ptr<partitioner>;
 
 private:
     class round_robin_partitioner : public partitioner {
     public:
-        std::unordered_map<std::string, std::unordered_set<std::string>> partition(std::vector<member> members,
-            unsigned num_workers, std::vector<std::string> input_files);
+        auto partition(std::vector<member> const& members, unsigned num_workers, std::vector<std::string> const& input_files)
+            const -> std::unordered_map<std::string, std::unordered_set<std::string>>;
     };
 
     class hash_partitioner : public partitioner {
     public:
-        std::unordered_map<std::string, std::unordered_set<std::string>> partition(std::vector<member> members,
-            unsigned num_workers, std::vector<std::string> input_files);
+        auto partition(std::vector<member> const& members, unsigned num_workers, std::vector<std::string> const& input_files)
+            const -> std::unordered_map<std::string, std::unordered_set<std::string>>;
     };
 
     class range_partitioner : public partitioner {
     public:
-        std::unordered_map<std::string, std::unordered_set<std::string>> partition(std::vector<member> members,
-            unsigned num_workers, std::vector<std::string> input_files);
+        auto partition(std::vector<member> const& members, unsigned num_workers, std::vector<std::string> const& input_files)
+            const -> std::unordered_map<std::string, std::unordered_set<std::string>>;
     };
 };

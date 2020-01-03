@@ -6,22 +6,23 @@
 #include <cstring>
 #include <iostream>
 
+using std::string;
 using std::unique_ptr;
 using std::make_unique;
 
-unique_ptr<tcp_client> mock_tcp_factory::get_tcp_client(string host, int port) {
+auto mock_tcp_factory::get_tcp_client(string const& host, int port) -> unique_ptr<tcp_client> {
     mock_tcp_client *retval = new mock_tcp_client(get_mock_udp_factory(), config->get_hostname());
     retval->setup_connection(host, port);
     return unique_ptr<tcp_client>(static_cast<tcp_client*>(retval));
 }
 
-unique_ptr<tcp_server> mock_tcp_factory::get_tcp_server(int port) {
+auto mock_tcp_factory::get_tcp_server(int port) -> unique_ptr<tcp_server> {
     mock_tcp_server *retval = new mock_tcp_server(get_mock_udp_factory(), config->get_hostname());
     retval->setup_server(port);
     return unique_ptr<tcp_server>(static_cast<tcp_server*>(retval));
 }
 
-mock_udp_factory *mock_tcp_factory::get_mock_udp_factory() {
+auto mock_tcp_factory::get_mock_udp_factory() -> mock_udp_factory* {
     // Poll while we wait for the state to get instantiated, and create mock_udp_env when it does
     while (true) {
         {
@@ -52,7 +53,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     port = port_;
-    id = static_cast<int32_t>(std::hash<std::string>()(hostname + std::to_string(port))) & 0x7FFFFFFF;
+    id = static_cast<int32_t>(std::hash<string>()(hostname + std::to_string(port))) & 0x7FFFFFFF;
 
     client = factory->get_udp_client(hostname + "_server");
     server = factory->get_udp_server(hostname + "_server");
@@ -88,7 +89,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
                     assert((msg_queues.find(client_id) == msg_queues.end() ||
                             client_hostnames.find(client_id) == client_hostnames.end()) &&
                             "Connection already open with this client");
-                    incoming_connections.push(std::make_tuple(client_id, std::string(buf + 5, length - 5)));
+                    incoming_connections.push({client_id, string(buf + 5, length - 5)});
                     break;
                 }
                 case msg_magic_byte: {
@@ -97,7 +98,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
                     if (msg_queues.find(client_id) == msg_queues.end())
                         assert(false && "Received message from client before establishing connection");
 
-                    msg_queues[client_id].push(std::string(buf + 5, length - 5));
+                    msg_queues[client_id].push(string(buf + 5, length - 5));
                     break;
                 }
                 case close_magic_byte: {
@@ -127,19 +128,16 @@ void mock_tcp_factory::mock_tcp_server::stop_server() {
     server->stop_server();
 }
 
-int mock_tcp_factory::mock_tcp_server::accept_connection() {
+auto mock_tcp_factory::mock_tcp_server::accept_connection() -> int {
     while (running.load()) {
         { // Atomic block to poll the queue
             std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
             if (incoming_connections.size() > 0) {
-                std::tuple<uint32_t, std::string> client_info = incoming_connections.front();
+                auto [client_id, client_hostname] = incoming_connections.front();
                 incoming_connections.pop();
 
-                uint32_t client_id = std::get<0>(client_info);
-                std::string client_hostname = std::get<1>(client_info);
-
-                msg_queues[client_id] = std::queue<std::string>();
+                msg_queues[client_id] = std::queue<string>();
                 client_hostnames[client_id] = client_hostname;
 
                 // Send a message back to the client saying that we've accepted the connection
@@ -147,7 +145,7 @@ int mock_tcp_factory::mock_tcp_server::accept_connection() {
                 accept_msg[0] = accept_magic_byte;
                 serializer::write_uint32_to_char_buf(id, accept_msg + 1);
                 client->send(client_hostname + std::to_string(client_id) + "->" + hostname + "_client", port,
-                    std::string(accept_msg, 5));
+                    string(accept_msg, 5));
 
                 // We will use the client ID as the FD for the fake socket
                 return client_id;
@@ -174,7 +172,7 @@ void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
     serializer::write_uint32_to_char_buf(id, closed_msg + 1);
     uint32_t client_id = client_socket;
     client->send(client_hostnames[client_socket] + std::to_string(client_id) + "->" + hostname + "_client",
-        port, std::string(closed_msg, 5));
+        port, string(closed_msg, 5));
 
     // Delete all information
     delete_connection(client_socket);
@@ -205,7 +203,7 @@ void mock_tcp_factory::mock_tcp_server::delete_connection(int client_fd) {
     client_hostnames.erase(client_fd);
 }
 
-std::string mock_tcp_factory::mock_tcp_server::read_from_client(int client_fd) {
+auto mock_tcp_factory::mock_tcp_server::read_from_client(int client_fd) -> string {
     while (true) {
         { // Atomic block to poll the queue
             std::lock_guard<std::recursive_mutex> guard(msg_mutex);
@@ -215,7 +213,7 @@ std::string mock_tcp_factory::mock_tcp_server::read_from_client(int client_fd) {
             }
 
             if (msg_queues[client_fd].size() > 0) {
-                std::string msg = msg_queues[client_fd].front();
+                string msg = msg_queues[client_fd].front();
                 msg_queues[client_fd].pop();
 
                 return msg;
@@ -226,7 +224,7 @@ std::string mock_tcp_factory::mock_tcp_server::read_from_client(int client_fd) {
     }
 }
 
-ssize_t mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, std::string data) {
+auto mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, string const& data) -> ssize_t {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     // Return 0 if the client is not connected
@@ -243,17 +241,17 @@ ssize_t mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, std::s
 
     uint32_t client_id = client_fd;
     client->send(client_hostnames[client_fd] + std::to_string(client_id) + "->" + hostname + "_client",
-        port, std::string(msg.get(), 5 + data.size()));
+        port, string(msg.get(), 5 + data.size()));
     return data.size();
 }
 
-int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int port) {
+auto mock_tcp_factory::mock_tcp_client::setup_connection(string const& host, int port) -> int {
     uint32_t server_id;
 
     { // Atomic block to access various data structures
         std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
-        server_id = static_cast<int32_t>(std::hash<std::string>()(host + std::to_string(port))) & 0x7FFFFFFF;
+        server_id = static_cast<int32_t>(std::hash<string>()(host + std::to_string(port))) & 0x7FFFFFFF;
 
         // Check that we don't already have a connection open to this server
         if (server_hostnames.find(server_id) != server_hostnames.find(server_id)) {
@@ -273,7 +271,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
         serializer::write_uint32_to_char_buf(id, initiation_msg.get() + 1);
         std::memcpy(initiation_msg.get() + 5, hostname.c_str(), hostname.size());
 
-        clients[server_id]->send(host + "_server", port, std::string(initiation_msg.get(), 5 + hostname.size()));
+        clients[server_id]->send(host + "_server", port, string(initiation_msg.get(), 5 + hostname.size()));
 
         running[server_id] = true;
         msg_threads[server_id] = std::thread([this, server_id] {
@@ -309,7 +307,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
 
                         // Make sure we don't already have an open connection with this server
                         assert(msg_queues.find(server_id) == msg_queues.end() && "Connection already open with this server");
-                        msg_queues[server_id] = std::queue<std::string>();
+                        msg_queues[server_id] = std::queue<string>();
                         break;
                     }
                     case msg_magic_byte: {
@@ -318,7 +316,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
                         if (msg_queues.find(server_id) == msg_queues.end())
                             assert(false && "Received message from server before establishing connection");
 
-                        msg_queues[server_id].push(std::string(buf + 5, length - 5));
+                        msg_queues[server_id].push(string(buf + 5, length - 5));
                         break;
                     }
                     case close_magic_byte: {
@@ -354,7 +352,7 @@ int mock_tcp_factory::mock_tcp_client::setup_connection(std::string host, int po
     return server_id;
 }
 
-std::string mock_tcp_factory::mock_tcp_client::read_from_server() {
+auto mock_tcp_factory::mock_tcp_client::read_from_server() -> string {
     while (true) {
         { // Atomic block to touch message queue
             std::lock_guard<std::recursive_mutex> guard(msg_mutex);
@@ -364,7 +362,7 @@ std::string mock_tcp_factory::mock_tcp_client::read_from_server() {
             }
 
             if (msg_queues[fixed_socket].size() > 0) {
-                std::string msg = msg_queues[fixed_socket].front();
+                string msg = msg_queues[fixed_socket].front();
                 msg_queues[fixed_socket].pop();
 
                 return msg;
@@ -375,7 +373,7 @@ std::string mock_tcp_factory::mock_tcp_client::read_from_server() {
     }
 }
 
-ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(std::string data) {
+auto mock_tcp_factory::mock_tcp_client::write_to_server(string const& data) -> ssize_t {
     std::lock_guard<std::recursive_mutex> guard(msg_mutex);
 
     // Return 0 if not connected
@@ -389,7 +387,7 @@ ssize_t mock_tcp_factory::mock_tcp_client::write_to_server(std::string data) {
     msg[0] = msg_magic_byte;
     serializer::write_uint32_to_char_buf(id, msg.get() + 1);
     std::memcpy(msg.get() + 5, data.c_str(), data.size());
-    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], std::string(msg.get(), 5 + data.size()));
+    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], string(msg.get(), 5 + data.size()));
     return data.size();
 }
 
@@ -405,7 +403,7 @@ void mock_tcp_factory::mock_tcp_client::close_connection() {
     char closed_msg[5];
     closed_msg[0] = close_magic_byte;
     serializer::write_uint32_to_char_buf(id, closed_msg + 1);
-    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], std::string(closed_msg, 5));
+    clients[fixed_socket]->send(server_hostnames[fixed_socket] + "_server", server_ports[fixed_socket], string(closed_msg, 5));
 
     // Delete all data related to the socket
     delete_connection(fixed_socket);

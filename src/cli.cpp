@@ -11,13 +11,13 @@ using std::string;
 
 cli_command cli_parser;
 
-cli_command *cli_command::add_subcommand(string command) {
+auto cli_command::add_subcommand(string const& command) -> cli_command* {
     assert(command != "help" && "help is a reserved subcommand");
     subcommands[command] = make_unique<cli_command>();
     return subcommands[command].get();
 }
 
-bool cli_command::parse(string command, int argc, char **argv) {
+auto cli_command::parse(string const& command, int argc, char **argv) -> bool {
     { // Block to keep all local variables out of scope of help label
         // Assume that the current command was invoked
         argc--; argv++;
@@ -177,7 +177,7 @@ help:
     return false;
 }
 
-void cli_command::print_help(std::string command) {
+void cli_command::print_help(std::string const& command) {
     std::cout << "Usage: " << command << " ";
 
     // Print all the arguments

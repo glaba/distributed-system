@@ -26,11 +26,11 @@ void mock_sdfs_client::start() {}
 
 void mock_sdfs_client::stop() {}
 
-bool operator==(const internal_path &p1, const internal_path &p2) {
+auto operator==(internal_path const& p1, internal_path const& p2) -> bool {
     return p1.path == p2.path;
 }
 
-string mock_sdfs_client::get_sdfs_root_dir() {
+auto mock_sdfs_client::get_sdfs_root_dir() -> string {
     string retval;
     access_state([&retval] (service_state *state) {
         retval = dynamic_cast<mock_sdfs_state*>(state)->sdfs_root_dir;
@@ -38,14 +38,14 @@ string mock_sdfs_client::get_sdfs_root_dir() {
     return retval;
 }
 
-void mock_sdfs_client::get_children(internal_path dir, dir_state_map &dir_states,
+void mock_sdfs_client::get_children(internal_path const& dir, dir_state_map &dir_states,
     std::vector<internal_path> &subdirs, std::vector<internal_path> &subfiles)
 {
-    for (const string &subfile : dir_states[dir].files) {
+    for (string const& subfile : dir_states[dir].files) {
         subfiles.push_back(sdfs::convert_path(sdfs::deconvert_path(dir) + "/" + subfile));
     }
 
-    for (const string &subdir : dir_states[dir].dirs) {
+    for (string const& subdir : dir_states[dir].dirs) {
         internal_path int_subdir = sdfs::convert_path(sdfs::deconvert_path(dir) + "/" + subdir);
         subdirs.push_back(int_subdir);
         get_children(int_subdir, dir_states, subdirs, subfiles);
@@ -61,13 +61,13 @@ void mock_sdfs_client::access_pieces(std::function<void(dir_state_map&, file_sta
     });
 }
 
-void mock_sdfs_client::on_event(const std::function<void(op_type, file_state_map::iterator)> &callback) {
+void mock_sdfs_client::on_event(std::function<void(op_type, file_state_map::iterator)> const& callback) {
     access_state([&] (service_state *state) {
         dynamic_cast<mock_sdfs_state*>(state)->master_callback = callback;
     });
 }
 
-int mock_sdfs_client::access_helper(const string &sdfs_path, std::function<bool(file_state_map::iterator, master_callback_type const&)> callback, op_type type) {
+auto mock_sdfs_client::access_helper(string const& sdfs_path, std::function<bool(file_state_map::iterator, master_callback_type const&)> const& callback, op_type type) -> int {
     string filename = sdfs::get_name(sdfs_path);
 
     internal_path int_dir = sdfs::convert_path(sdfs::get_dir(sdfs_path));
@@ -161,7 +161,7 @@ int mock_sdfs_client::access_helper(const string &sdfs_path, std::function<bool(
     return 0;
 }
 
-uint64_t mock_sdfs_client::mark_transaction_started() {
+auto mock_sdfs_client::mark_transaction_started() -> uint64_t {
     std::lock_guard<std::mutex> guard(tx_times_mutex);
     uint64_t time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     uint64_t counter = tx_counter++;
@@ -179,7 +179,7 @@ void mock_sdfs_client::mark_transaction_completed(uint64_t timestamp) {
     return;
 }
 
-uint32_t mock_sdfs_client::get_earliest_transaction() {
+auto mock_sdfs_client::get_earliest_transaction() const -> uint32_t {
     std::lock_guard<std::mutex> guard(tx_times_mutex);
     if (transaction_timestamps.size() == 0) {
         return 0;
@@ -188,7 +188,7 @@ uint32_t mock_sdfs_client::get_earliest_transaction() {
     }
 }
 
-void mock_sdfs_client::wait_transactions() {
+void mock_sdfs_client::wait_transactions() const {
     uint32_t cur_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     while (true) {
         uint32_t earliest_transaction = get_earliest_transaction();
@@ -199,7 +199,7 @@ void mock_sdfs_client::wait_transactions() {
     }
 }
 
-int mock_sdfs_client::write(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata, bool is_append) {
+auto mock_sdfs_client::write(string const& local_filename, string const& sdfs_path, sdfs_metadata const& metadata, bool is_append) -> int {
     uint64_t timestamp = mark_transaction_started();
 
     // Copy the file into a temporary location
@@ -230,7 +230,7 @@ int mock_sdfs_client::write(const std::string &local_filename, const std::string
     }, is_append ? op_append : op_put);
 }
 
-int mock_sdfs_client::write(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata, bool is_append) {
+auto mock_sdfs_client::write(inputter<string> const& in, string const& sdfs_path, sdfs_metadata const& metadata, bool is_append) -> int {
     uint64_t timestamp = mark_transaction_started();
 
     // Write the inputter to a temporary location
@@ -241,7 +241,7 @@ int mock_sdfs_client::write(const inputter<std::string> &in, const std::string &
     if (!dest) {
         return -1;
     }
-    for (string str : in) {
+    for (string const& str : in) {
         dest << str;
     }
     dest.close();
@@ -271,23 +271,23 @@ int mock_sdfs_client::write(const inputter<std::string> &in, const std::string &
     }, is_append ? op_append : op_put);
 }
 
-int mock_sdfs_client::put(const string &local_filename, const string &sdfs_path, const sdfs_metadata &metadata) {
+auto mock_sdfs_client::put(string const& local_filename, string const& sdfs_path, sdfs_metadata const& metadata) -> int {
     return write(local_filename, sdfs_path, metadata, false);
 }
 
-int mock_sdfs_client::put(const inputter<string> &in, const string &sdfs_path, const sdfs_metadata &metadata) {
+auto mock_sdfs_client::put(inputter<string> const& in, string const& sdfs_path, sdfs_metadata const& metadata) -> int {
     return write(in, sdfs_path, metadata, false);
 }
 
-int mock_sdfs_client::append(const string &local_filename, const string &sdfs_path, const sdfs_metadata &metadata) {
+auto mock_sdfs_client::append(string const& local_filename, string const& sdfs_path, sdfs_metadata const& metadata) -> int {
     return write(local_filename, sdfs_path, metadata, true);
 }
 
-int mock_sdfs_client::append(const inputter<string> &in, const string &sdfs_path, const sdfs_metadata &metadata) {
+auto mock_sdfs_client::append(inputter<string> const& in, string const& sdfs_path, sdfs_metadata const& metadata) -> int {
     return write(in, sdfs_path, metadata, true);
 }
 
-int mock_sdfs_client::get(const string &local_filename, const string &sdfs_path) {
+auto mock_sdfs_client::get(string const& local_filename, string const& sdfs_path) -> int {
     uint64_t timestamp = mark_transaction_started();
 
     string sdfs_root_dir = get_sdfs_root_dir();
@@ -317,7 +317,7 @@ int mock_sdfs_client::get(const string &local_filename, const string &sdfs_path)
     }, op_get);
 }
 
-std::optional<sdfs_metadata> mock_sdfs_client::get_metadata(const std::string &sdfs_path) {
+auto mock_sdfs_client::get_metadata(string const& sdfs_path) -> std::optional<sdfs_metadata> {
     uint64_t timestamp = mark_transaction_started();
     std::optional<sdfs_metadata> retval;
     internal_path int_path = sdfs::convert_path(sdfs_path);
@@ -333,7 +333,7 @@ std::optional<sdfs_metadata> mock_sdfs_client::get_metadata(const std::string &s
     return retval;
 }
 
-int mock_sdfs_client::del(const string &sdfs_path) {
+auto mock_sdfs_client::del(string const& sdfs_path) -> int {
     uint64_t timestamp = mark_transaction_started();
     string sdfs_root_dir = get_sdfs_root_dir();
     return access_helper(sdfs_path, [&] (file_state_map::iterator it, master_callback_type const& master_callback) {
@@ -350,7 +350,7 @@ int mock_sdfs_client::del(const string &sdfs_path) {
     }, op_del);
 }
 
-int mock_sdfs_client::mkdir(const std::string &sdfs_dir) {
+auto mock_sdfs_client::mkdir(string const& sdfs_dir) -> int {
     uint64_t timestamp = mark_transaction_started();
     int retval;
     internal_path int_dir = sdfs::convert_path(sdfs::simplify_dir(sdfs_dir));
@@ -382,7 +382,7 @@ int mock_sdfs_client::mkdir(const std::string &sdfs_dir) {
     return retval;
 }
 
-int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
+auto mock_sdfs_client::rmdir(string const& sdfs_dir) -> int {
     uint64_t timestamp = mark_transaction_started();
     internal_path int_dir = sdfs::convert_path(sdfs::simplify_dir(sdfs_dir));
 
@@ -415,7 +415,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
         // Normally, we would have to lock the files in some fixed order, but since
         // this is the only place multiple files are locked, and rmdir can only be called
         // once at a time on one directory, we can lock them in any order
-        for (const internal_path &filename : subfiles) {
+        for (internal_path const& filename : subfiles) {
             // Check that the file is not being deleted already -- if it is, just skip it
             // We will wait for it to be actually deleted in the end
             if (!file_states[filename].being_deleted) {
@@ -424,7 +424,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
 
                 file_states[filename].being_deleted = true;
 
-                files_to_delete.push_back(std::make_tuple(filename, cur_lock, file_states[filename].num_pieces));
+                files_to_delete.push_back({filename, cur_lock, file_states[filename].num_pieces});
             } else {
                 files_being_deleted.push_back(filename);
             }
@@ -432,7 +432,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
 
         // Mark this directory as well as all subdirectories as being deleted
         dir_states[int_dir].being_deleted = true;
-        for (const internal_path &dir : subdirs) {
+        for (internal_path const& dir : subdirs) {
             // If the directory is already being deleted, skip it, and we will wait
             // for it to be deleted at the end along with the files being deleted
             if (!dir_states[dir].being_deleted) {
@@ -450,7 +450,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
     }
 
     string sdfs_root_dir = get_sdfs_root_dir();
-    for (auto &[int_path, lock, pieces] : files_to_delete) {
+    for (auto const& [int_path, lock, pieces] : files_to_delete) {
         for (unsigned i = 0; i < pieces; i++) {
             assert(std::filesystem::remove(sdfs_root_dir + int_path.path + "." + std::to_string(i)) &&
                 "mock_sdfs_client contained invalid state");
@@ -463,7 +463,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
     utils::backoff([&] {
         bool all_deleted = true;
         access_pieces([&] (dir_state_map &dir_states, file_state_map &file_states, master_callback_type const& master_callback) {
-            for (const internal_path &filename : files_being_deleted) {
+            for (internal_path const& filename : files_being_deleted) {
                 if (file_states.find(filename) != file_states.end()) {
                     assert(file_states[filename].being_deleted &&
                         "File marked for deletion was either unmarked or recreated despite parent dir being marked for deletion");
@@ -472,7 +472,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
                 }
             }
 
-            for (const internal_path &dir : dirs_being_deleted) {
+            for (internal_path const& dir : dirs_being_deleted) {
                 if (dir_states.find(dir) != dir_states.end()) {
                     assert(dir_states[dir].being_deleted &&
                         "Dir marked for deletion was either unmarked or recreated despite parent dir being marked for deletion");
@@ -487,10 +487,10 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
 
     access_pieces([&] (dir_state_map &dir_states, file_state_map &file_states, master_callback_type const& master_callback) {
         dir_states.erase(int_dir);
-        for (auto &dir : dirs_to_delete) {
+        for (auto const& dir : dirs_to_delete) {
             dir_states.erase(dir);
         }
-        for (auto &[int_path, _1, _2] : files_to_delete) {
+        for (auto const& [int_path, _1, _2] : files_to_delete) {
             file_states.erase(int_path);
         }
     });
@@ -499,7 +499,7 @@ int mock_sdfs_client::rmdir(const std::string &sdfs_dir) {
     return 0;
 }
 
-std::optional<std::vector<string>> mock_sdfs_client::ls_files(const string &sdfs_dir) {
+auto mock_sdfs_client::ls_files(string const& sdfs_dir) -> std::optional<std::vector<string>> {
     uint64_t timestamp = mark_transaction_started();
     std::optional<std::vector<string>> retval;
 
@@ -510,7 +510,7 @@ std::optional<std::vector<string>> mock_sdfs_client::ls_files(const string &sdfs
             retval = std::nullopt;
         } else {
             retval = std::vector<string>();
-            for (const string &filename : dir_states[int_dir].files) {
+            for (string const& filename : dir_states[int_dir].files) {
                 retval.value().push_back(filename);
             }
         }
@@ -520,7 +520,7 @@ std::optional<std::vector<string>> mock_sdfs_client::ls_files(const string &sdfs
     return retval;
 }
 
-std::optional<std::vector<string>> mock_sdfs_client::ls_dirs(const string &sdfs_dir) {
+auto mock_sdfs_client::ls_dirs(string const& sdfs_dir) -> std::optional<std::vector<string>> {
     uint64_t timestamp = mark_transaction_started();
     std::optional<std::vector<string>> retval;
 
@@ -531,7 +531,7 @@ std::optional<std::vector<string>> mock_sdfs_client::ls_dirs(const string &sdfs_
             retval = std::nullopt;
         } else {
             retval = std::vector<string>();
-            for (const string &dirname : dir_states[int_dir].dirs) {
+            for (string const& dirname : dir_states[int_dir].dirs) {
                 retval.value().push_back(dirname);
             }
         }
@@ -541,7 +541,7 @@ std::optional<std::vector<string>> mock_sdfs_client::ls_dirs(const string &sdfs_
     return retval;
 }
 
-int mock_sdfs_client::get_num_shards(const string &sdfs_path) {
+auto mock_sdfs_client::get_num_shards(string const& sdfs_path) -> int {
     uint64_t timestamp = mark_transaction_started();
     int retval;
     internal_path int_path = sdfs::convert_path(sdfs_path);

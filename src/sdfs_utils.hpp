@@ -11,18 +11,18 @@
 
 class sdfs_utils {
 public:
-    static int send_message(tcp_client *client, sdfs_message sdfs_msg);
-    static int receive_message(tcp_client *client, sdfs_message *sdfs_msg);
-    static int send_message(tcp_server *server, int socket, sdfs_message sdfs_msg);
-    static int receive_message(tcp_server *server, int socket, sdfs_message *sdfs_msg);
+    static auto send_message(tcp_client *client, sdfs_message const& sdfs_msg) -> int;
+    static auto receive_message(tcp_client *client, sdfs_message *sdfs_msg) -> int;
+    static auto send_message(tcp_server *server, int socket, sdfs_message const& sdfs_msg) -> int;
+    static auto receive_message(tcp_server *server, int socket, sdfs_message *sdfs_msg) -> int;
 
-    static ssize_t write_file_to_socket(tcp_client *client, std::string filename);
-    static ssize_t read_file_from_socket(tcp_client *client, std::string filename);
-    static ssize_t write_file_to_socket(tcp_server *server, int socket, std::string filename);
-    static ssize_t read_file_from_socket(tcp_server *server, int socket, std::string filename);
+    static auto write_file_to_socket(tcp_client *client, std::string const& filename) -> ssize_t;
+    static auto read_file_from_socket(tcp_client *client, std::string const& filename) -> ssize_t;
+    static auto write_file_to_socket(tcp_server *server, int socket, std::string const& filename) -> ssize_t;
+    static auto read_file_from_socket(tcp_server *server, int socket, std::string const& filename) -> ssize_t;
 
-    static ssize_t write_first_line_to_socket(tcp_server *server, int socket, std::string filename);
+    static auto write_first_line_to_socket(tcp_server *server, int socket, std::string const& filename) -> ssize_t;
 private:
-    static int acquire_lock(int fd, int operation);
-    static int release_lock(int fd);
+    static auto acquire_lock(int fd, int operation) -> int;
+    static auto release_lock(int fd) -> int;
 };

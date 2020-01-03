@@ -65,23 +65,20 @@ void heartbeater_impl::stop() {
 }
 
 // Returns the list of members of the group that this node is aware of
-std::vector<member> heartbeater_impl::get_members() {
+auto heartbeater_impl::get_members() const -> std::vector<member> {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
-
     return mem_list.get_members();
 }
 
 // Gets the member object corresponding to the provided ID
-member heartbeater_impl::get_member_by_id(uint32_t id) {
+auto heartbeater_impl::get_member_by_id(uint32_t id) const -> member {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
-
     return mem_list.get_member_by_id(id);
 }
 
 // Returns the list of members of the group that this node is aware of
-member heartbeater_impl::get_successor() {
+auto heartbeater_impl::get_successor() const -> member {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
-
     return mem_list.get_successor(our_id);
 }
 
@@ -114,7 +111,7 @@ void heartbeater_impl::client_thread_function() {
             assert(msg_str.length() > 0);
 
             // Send the message out to all the neighbors
-            for (auto mem : mem_list.get_neighbors()) {
+            for (auto const& mem : mem_list.get_neighbors()) {
                 client->send(mem.hostname, config->get_hb_port(), msg_str);
             }
 
@@ -134,7 +131,7 @@ void heartbeater_impl::check_for_failed_neighbors() {
     uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     std::vector<member> neighbors = mem_list.get_neighbors();
 
-    for (auto mem : neighbors) {
+    for (auto const& mem : neighbors) {
         if (current_time > mem.last_heartbeat + timeout_interval_ms) {
             lg->info("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
             mem_list.remove_member(mem.id);
@@ -146,7 +143,7 @@ void heartbeater_impl::check_for_failed_neighbors() {
                 failed_nodes_queue.push(mem.id, message_redundancy);
 
                 // Call the on_fail handler if provided
-                for (auto handler : on_fail_handlers) {
+                for (auto const& handler : on_fail_handlers) {
                     handler(mem);
                 }
             }
@@ -165,7 +162,7 @@ void heartbeater_impl::send_introducer_msg() {
     auto new_nodes = new_nodes_queue.pop();
     auto updated = new_nodes_queue.peek();
 
-    for (auto node : new_nodes) {
+    for (auto const& node : new_nodes) {
         lg->debug("Sent introducer message to host at " + node.hostname + " with ID " + std::to_string(node.id));
         client->send(node.hostname, config->get_hb_port(), msg_str);
 
@@ -178,15 +175,16 @@ void heartbeater_impl::send_introducer_msg() {
 }
 
 // Runs the provided function atomically with any functions that read or write to the membership list
-void heartbeater_impl::run_atomically_with_mem_list(std::function<void()> fn) {
+void heartbeater_impl::run_atomically_with_mem_list(std::function<void()> const& fn) const {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     fn();
 }
 
 // Initiates an async request to join the group by sending a message a node to let us in
-void heartbeater_impl::join_group(std::string node) {
-    if (config->is_first_node())
+void heartbeater_impl::join_group(std::string const& node) {
+    if (config->is_first_node()) {
         return;
+    }
 
     lg->info("Requesting node at " + node + " to join group");
     joined_group = true;
@@ -277,13 +275,13 @@ void heartbeater_impl::server_thread_function() {
                     new_nodes_queue.push(m, message_redundancy);
 
                     // Call the join handlers after adding this node
-                    for (auto handler : on_join_handlers) {
+                    for (auto const& handler : on_join_handlers) {
                         handler(m);
                     }
                 }
             }
 
-            for (member m : msg.get_joined_nodes()) {
+            for (member const& m : msg.get_joined_nodes()) {
                 assert(m.id != 0 && m.hostname != "");
 
                 // Only add and propagate information about this join if we've never seen this node
@@ -298,7 +296,7 @@ void heartbeater_impl::server_thread_function() {
 
                     joined_nodes_queue.push(m, message_redundancy);
 
-                    for (auto handler : on_join_handlers) {
+                    for (auto const& handler : on_join_handlers) {
                         handler(m);
                     }
                 }
@@ -311,7 +309,7 @@ void heartbeater_impl::server_thread_function() {
                     mem_list.remove_member(id);
                     left_nodes_queue.push(id, message_redundancy);
 
-                    for (auto handler : on_leave_handlers) {
+                    for (auto const& handler : on_leave_handlers) {
                         handler(mem);
                     }
                 }
@@ -324,7 +322,7 @@ void heartbeater_impl::server_thread_function() {
                     mem_list.remove_member(id);
                     failed_nodes_queue.push(id, message_redundancy);
 
-                    for (auto handler : on_fail_handlers) {
+                    for (auto const& handler : on_fail_handlers) {
                         handler(mem);
                     }
                 }
@@ -336,20 +334,20 @@ void heartbeater_impl::server_thread_function() {
 }
 
 // Adds a handler to the list of handlers that will be called when a node fails
-void heartbeater_impl::on_fail(std::function<void(member)> handler) {
+void heartbeater_impl::on_fail(std::function<void(member const&)> handler) {
     // Acquire mutex to prevent concurrent modification of vector
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_fail_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node leaves
-void heartbeater_impl::on_leave(std::function<void(member)> handler) {
+void heartbeater_impl::on_leave(std::function<void(member const&)> handler) {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_leave_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node joins
-void heartbeater_impl::on_join(std::function<void(member)> handler) {
+void heartbeater_impl::on_join(std::function<void(member const&)> handler) {
     std::lock_guard<std::recursive_mutex> guard(member_list_mutex);
     on_join_handlers.push_back(handler);
 }

@@ -52,12 +52,12 @@ void mj_worker_impl::stop() {
 
     {
         std::lock_guard<std::recursive_mutex> guard(job_states_mutex);
-        for (auto &[job_id, state] : job_states) {
+        for (auto const& [job_id, state] : job_states) {
             state->done_mutex.lock();
         }
         // Must be updated with all the states locked because their condition variables depend on running
         running = false;
-        for (auto &[job_id, state] : job_states) {
+        for (auto const& [job_id, state] : job_states) {
             state->cv_done.notify_all();
             state->done_mutex.unlock();
         }
@@ -155,7 +155,7 @@ void mj_worker_impl::server_thread_function() {
     }
 }
 
-void mj_worker_impl::start_job(int job_id, mj_assign_job data) {
+void mj_worker_impl::start_job(int job_id, mj_assign_job const& data) {
     job_state *state;
 
     { // Create an entry in job_states and store a pointer to it
@@ -252,7 +252,7 @@ void mj_worker_impl::notify_job_failed(int job_id) {
     // Loop in order to send the message to the correct master node in the case of master failure
     while (running.load()) {
         string master_hostname = "";
-        el->wait_master_node([this, &master_hostname, job_id] (member master) {
+        el->wait_master_node([this, &master_hostname, job_id] (member const& master) {
             master_hostname = master.hostname;
         });
 
@@ -271,7 +271,7 @@ void mj_worker_impl::notify_job_failed(int job_id) {
     }
 }
 
-void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_files) {
+void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> const& new_files) {
     job_state *state;
 
     { // Safely get a pointer to the job state
@@ -288,7 +288,7 @@ void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_f
         string sdfs_output_dir = state->sdfs_output_dir;
         int num_appends_parallel = state->num_appends_parallel;
 
-        for (auto &filename : new_files) {
+        for (auto const& filename : new_files) {
             lg->debug("[Job " + std::to_string(job_id) + "] Processing file " + filename);
 
             // Enqueue a thread to download the file, run the exe on it, and write the results back to SDFS
@@ -301,8 +301,8 @@ void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> new_f
     }
 }
 
-void mj_worker_impl::process_file(int job_id, string filename, string sdfs_src_dir, string sdfs_output_dir,
-    processor::type processor_type, int num_appends_parallel)
+void mj_worker_impl::process_file(int job_id, string const& filename, string const& sdfs_src_dir,
+    string const& sdfs_output_dir, processor::type processor_type, int num_appends_parallel)
 {
     string sdfs_file_path = sdfs_src_dir + "/" + filename;
     string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
@@ -340,11 +340,13 @@ void mj_worker_impl::process_file(int job_id, string filename, string sdfs_src_d
     pclose(popen(("rm " + local_file_path).c_str(), "r"));
 }
 
-void mj_worker_impl::append_output(int job_id, processor *proc, string input_file, string sdfs_output_dir, int num_appends_parallel) {
+void mj_worker_impl::append_output(int job_id, processor *proc, string const& input_file,
+    string const& sdfs_output_dir, int num_appends_parallel)
+{
     while (running.load()) {
         // First, get the master hostname from the election service
         string master_hostname = "";
-        el->wait_master_node([this, &master_hostname, job_id] (member master) {
+        el->wait_master_node([this, &master_hostname, job_id] (member const& master) {
             lg->trace("[Job " + std::to_string(job_id) + "] Got master node at " + master.hostname + " from election");
             master_hostname = master.hostname;
         });
@@ -357,7 +359,7 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
         std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(num_appends_parallel);
         std::atomic<bool> master_down = false;
 
-        for (auto &[output_filename, vals] : *proc) {
+        for (auto const& [output_filename, vals] : *proc) {
             if (master_down.load()) {
                 break;
             }
@@ -392,8 +394,8 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string input_fil
     }
 }
 
-std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, const string &input_file,
-    const string &output_file_path, std::vector<string> &vals, std::atomic<bool> *master_down)
+std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tcp_client *client, string const& input_file,
+    string const& output_file_path, std::vector<string> const& vals, std::atomic<bool> *master_down)
 {
     // Then, construct the message requesting permission to append
     mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file_path});
@@ -424,7 +426,7 @@ std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tc
         return std::optional<std::function<void()>>([=] {
             // Append the values to the output file using sdfs_client
             string append;
-            for (auto &val : vals) {
+            for (auto const& val : vals) {
                 append += val + "\n";
             }
 
@@ -455,7 +457,7 @@ std::optional<std::function<void()>> mj_worker_impl::append_lines(int job_id, tc
     }
 }
 
-bool mj_worker_impl::run_command(string command, std::function<bool(string)> callback) {
+auto mj_worker_impl::run_command(string const& command, std::function<bool(string const&)> const& callback) const -> bool {
     char buffer[1024];
     FILE *stream = popen(command.c_str(), "r");
     if (stream) {

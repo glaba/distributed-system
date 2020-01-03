@@ -12,7 +12,7 @@ public:
         maple, juice
     };
 
-    static std::string print_type(type t) {
+    static auto print_type(type t) -> std::string {
         switch (t) {
             case maple: return "maple_processor";
             case juice: return "juice_processor";
@@ -21,7 +21,7 @@ public:
     }
 
     // Processes a single line of the output of the executable
-    virtual bool process_line(std::string line) = 0;
+    virtual auto process_line(std::string const& line) -> bool = 0;
     // Resets any internal state accumulated from processing lines
     virtual void reset() = 0;
 
@@ -32,13 +32,13 @@ public:
 
 class processor_factory {
 public:
-    static std::unique_ptr<processor> get_processor(processor::type type);
+    static auto get_processor(processor::type type) -> std::unique_ptr<processor>;
 };
 
 class maple_processor : public processor {
 public:
     maple_processor();
-    bool process_line(std::string line);
+    auto process_line(std::string const& line) -> bool;
     void reset();
 
 private:
@@ -48,7 +48,7 @@ private:
 class juice_processor : public processor {
 public:
     juice_processor();
-    bool process_line(std::string line);
+    auto process_line(std::string const& line) -> bool;
     void reset();
 
 private:

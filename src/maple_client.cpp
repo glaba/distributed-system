@@ -13,12 +13,12 @@ maple_client_impl::maple_client_impl(environment &env)
     , fac(env.get<tcp_factory>())
     , lg(env.get<logger_factory>()->get_logger("maple_client")) {}
 
-std::string maple_client_impl::get_error() {
+auto maple_client_impl::get_error() const -> string {
     return error;
 }
 
-bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_exe, int num_maples,
-    string sdfs_intermediate_filename_prefix, string sdfs_src_dir)
+auto maple_client_impl::run_job(string const& mj_node, string const& local_exe, string const& maple_exe,
+    int num_maples, string const& sdfs_src_dir, string const& sdfs_output_dir) -> bool
 {
     do {
         lg->info("Starting job");
@@ -28,7 +28,7 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
         }
 
         mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
-            sdfs_src_dir, processor::type::maple, sdfs_intermediate_filename_prefix, 10, 50});
+            sdfs_src_dir, processor::type::maple, sdfs_output_dir, 10, 50});
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client(mj_node, config->get_mj_master_port());
@@ -64,7 +64,7 @@ bool maple_client_impl::run_job(string mj_node, string local_exe, string maple_e
                 continue;
             } else {
                 lg->info("Contacted node was not the master, but told us that the master is at " + master_node);
-                return run_job(master_node, local_exe, maple_exe, num_maples, sdfs_intermediate_filename_prefix, sdfs_src_dir);
+                return run_job(master_node, local_exe, maple_exe, num_maples, sdfs_src_dir, sdfs_output_dir);
             }
         } else if (response_msg.get_msg_type() == mj_message::mj_msg_type::JOB_END) {
             if (response_msg.get_msg_data<mj_job_end>().succeeded) {

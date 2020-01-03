@@ -23,14 +23,14 @@ public:
 
     void start();
     void stop();
-    std::vector<member> get_members();
-    member get_member_by_id(uint32_t id);
-    member get_successor();
-    void run_atomically_with_mem_list(std::function<void()>);
-    void join_group(std::string node);
+    auto get_members() const -> std::vector<member>;
+    auto get_member_by_id(uint32_t id) const -> member;
+    auto get_successor() const -> member;
+    void run_atomically_with_mem_list(std::function<void()> const& fn) const;
+    void join_group(std::string const& node);
     void leave_group();
 
-    uint32_t get_id() {
+    auto get_id() const -> uint32_t {
         return our_id;
     }
 
@@ -42,9 +42,9 @@ public:
         nodes_can_join = true;
     }
 
-    void on_fail(std::function<void(member)>);
-    void on_leave(std::function<void(member)>);
-    void on_join(std::function<void(member)>);
+    void on_fail(std::function<void(member const&)>);
+    void on_leave(std::function<void(member const&)>);
+    void on_join(std::function<void(member const&)>);
 
 private:
     // Fuction that runs the client side code in its own thread
@@ -91,12 +91,12 @@ private:
 
     // Membership list and mutex protecting membership list access
     member_list mem_list;
-    std::recursive_mutex member_list_mutex;
+    mutable std::recursive_mutex member_list_mutex;
 
     // Handlers that will be called when the membership list changes
-    std::vector<std::function<void(member)>> on_fail_handlers;
-    std::vector<std::function<void(member)>> on_join_handlers;
-    std::vector<std::function<void(member)>> on_leave_handlers;
+    std::vector<std::function<void(member const&)>> on_fail_handlers;
+    std::vector<std::function<void(member const&)>> on_join_handlers;
+    std::vector<std::function<void(member const&)>> on_leave_handlers;
 
     // The client and server threads and a boolean used to stop the threads
     std::unique_ptr<std::thread> server_thread, client_thread;

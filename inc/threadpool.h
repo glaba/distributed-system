@@ -6,12 +6,12 @@
 class threadpool {
 public:
     virtual ~threadpool() {}
-    virtual void enqueue(std::function<void()> task) = 0;
+    virtual void enqueue(std::function<void()> const& task) = 0;
     virtual void finish() = 0;
 };
 
 class threadpool_factory {
 public:
-    virtual std::unique_ptr<threadpool> get_threadpool(unsigned num_threads) = 0;
+    virtual auto get_threadpool(unsigned num_threads) const -> std::unique_ptr<threadpool> = 0;
 };
 

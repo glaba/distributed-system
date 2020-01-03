@@ -17,13 +17,13 @@ public:
     logger_factory_impl(environment &env)
         : config(env.get<configuration>()) {}
 
-    void configure(logger::log_level level_, std::string log_file_path_);
+    void configure(logger::log_level level_, std::string const& log_file_path_);
     void configure(logger::log_level level_);
     void include_hostname();
-    std::unique_ptr<logger> get_logger(std::string prefix);
+    auto get_logger(std::string const& prefix) const -> std::unique_ptr<logger>;
 
 protected:
-    std::mutex logger_factory_mutex;
+    mutable std::mutex logger_factory_mutex;
     logger::log_level level;
     std::string log_file_path;
     bool using_stdout;
@@ -39,12 +39,12 @@ protected:
         stdout_logger(std::string prefix_)
             : prefix(prefix_) {}
 
-        void info(std::string data);
-        void debug(std::string data);
-        void trace(std::string data);
+        void info(std::string const& data) const;
+        void debug(std::string const& data) const;
+        void trace(std::string const& data) const;
 
     private:
-        void log(std::string data, std::string log_level_char);
+        inline void log(std::string const& data, std::string const& log_level_char) const;
 
         std::string prefix;
     };
@@ -55,15 +55,15 @@ protected:
         file_logger(std::string log_file_path_, std::string prefix_)
             : prefix(prefix_), log_stream((log_file_path_ == "") ? "/dev/null" : log_file_path_) {}
 
-        void info(std::string data);
-        void debug(std::string data);
-        void trace(std::string data);
+        void info(std::string const& data) const;
+        void debug(std::string const& data) const;
+        void trace(std::string const& data) const;
 
     private:
-        void log(std::string data, std::string log_level_char);
+        inline void log(std::string const& data, std::string const& log_level_char) const;
 
         std::string prefix;
-        std::ofstream log_stream;
+        mutable std::ofstream log_stream;
     };
 };
 

@@ -29,20 +29,20 @@ private:
     // Server thread which listens for incoming TCP messages as a master node
     void run_master();
     // Initiates a new job, waits for it to complete, and informs the client that started the job
-    void handle_job(int fd, mj_start_job info);
+    void handle_job(int fd, mj_start_job const& info);
     // Assigns files to nodes in the cluster, sends them a message assigning them work,
     // and returns the job ID, which is negative on failure
-    int assign_job(mj_start_job info);
+    auto assign_job(mj_start_job const& info) -> int;
     // Specifically assigns a list of input files to the provided node
-    void assign_job_to_node(int job_id, std::string hostname, std::unordered_set<std::string> input_files);
+    void assign_job_to_node(int job_id, std::string const& hostname, std::unordered_set<std::string> const& input_files);
     // Returns the node with the current least amount of files being processed
-    member get_least_busy_node();
+    auto get_least_busy_node() -> member;
     // Notifies all worker nodes to stop working on the specified job, and cleans up any related data
     void stop_job(int job_id);
     // Checks whether or not a previously running job has completed
-    bool job_complete(int job_id);
+    auto job_complete(int job_id) -> bool;
     // Callback called by heartbeater when a node goes down, which will redistribute its work to other nodes
-    void node_dropped(std::string hostname);
+    void node_dropped(std::string const& hostname);
 
     struct string_pair_hash {
         inline std::size_t operator()(const std::pair<std::string, std::string> &v) const {
@@ -79,11 +79,11 @@ private:
     std::mt19937 mt;
 
     // A map from each node in the cluster's hostname to its state, with a mutex protecting it
-    std::recursive_mutex node_state_mutex;
+    mutable std::recursive_mutex node_state_mutex;
     std::unordered_map<std::string, node_state> node_states;
 
     // A map from job ID to the state of the job, with a mutex protecting it
-    std::recursive_mutex job_state_mutex;
+    mutable std::recursive_mutex job_state_mutex;
     std::unordered_map<int, job_state> job_states;
 
     // Services that this depends on

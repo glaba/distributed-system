@@ -94,7 +94,7 @@ mj_message::mj_message(const char *buf, unsigned length) {
     }
 }
 
-std::string mj_message::serialize() {
+auto mj_message::serialize() const -> std::string {
     assert(msg_type != INVALID && "Should not be serializing before setting message data");
 
     serializer ser;

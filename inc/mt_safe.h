@@ -8,7 +8,7 @@ class mt_safe {
 public:
     mt_safe(uint32_t seed) : mt(seed) {}
 
-    uint32_t operator()() {
+    auto operator()() -> uint32_t {
         std::lock_guard<std::recursive_mutex> guard(m);
         return mt();
     }

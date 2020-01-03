@@ -3,7 +3,7 @@
 
 using std::unique_ptr;
 
-bool election_message::operator==(const election_message &m) {
+auto election_message::operator==(const election_message &m) -> bool {
     if (type != m.type)
         return false;
 
@@ -58,7 +58,7 @@ election_message::election_message(char *buf_, unsigned length_) {
 }
 
 // Serializes the message and returns a string containing the message
-std::string election_message::serialize() {
+auto election_message::serialize() const -> std::string {
     if (type == msg_type::empty) {
         return "";
     }

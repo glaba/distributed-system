@@ -53,7 +53,7 @@ void election_impl::start() {
     client_thread = std::make_unique<std::thread>([this] {client_thread_function();});
     client_thread->detach();
 
-    std::function<void(member)> callback = [this](member m) {
+    std::function<void(member const&)> callback = [this](member const& m) {
         { // Atomic block for accessing the state
             std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
@@ -114,7 +114,7 @@ void election_impl::stop() {
 }
 
 // Debugging function to print a string value for the enum
-std::string election_impl::print_state(election_state s) {
+std::string election_impl::print_state(election_state const& s) {
     switch (s) {
         case no_master: return "NO_MASTER";
         case normal: return "NORMAL";
@@ -268,7 +268,7 @@ void election_impl::update_timer() {
 }
 
 // Keeps track of the highest initiator ID seen for ELECTION messages so far
-void election_impl::add_to_cache(election_message msg) {
+void election_impl::add_to_cache(election_message const& msg) {
     assert(msg.get_type() == election_message::msg_type::election);
 
     if (highest_initiator_id < msg.get_initiator_id()) {
@@ -277,7 +277,7 @@ void election_impl::add_to_cache(election_message msg) {
 }
 
 // Passes on an ELECTION message as defined by the protocol
-void election_impl::propagate(election_message msg) {
+void election_impl::propagate(election_message const& msg) {
     assert(msg.get_type() == election_message::msg_type::election);
 
     if (msg.get_initiator_id() >= highest_initiator_id) {
@@ -300,7 +300,7 @@ void election_impl::propagate(election_message msg) {
 }
 
 // Enqueues a message into the message_queue and prints debug information
-void election_impl::enqueue_message(std::string dest, election_message msg, int redundancy) {
+void election_impl::enqueue_message(std::string const& dest, election_message const& msg, int redundancy) {
     // Print log information first
     if (msg.get_type() == election_message::msg_type::introduction) {
         lg->debug("Informing new node at " + dest + " that master node is " +
@@ -327,7 +327,7 @@ void election_impl::enqueue_message(std::string dest, election_message msg, int 
     }
 
     // Actually enqueue the message
-    message_queue.push(std::make_tuple(dest, msg), redundancy);
+    message_queue.push({dest, msg}, redundancy);
 }
 
 void election_impl::server_thread_function() {
@@ -506,15 +506,8 @@ void election_impl::client_thread_function() {
             std::lock_guard<std::recursive_mutex> guard(state_mutex);
 
             // Pop off the messages that are waiting to be sent
-            std::vector<std::tuple<std::string, election_message>> messages = message_queue.pop();
-
-            for (auto m : messages) {
-                std::string dest = std::get<0>(m);
-                election_message msg = std::get<1>(m);
-
-                std::string msg_str = msg.serialize();
-
-                client->send(dest, config->get_election_port(), msg_str);
+            for (auto const& [dest, msg] : message_queue.pop()) {
+                client->send(dest, config->get_election_port(), msg.serialize());
             }
         }
 
@@ -525,23 +518,27 @@ void election_impl::client_thread_function() {
 // Calls the callback, providing the master node and a boolean indicating whether or not
 // there currently is a master node. If the boolean is false, garbage data is given as the master node.
 // The callback will run atomically with all other election logic
-void election_impl::get_master_node(std::function<void(member, bool)> callback) {
+void election_impl::get_master_node(std::function<void(member const&, bool)> callback) const {
     std::lock_guard<std::recursive_mutex> guard(state_mutex);
     callback(master_node, state == normal);
 }
 
-void election_impl::wait_master_node(std::function<void(member)> callback) {
-    bool done = false;
-    while (!done) {
+void election_impl::wait_master_node(std::function<void(member const&)> callback) const {
+    while (true) {
         if (!running.load()) {
             callback(member());
+            return;
         }
-        get_master_node([&done, &callback] (member master, bool succeeded) {
+        bool done = false;
+        get_master_node([&] (member const& master, bool succeeded) {
             if (succeeded) {
                 callback(master);
                 done = true;
             }
         });
+        if (true) {
+            return;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 }

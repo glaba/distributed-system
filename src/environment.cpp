@@ -11,7 +11,7 @@ std::unordered_map<std::string, std::function<std::unique_ptr<service>(environme
 std::recursive_mutex                                                                          environment::test_service_registry_mutex;
 std::unordered_map<std::string, std::function<std::unique_ptr<service>(environment&)>>        environment::test_service_registry;
 
-void environment::add_to_service_registry(std::string id, std::function<std::unique_ptr<service>(environment&)> callback) {
+void environment::add_to_service_registry(std::string const& id, std::function<std::unique_ptr<service>(environment&)> const& callback) {
     std::thread add_thread([id, callback] {
         // Wait while the mutex and the unordered_map get default initialized
         std::this_thread::sleep_for(milliseconds(250));
@@ -22,7 +22,7 @@ void environment::add_to_service_registry(std::string id, std::function<std::uni
     add_thread.detach();
 }
 
-void environment::add_to_test_service_registry(std::string id, std::function<std::unique_ptr<service>(environment&)> callback) {
+void environment::add_to_test_service_registry(std::string const& id, std::function<std::unique_ptr<service>(environment&)> const& callback) {
     std::thread add_thread([id, callback] {
         // Wait while the mutex and the unordered_map get default initialized
         std::this_thread::sleep_for(milliseconds(250));

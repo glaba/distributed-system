@@ -5,7 +5,7 @@
 using std::string;
 
 namespace sdfs {
-    string simplify_dir(const string &sdfs_dir) {
+    string simplify_dir(string const& sdfs_dir) {
         if (sdfs_dir.at(sdfs_dir.length() - 1) == '/') {
             return sdfs_dir.substr(0, sdfs_dir.length() - 1);
         } else {
@@ -13,7 +13,7 @@ namespace sdfs {
         }
     }
 
-    string get_dir(const string &sdfs_path) {
+    string get_dir(string const& sdfs_path) {
         size_t backslash_index = sdfs_path.find_last_of("/");
         if (backslash_index != string::npos) {
             return sdfs_path.substr(0, backslash_index);
@@ -22,7 +22,7 @@ namespace sdfs {
         }
     }
 
-    string get_name(const string &sdfs_path) {
+    string get_name(string const& sdfs_path) {
         size_t backslash_index = sdfs_path.find_last_of("/");
         if (backslash_index != string::npos) {
             return sdfs_path.substr(backslash_index + 1);
@@ -31,7 +31,7 @@ namespace sdfs {
         }
     }
 
-    internal_path convert_path(const string &sdfs_path) {
+    internal_path convert_path(string const& sdfs_path) {
         internal_path retval;
 
         for (unsigned i = 0; i < sdfs_path.length(); i++) {
@@ -47,7 +47,7 @@ namespace sdfs {
         return retval;
     }
 
-    string deconvert_path(const internal_path &p) {
+    string deconvert_path(internal_path const& p) {
         string retval;
 
         for (unsigned i = 0; i < p.path.length(); i++) {

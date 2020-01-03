@@ -11,23 +11,23 @@ public:
 
     class iterator {
     public:
-        iterator(std::function<std::optional<T>()> source_) : source(source_), end(false) {
+        iterator(std::function<std::optional<T>()> const& source_) : source(source_), end(false) {
             generate();
         }
         iterator() : end(true) {}
-        bool operator==(const iterator &a) {
+        auto operator==(iterator const& a) const -> bool {
             return a.end == end;
         }
-        bool operator!=(const iterator &a) {
+        auto operator!=(iterator const& a) const -> bool {
             return a.end != end;
         }
-        T &operator*() {
+        auto operator*() -> T& {
             return curval;
         }
-        T *operator->() {
+        auto operator->() const -> T*{
             return &curval;
         }
-        iterator &operator++() {
+        auto operator++() -> iterator& {
             generate();
             return *this;
         }
@@ -47,11 +47,11 @@ public:
         bool end;
     };
 
-    iterator begin() const {
+    auto begin() const -> iterator {
         return iterator(source);
     }
 
-    iterator end() const {
+    auto end() const -> iterator {
         return iterator();
     }
 

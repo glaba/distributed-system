@@ -11,7 +11,7 @@ using std::make_unique;
 std::mutex logger_factory_impl::log_mutex;
 
 template <logger::log_level level>
-void logger_factory_impl::stdout_logger<level>::log(std::string data, std::string log_level_char) {
+inline void logger_factory_impl::stdout_logger<level>::log(std::string const& data, std::string const& log_level_char) const {
     std::lock_guard<std::mutex> guard(log_mutex);
 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
@@ -24,28 +24,28 @@ void logger_factory_impl::stdout_logger<level>::log(std::string data, std::strin
 }
 
 template <logger::log_level level>
-void logger_factory_impl::stdout_logger<level>::info(std::string data) {
+void logger_factory_impl::stdout_logger<level>::info(std::string const& data) const {
     if (level == level_info || level == level_debug || level == level_trace) {
         log(data, "I");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::stdout_logger<level>::debug(std::string data) {
+void logger_factory_impl::stdout_logger<level>::debug(std::string const& data) const {
     if (level == level_debug || level == level_trace) {
         log(data, "D");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::stdout_logger<level>::trace(std::string data) {
+void logger_factory_impl::stdout_logger<level>::trace(std::string const& data) const {
     if (level == level_trace) {
         log(data, "T");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::file_logger<level>::log(std::string data, std::string log_level_char) {
+inline void logger_factory_impl::file_logger<level>::log(std::string const& data, std::string const& log_level_char) const {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t tt = std::chrono::system_clock::to_time_t(now);
 
@@ -56,27 +56,27 @@ void logger_factory_impl::file_logger<level>::log(std::string data, std::string 
 }
 
 template <logger::log_level level>
-void logger_factory_impl::file_logger<level>::info(std::string data) {
+void logger_factory_impl::file_logger<level>::info(std::string const& data) const {
     if (level == level_info || level == level_debug || level == level_trace) {
         log(data, "I");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::file_logger<level>::debug(std::string data) {
+void logger_factory_impl::file_logger<level>::debug(std::string const& data) const {
     if (level == level_debug || level == level_trace) {
         log(data, "D");
     }
 }
 
 template <logger::log_level level>
-void logger_factory_impl::file_logger<level>::trace(std::string data) {
+void logger_factory_impl::file_logger<level>::trace(std::string const& data) const {
     if (level == level_trace) {
         log(data, "T");
     }
 }
 
-void logger_factory_impl::configure(logger::log_level level_, std::string log_file_path_) {
+void logger_factory_impl::configure(logger::log_level level_, std::string const& log_file_path_) {
     std::lock_guard<std::mutex> guard(logger_factory_mutex);
     level = level_;
     log_file_path = log_file_path_;
@@ -94,7 +94,7 @@ void logger_factory_impl::include_hostname() {
     including_hostname = true;
 }
 
-unique_ptr<logger> logger_factory_impl::get_logger(std::string prefix) {
+auto logger_factory_impl::get_logger(std::string const& prefix) const -> unique_ptr<logger> {
     std::lock_guard<std::mutex> guard(logger_factory_mutex);
 
     std::string full_prefix = (including_hostname) ? (config->get_hostname() + " " + prefix) : prefix;

@@ -118,7 +118,7 @@ testing::register_test single_node_maple("maple.single_node",
     // Have node_env initiate the job
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_env->get<maple_client>();
-    assert(client->run_job("master", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
+    assert(client->run_job("master", "./mje/wc_maple", "wc_maple", 1, "wc_data", "intermediate"));
 
     check_wc_ram(*node_env);
 
@@ -155,7 +155,7 @@ testing::register_test single_node_mj("maplejuice.single_node",
     // Have node_env initiate the Maple job
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *mclient = node_env->get<maple_client>();
-    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
+    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 1, "wc_data", "intermediate"));
 
     check_wc_ram(*node_env);
 
@@ -196,7 +196,7 @@ testing::register_test contact_not_master("maple.contact_not_master",
     // Have node_env initiate the job and send it to node instead of master
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_env->get<maple_client>();
-    assert(client->run_job("node", "./mje/wc_maple", "wc_maple", 1, "intermediate", "wc_data"));
+    assert(client->run_job("node", "./mje/wc_maple", "wc_maple", 1, "wc_data", "intermediate"));
 
     check_wc_ram(*node_env);
 
@@ -240,7 +240,7 @@ testing::register_test multiple_nodes("maplejuice.multiple_nodes",
     // Have node_envs[0] initiate the job and send it to node instead of master
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *mclient = node_envs[0]->get<maple_client>();
-    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
+    assert(mclient->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "wc_hitchhiker", "intermediate"));
 
     juice_client *jclient = node_envs[0]->get<juice_client>();
     assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 5,
@@ -305,7 +305,7 @@ testing::register_test drop_maple("maplejuice.drop_maple",
     // Have node_envs[0] initiate the job and send it to node instead of master
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_envs[0]->get<maple_client>();
-    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
+    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "wc_hitchhiker", "intermediate"));
 
     juice_client *jclient = node_envs[0]->get<juice_client>();
     assert(jclient->run_job("mster", "./mje/wc_juice", "wc_juice", 5,
@@ -367,7 +367,7 @@ testing::register_test drop_juice("maplejuice.drop_juice",
     // Have node_envs[0] initiate the job and send it to node instead of master
     std::this_thread::sleep_for(std::chrono::milliseconds(3000)); // Wait for master to be ready (TODO: remove this after standardizing start/stop)
     maple_client *client = node_envs[0]->get<maple_client>();
-    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "intermediate", "wc_hitchhiker"));
+    assert(client->run_job("mster", "./mje/wc_maple", "wc_maple", 5, "wc_hitchhiker", "intermediate"));
 
     std::thread drop_thread([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));

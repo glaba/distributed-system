@@ -4,7 +4,7 @@
 
 using std::string;
 
-std::unique_ptr<processor> processor_factory::get_processor(processor::type type) {
+auto processor_factory::get_processor(processor::type type) -> std::unique_ptr<processor> {
     switch (type) {
         case processor::type::maple: return std::make_unique<maple_processor>();
         case processor::type::juice: return std::make_unique<juice_processor>();
@@ -24,7 +24,7 @@ maple_processor::maple_processor()
         }
     }) {}
 
-bool maple_processor::process_line(string line) {
+auto maple_processor::process_line(string const& line) -> bool {
     // The input has the format "<key> <value>", where <key> doesn't contain spaces and <value> doesn't contain \n
     size_t space_index = line.find(" ");
     if (space_index == string::npos) {
@@ -53,7 +53,7 @@ juice_processor::juice_processor()
         }
     }) {}
 
-bool juice_processor::process_line(string line) {
+auto juice_processor::process_line(string const& line) -> bool {
     // We assume the juice executable already emits the format <key> <value>
     values.push_back(line);
     return true;

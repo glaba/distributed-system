@@ -6,7 +6,7 @@
 #include <string>
 
 namespace utils {
-    bool backoff(std::function<bool()> callback, std::function<bool()> give_up) {
+    bool backoff(std::function<bool()> const& callback, std::function<bool()> const& give_up) {
         unsigned delay = 1;
         while (!callback()) {
             if (give_up()) {

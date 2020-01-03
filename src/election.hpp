@@ -34,8 +34,8 @@ class election_impl : public election, public service_impl<election_impl> {
 public:
     election_impl(environment &env);
 
-    void get_master_node(std::function<void(member, bool)> callback);
-    void wait_master_node(std::function<void(member)> callback);
+    void get_master_node(std::function<void(member const&, bool)> callback) const;
+    void wait_master_node(std::function<void(member const&)> callback) const;
     void start();
     void stop();
 private:
@@ -47,16 +47,16 @@ private:
         no_master, normal, election_wait, election_init, electing, elected
     };
     election_state state;
-    std::recursive_mutex state_mutex;
+    mutable std::recursive_mutex state_mutex;
 
     // Transitions the current state to the given state
     void transition(election_state origin_state, election_state dest_state);
 
     // Keeps track of the highest initiator ID seen for ELECTION messages so far
     uint32_t highest_initiator_id;
-    void add_to_cache(election_message msg);
+    void add_to_cache(election_message const& msg);
     // Passes on an ELECTION message as defined by the protocol
-    void propagate(election_message msg);
+    void propagate(election_message const& msg);
 
     // Sets and updates the timer, and when the timer reaches 0, performs the appropriate action depending on the state
     bool timer_on;
@@ -66,10 +66,10 @@ private:
     void stop_timer();
     void update_timer();
     std::unique_ptr<std::thread> timer_thread; // Thread that will update the timer
-    std::recursive_mutex timer_mutex; // Mutex that protects the timer variables
+    mutable std::recursive_mutex timer_mutex; // Mutex that protects the timer variables
 
     // Debugging function to print a string value for the enum
-    std::string print_state(election_state s);
+    auto print_state(election_state const& s) -> std::string;
 
     // Services that we depend on
     heartbeater *hb;
@@ -96,7 +96,7 @@ private:
     // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
     redundant_queue<std::tuple<std::string, election_message>> message_queue;
     // Enqueues a message into the message_queue and prints debug information
-    void enqueue_message(std::string dest, election_message msg, int redundancy);
+    void enqueue_message(std::string const& dest, election_message const& msg, int redundancy);
 
     // A "redundant" queue that will be popped every 1 minute containing all the message IDs seen so far
     redundant_queue<uint32_t> seen_message_ids;

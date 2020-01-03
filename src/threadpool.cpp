@@ -3,7 +3,7 @@
 
 #include <iostream>
 
-std::unique_ptr<threadpool> threadpool_factory_impl::get_threadpool(unsigned num_threads) {
+auto threadpool_factory_impl::get_threadpool(unsigned num_threads) const -> std::unique_ptr<threadpool> {
     return std::unique_ptr<threadpool>(new threadpool_impl(env, num_threads));
 }
 
@@ -14,13 +14,15 @@ threadpool_impl::threadpool_impl(environment &env, unsigned num_threads_)
     running = true;
     num_started = 0;
     for (unsigned i = 0; i < num_threads; i++) {
-        threads.push_back(std::thread([this, i] {
+        threads.push_back(std::thread([&, i] {
             thread_fn(i);
         }));
     }
-    while (num_started.load() < num_threads) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+
+    std::unique_lock<std::mutex> lock(cv_mutex);
+    cv_started.wait(lock, [&] {
+        return num_started == num_threads;
+    });
 }
 
 threadpool_impl::~threadpool_impl() {
@@ -36,7 +38,7 @@ threadpool_impl::~threadpool_impl() {
 void threadpool_impl::finish() {
     {
         std::unique_lock<std::mutex> lock(cv_mutex);
-        cv_finished.wait(lock, [this] {
+        cv_finished.wait(lock, [&] {
             return tasks.empty() && working == 0;
         });
         running = false;
@@ -47,7 +49,7 @@ void threadpool_impl::finish() {
     }
 }
 
-void threadpool_impl::enqueue(std::function<void()> task) {
+void threadpool_impl::enqueue(std::function<void()> const& task) {
     {
         std::lock_guard<std::mutex> guard(cv_mutex);
         tasks.push(task);
@@ -56,12 +58,17 @@ void threadpool_impl::enqueue(std::function<void()> task) {
 }
 
 void threadpool_impl::thread_fn(unsigned thread_index) {
-    num_started++;
+    {
+        std::lock_guard<std::mutex> guard(cv_mutex);
+        num_started++;
+    }
+    cv_started.notify_one();
+
     while (true) {
         std::function<void()> task;
         {
             std::unique_lock<std::mutex> lock(cv_mutex);
-            cv_task.wait(lock, [this] {
+            cv_task.wait(lock, [&] {
                 return !tasks.empty() || !running.load();
             });
 

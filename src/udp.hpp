@@ -22,8 +22,6 @@ typedef struct udp_client_info {
     struct sockaddr addr;
 } udp_client_info;
 
-using std::string;
-
 class udp_server_impl : public udp_server {
 public:
     udp_server_impl(environment &env) : lg(env.get<logger_factory>()->get_logger("udp_server")) {}
@@ -31,11 +29,11 @@ public:
 
     void start_server(int port);
     void stop_server();
-    int recv(char *buf, unsigned length);
+    auto recv(char *buf, unsigned length) -> int;
 private:
     // Creates fd to receive incoming messages sent via UDP
     // Returns a socket fd, otherwise -1 on failure.
-    int create_udp_server(int port);
+    auto create_udp_server(int port) -> int;
 
     int server_fd;
     std::unique_ptr<logger> lg;
@@ -46,11 +44,11 @@ public:
     udp_client_impl(environment &env) : lg(env.get<logger_factory>()->get_logger("udp_client")) {}
     ~udp_client_impl() {}
 
-    void send(string host, int port, std::string msg);
+    void send(std::string const& host, int port, std::string const& msg);
 private:
     // Creates a UDP connection to a given host and port.
     // Returns a socket fd to the host, otherwise -1 on failure.
-    udp_client_info create_udp_client(string host, string port);
+    auto create_udp_client(std::string const& host, std::string const& port) -> udp_client_info;
 
     std::unique_ptr<logger> lg;
 };
@@ -60,10 +58,10 @@ public:
     udp_factory_impl(environment &env_)
         : env(env_) {}
 
-    std::unique_ptr<udp_client> get_udp_client() {
+    auto get_udp_client() -> std::unique_ptr<udp_client> {
         return std::unique_ptr<udp_client>(new udp_client_impl(env));
     }
-    std::unique_ptr<udp_server> get_udp_server() {
+    auto get_udp_server() -> std::unique_ptr<udp_server> {
         return std::unique_ptr<udp_server>(new udp_server_impl(env));
     }
 

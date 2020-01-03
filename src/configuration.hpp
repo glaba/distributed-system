@@ -16,83 +16,29 @@ class configuration_impl : public configuration, public service_impl<configurati
 public:
     configuration_impl(environment &env) {}
 
-    void set_hostname(std::string hostname_) {
-        hostname = hostname_;
-    }
-    std::string get_hostname() {
-        return hostname;
-    }
-    void set_first_node(bool is_first_node_) {
-        first_node = is_first_node_;
-    }
-    bool is_first_node() {
-        return first_node;
-    }
-    void set_hb_port(int port_) {
-        hb_port = port_;
-    }
-    int get_hb_port() {
-        return hb_port;
-    }
-    void set_election_port(int port_) {
-        election_port = port_;
-    }
-    int get_election_port() {
-        return election_port;
-    }
-    void set_sdfs_internal_port(int port_) {
-        sdfs_internal_port = port_;
-    }
-    int get_sdfs_internal_port() {
-        return sdfs_internal_port;
-    }
-    void set_sdfs_master_port(int port_) {
-        sdfs_master_port = port_;
-    }
-    int get_sdfs_master_port() {
-        return sdfs_master_port;
-    }
-    void set_mj_internal_port(int port_) {
-        mj_internal_port = port_;
-    }
-    int get_mj_internal_port() {
-        return mj_internal_port;
-    }
-    void set_mj_master_port(int port_) {
-        mj_master_port = port_;
-    }
-    int get_mj_master_port() {
-        return mj_master_port;
-    }
-    // Sets the directory that all files for the program will be stored in
-    // Assumes that the directory exist and is empty
-    void set_dir(std::string dir_) {
-        dir = dir_;
-    }
-    std::string get_dir() {
-        return dir;
-    }
-    void set_sdfs_subdir(std::string subdir) {
-        sdfs_dir = dir + subdir + "/";
-        // Create the directory
-        if (mkdir(sdfs_dir.c_str(), ACCESSPERMS) != 0 && errno != EEXIST) {
-            std::cerr << "Could not create SDFS subdirectory, exiting" << std::endl;
-            exit(1);
-        }
-    }
-    std::string get_sdfs_dir() {
-        return sdfs_dir;
-    }
-    void set_mj_subdir(std::string subdir) {
-        mj_dir = dir + subdir + "/";
-        if (mkdir(mj_dir.c_str(), ACCESSPERMS) != 0) {
-            std::cerr << "Could not create Maple subdirectory, exiting" << std::endl;
-            exit(1);
-        }
-    }
-    std::string get_mj_dir() {
-        return mj_dir;
-    }
+    void set_hostname(std::string const& hostname);
+    void set_first_node(bool is_first_node_);
+    void set_hb_port(int port);
+    void set_election_port(int port);
+    void set_sdfs_internal_port(int port);
+    void set_sdfs_master_port(int port);
+    void set_mj_internal_port(int port);
+    void set_mj_master_port(int port);
+    void set_dir(std::string const& dir);
+    void set_sdfs_subdir(std::string const& subdir);
+    void set_mj_subdir(std::string const& subdir);
+
+    auto get_hostname() const -> std::string;
+    auto is_first_node() const -> bool;
+    auto get_hb_port() const -> int;
+    auto get_election_port() const -> int;
+    auto get_sdfs_internal_port() const -> int;
+    auto get_sdfs_master_port() const -> int;
+    auto get_mj_internal_port() const -> int;
+    auto get_mj_master_port() const -> int;
+    auto get_dir() const -> std::string;
+    auto get_sdfs_dir() const -> std::string;
+    auto get_mj_dir() const -> std::string;
 
 protected:
     std::string hostname;
@@ -114,15 +60,5 @@ class configuration_test_impl : public configuration_impl {
 public:
     configuration_test_impl(environment &env) {}
 
-    void set_dir(std::string dir_) {
-        // Create our own subdirectory within this directory only for files within this environment
-        std::mt19937 mt(std::chrono::system_clock::now().time_since_epoch().count());
-        std::string subdir = "test" + std::to_string(mt());
-        if (mkdir((dir_ + subdir).c_str(), ACCESSPERMS) != 0) {
-            std::cerr << "Invalid directory provided, exiting" << std::endl;
-            exit(1);
-        }
-
-        dir = dir_ + subdir + "/";
-    }
+    void set_dir(std::string const& dir_);
 };

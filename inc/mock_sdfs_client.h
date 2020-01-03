@@ -23,26 +23,26 @@ public:
     // Virtual methods for sdfs_client
     void start();
     void stop();
-    void set_master_node(const std::string &hostname) {
+    void set_master_node(std::string const& hostname) {
         mn_hostname = hostname;
     }
-    int put(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata);
-    int put(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata);
-    int append(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata);
-    int append(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata);
-    int get(const std::string &local_filename, const std::string &sdfs_path);
-    std::optional<sdfs_metadata> get_metadata(const std::string &sdfs_path);
-    int del(const std::string &sdfs_path);
-    int mkdir(const std::string &sdfs_dir);
-    int rmdir(const std::string &sdfs_dir);
-    std::optional<std::vector<std::string>> ls_files(const std::string &sdfs_dir);
-    std::optional<std::vector<std::string>> ls_dirs(const std::string &sdfs_dir);
-    int get_num_shards(const std::string &sdfs_path);
+    auto put(std::string const& local_filename, std::string const& sdfs_path, sdfs_metadata const& metadata) -> int;
+    auto put(inputter<std::string> const& in, std::string const& sdfs_path, sdfs_metadata const& metadata) -> int;
+    auto append(std::string const& local_filename, std::string const& sdfs_path, sdfs_metadata const& metadata) -> int;
+    auto append(inputter<std::string> const& in, std::string const& sdfs_path, sdfs_metadata const& metadata) -> int;
+    auto get(std::string const& local_filename, std::string const& sdfs_path) -> int;
+    auto get_metadata(std::string const& sdfs_path) -> std::optional<sdfs_metadata>;
+    auto del(std::string const& sdfs_path) -> int;
+    auto mkdir(std::string const& sdfs_dir) -> int;
+    auto rmdir(std::string const& sdfs_dir) -> int;
+    auto ls_files(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
+    auto ls_dirs(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
+    auto get_num_shards(std::string const& sdfs_path) -> int;
 
     // Virtual method for service_impl
-    std::unique_ptr<service_state> init_state();
+    auto init_state() -> std::unique_ptr<service_state>;
 
-    std::string get_sdfs_root_dir();
+    auto get_sdfs_root_dir() -> std::string;
 
 private:
     enum op_type {
@@ -85,12 +85,12 @@ private:
 
     // Helper function used to safely update the mock_sdfs_state and subsequently access its members
     // The callback function is provided with an iterator pointing to the entry for the file in file_states
-    int access_helper(const std::string &sdfs_path, std::function<bool(file_state_map::iterator, master_callback_type const&)> callback, op_type type);
+    auto access_helper(std::string const& sdfs_path, std::function<bool(file_state_map::iterator, master_callback_type const&)> const& callback, op_type type) -> int;
     // Backing functions for the two versions of put and append
-    int write(const std::string &local_filename, const std::string &sdfs_path, const sdfs_metadata &metadata, bool is_append);
-    int write(const inputter<std::string> &in, const std::string &sdfs_path, const sdfs_metadata &metadata, bool is_append);
+    auto write(std::string const& local_filename, std::string const& sdfs_path, sdfs_metadata const& metadata, bool is_append) -> int;
+    auto write(inputter<std::string> const& in, std::string const& sdfs_path, sdfs_metadata const& metadata, bool is_append) -> int;
 
-    void get_children(sdfs::internal_path dir, dir_state_map &dir_states,
+    void get_children(sdfs::internal_path const& dir, dir_state_map &dir_states,
         std::vector<sdfs::internal_path> &subdirs, std::vector<sdfs::internal_path> &subfiles);
     void access_pieces(std::function<void(dir_state_map&, file_state_map&, master_callback_type const&)> callback);
 
@@ -109,18 +109,18 @@ private:
 
     // Methods and data to facilitate mock_sdfs_master
     // Inserts a transaction into transaction_timestamps and returns the timestamp of the transaction
-    uint64_t mark_transaction_started();
+    auto mark_transaction_started() -> uint64_t;
     // Removes a transaction from transaction_timestamps
     void mark_transaction_completed(uint64_t timestamp);
     // Gets the time of the earliest transaction
-    uint32_t get_earliest_transaction();
+    auto get_earliest_transaction() const -> uint32_t;
     // Waits for all transactions starting before the time of calling to complete
-    void wait_transactions();
+    void wait_transactions() const;
     // Set acting as a priority queue of transaction initiation timestamps
     // Upper 32 bits are timestamp, lower 32 bits are equal to tx_counter for uniqueness
-    std::mutex tx_times_mutex;
+    mutable std::mutex tx_times_mutex;
     uint32_t tx_counter = 0;
     std::set<uint64_t> transaction_timestamps;
 
-    void on_event(const master_callback_type &callback);
+    void on_event(master_callback_type const& callback);
 };

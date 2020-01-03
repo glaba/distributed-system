@@ -38,7 +38,7 @@ void mock_sdfs_master::start() {
             string sdfs_path = sdfs::deconvert_path(it->first);
 
             std::lock_guard<std::mutex> guard(callback_mutex);
-            for (auto &[key, _] : metadata) {
+            for (auto const& [key, _] : metadata) {
                 switch (type) {
                     case mock_sdfs_client::op_type::op_put:
                         for (sdfs::put_callback *cb : put_callbacks[key]) {
@@ -73,55 +73,55 @@ void mock_sdfs_master::stop() {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
-void mock_sdfs_master::on_put(const std::unordered_set<string> &keys, const sdfs::put_callback &callback) {
+void mock_sdfs_master::on_put(std::unordered_set<string> const& keys, sdfs::put_callback const& callback) {
     std::lock_guard<std::mutex> guard(callback_mutex);
     sdfs::put_callback *cb_ptr = new put_callback(callback);
     put_callback_pool.push_back(unique_ptr<sdfs::put_callback>(cb_ptr));
-    for (auto &key : keys) {
+    for (auto const& key : keys) {
         put_callbacks[key].push_back(cb_ptr);
     }
 }
 
-void mock_sdfs_master::on_append(const std::unordered_set<string> &keys, const sdfs::append_callback &callback) {
+void mock_sdfs_master::on_append(std::unordered_set<string> const& keys, sdfs::append_callback const& callback) {
     std::lock_guard<std::mutex> guard(callback_mutex);
     sdfs::append_callback *cb_ptr = new append_callback(callback);
     append_callback_pool.push_back(unique_ptr<sdfs::append_callback>(cb_ptr));
-    for (auto &key : keys) {
+    for (auto const& key : keys) {
         append_callbacks[key].push_back(cb_ptr);
     }
 }
 
-void mock_sdfs_master::on_get(const std::unordered_set<string> &keys, const sdfs::get_callback &callback) {
+void mock_sdfs_master::on_get(std::unordered_set<string> const& keys, sdfs::get_callback const& callback) {
     std::lock_guard<std::mutex> guard(callback_mutex);
     sdfs::get_callback *cb_ptr = new get_callback(callback);
     get_callback_pool.push_back(unique_ptr<sdfs::get_callback>(cb_ptr));
-    for (auto &key : keys) {
+    for (auto const& key : keys) {
         get_callbacks[key].push_back(cb_ptr);
     }
 }
 
-void mock_sdfs_master::on_del(const std::unordered_set<string> &keys, const sdfs::del_callback &callback) {
+void mock_sdfs_master::on_del(std::unordered_set<string> const& keys, sdfs::del_callback const& callback) {
     std::lock_guard<std::mutex> guard(callback_mutex);
     sdfs::del_callback *cb_ptr = new del_callback(callback);
     del_callback_pool.push_back(unique_ptr<sdfs::del_callback>(cb_ptr));
-    for (auto &key : keys) {
+    for (auto const& key : keys) {
         del_callbacks[key].push_back(cb_ptr);
     }
 }
 
-std::optional<std::vector<string>> mock_sdfs_master::ls_files(string sdfs_dir) {
+auto mock_sdfs_master::ls_files(string const& sdfs_dir) -> std::optional<std::vector<string>> {
     return client->ls_files(sdfs_dir);
 }
 
-std::optional<std::vector<string>> mock_sdfs_master::ls_dirs(string sdfs_dir) {
+auto mock_sdfs_master::ls_dirs(string const& sdfs_dir) -> std::optional<std::vector<string>> {
     return client->ls_dirs(sdfs_dir);
 }
 
-std::optional<sdfs_metadata> mock_sdfs_master::get_metadata(const string &sdfs_path) {
+auto mock_sdfs_master::get_metadata(const string &sdfs_path) -> std::optional<sdfs_metadata> {
     return client->get_metadata(sdfs_path);
 }
 
-void mock_sdfs_master::wait_transactions() {
+void mock_sdfs_master::wait_transactions() const {
     client->wait_transactions();
 }
 

@@ -20,14 +20,14 @@ public:
     void start();
     void stop();
 
-    void on_put(const std::unordered_set<std::string> &keys, const sdfs::put_callback &callback);
-    void on_append(const std::unordered_set<std::string> &keys, const sdfs::append_callback &callback);
-    void on_get(const std::unordered_set<std::string> &keys, const sdfs::get_callback &callback);
-    void on_del(const std::unordered_set<std::string> &keys, const sdfs::del_callback &callback);
-    std::optional<std::vector<std::string>> ls_files(std::string sdfs_dir);
-    std::optional<std::vector<std::string>> ls_dirs(std::string sdfs_dir);
-    std::optional<sdfs_metadata> get_metadata(const std::string &sdfs_path);
-    void wait_transactions();
+    void on_put(std::unordered_set<std::string> const& keys, sdfs::put_callback const& callback);
+    void on_append(std::unordered_set<std::string> const& keys, sdfs::append_callback const& callback);
+    void on_get(std::unordered_set<std::string> const& keys, sdfs::get_callback const& callback);
+    void on_del(std::unordered_set<std::string> const& keys, sdfs::del_callback const& callback);
+    auto ls_files(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
+    auto ls_dirs(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
+    auto get_metadata(std::string const& sdfs_path) -> std::optional<sdfs_metadata>;
+    void wait_transactions() const;
 
 private:
     std::atomic<bool> running = false;
@@ -36,7 +36,7 @@ private:
     election *el;
     heartbeater *hb;
 
-    std::mutex callback_mutex;
+    mutable std::mutex callback_mutex;
 
     // A map from metadata key to the callbacks to be called for that key
     std::unordered_map<std::string, std::vector<sdfs::put_callback*>> put_callbacks;

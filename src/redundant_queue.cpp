@@ -6,24 +6,26 @@
 
 // Adds an item to the queue with a certain redundancy
 template <typename T>
-void redundant_queue<T>::push(T item, int redundancy) {
+void redundant_queue<T>::push(T const& item, int redundancy) {
     std::lock_guard<std::mutex> guard(data_mutex);
-    data.push_back(std::make_tuple(item, redundancy));
+    data.push_back({item, redundancy});
 }
 
 // Returns a vector of all the items in the queue and decrements the redundancy for them
 template <typename T>
-std::vector<T> redundant_queue<T>::pop() {
+auto redundant_queue<T>::pop() -> std::vector<T> {
     std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
     // Pop all the items off, decrement redundancy and remove those with redundancy 0
     auto k = std::begin(data);
     while (k != std::end(data)) {
-        ret.push_back(std::get<0>(*k));
-        std::get<1>(*k) = std::get<1>(*k) - 1;
+        auto &[item, counter] = *k;
 
-        if (std::get<1>(*k) <= 0) {
+        ret.push_back(item);
+        counter--;
+
+        if (counter <= 0) {
             k = data.erase(k);
         } else {
             k++;
@@ -35,12 +37,12 @@ std::vector<T> redundant_queue<T>::pop() {
 
 // Returns a vector of all the items in the queue without decrementing the redundancy
 template <typename T>
-std::vector<T> redundant_queue<T>::peek() {
+auto redundant_queue<T>::peek() const -> std::vector<T> {
     std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
-    for (auto k : data) {
-        ret.push_back(std::get<0>(k));
+    for (auto const& [item, _] : data) {
+        ret.push_back(item);
     }
 
     return ret;

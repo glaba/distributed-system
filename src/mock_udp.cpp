@@ -8,18 +8,19 @@
 #include <chrono>
 
 using namespace std::chrono;
+using std::string;
 using std::unique_ptr;
 using std::make_unique;
 
-unique_ptr<udp_client> mock_udp_factory::get_udp_client() {
+auto mock_udp_factory::get_udp_client() -> unique_ptr<udp_client> {
     return get_udp_client(config->get_hostname());
 }
 
-unique_ptr<udp_server> mock_udp_factory::get_udp_server() {
+auto mock_udp_factory::get_udp_server() -> unique_ptr<udp_server> {
     return get_udp_server(config->get_hostname());
 }
 
-std::unique_ptr<service_state> mock_udp_factory::init_state() {
+auto mock_udp_factory::init_state() -> unique_ptr<service_state> {
     mock_udp_state *state = new mock_udp_state();
     state->coordinator = std::make_unique<mock_udp_coordinator>();
     return std::unique_ptr<service_state>(state);
@@ -30,7 +31,7 @@ void mock_udp_factory::reinitialize(environment &env_) {
     config = env->get<configuration>();
 }
 
-unique_ptr<udp_client> mock_udp_factory::get_udp_client(string hostname) {
+auto mock_udp_factory::get_udp_client(string const& hostname) -> unique_ptr<udp_client> {
     mock_udp_coordinator *coordinator;
     access_state([&coordinator] (service_state *state) {
         coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
@@ -40,7 +41,7 @@ unique_ptr<udp_client> mock_udp_factory::get_udp_client(string hostname) {
         coordinator, env->get<logger_factory>()->get_logger("mock_udp_client"));
 }
 
-unique_ptr<udp_server> mock_udp_factory::get_udp_server(string hostname) {
+auto mock_udp_factory::get_udp_server(string const& hostname) -> unique_ptr<udp_server> {
     mock_udp_coordinator *coordinator;
     access_state([&coordinator] (service_state *state) {
         coordinator = dynamic_cast<mock_udp_state*>(state)->coordinator.get();
@@ -50,7 +51,7 @@ unique_ptr<udp_server> mock_udp_factory::get_udp_server(string hostname) {
 }
 
 // Notifies the coordinator that the server is now started
-void mock_udp_factory::mock_udp_port_coordinator::start_server(string hostname) {
+void mock_udp_factory::mock_udp_port_coordinator::start_server(string const& hostname) {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
     if (msg_queues.find(hostname) != msg_queues.end()) {
@@ -63,7 +64,7 @@ void mock_udp_factory::mock_udp_port_coordinator::start_server(string hostname) 
 
 // Notify the coordinator that this thread is waiting for messages
 // and will wake up when flag is set to true
-void mock_udp_factory::mock_udp_port_coordinator::notify_waiting(string hostname, volatile bool *flag) {
+void mock_udp_factory::mock_udp_port_coordinator::notify_waiting(string const& hostname, volatile bool *flag) {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
     if (msg_queues.find(hostname) == msg_queues.end()) {
@@ -80,7 +81,7 @@ void mock_udp_factory::mock_udp_port_coordinator::notify_waiting(string hostname
 }
 
 // Reads a packet (non-blocking) after notify_waiting was called and flag was set to true
-int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf, unsigned length) {
+auto mock_udp_factory::mock_udp_port_coordinator::recv(string const& hostname, char *buf, unsigned length) -> int {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
     if (msg_queues.find(hostname) == msg_queues.end()) {
@@ -92,10 +93,7 @@ int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf
         return 0;
     }
 
-    std::tuple<unique_ptr<char[]>, unsigned> &msg = messages.front();
-
-    char *msg_buf = std::get<0>(msg).get();
-    unsigned actual_length = std::get<1>(msg);
+    auto &&[msg_buf, actual_length] = messages.front();
     assert(msg_buf != nullptr);
 
     unsigned i;
@@ -109,7 +107,7 @@ int mock_udp_factory::mock_udp_port_coordinator::recv(string hostname, char *buf
 }
 
 // Sends a packet to the specified destination
-void mock_udp_factory::mock_udp_port_coordinator::send(string dest, const char *msg, unsigned length) {
+void mock_udp_factory::mock_udp_port_coordinator::send(string const& dest, const char *msg, unsigned length) {
     std::lock_guard<std::mutex> guard(msg_mutex);
     assert(msg != nullptr);
 
@@ -123,7 +121,7 @@ void mock_udp_factory::mock_udp_port_coordinator::send(string dest, const char *
         msg_buf[i] = msg[i];
     }
 
-    msg_queues[dest].push(std::make_tuple(std::move(msg_buf), length));
+    msg_queues[dest].push({std::move(msg_buf), length});
 
     if (notify_flags[dest] != nullptr) {
         *notify_flags[dest] = true;
@@ -132,7 +130,7 @@ void mock_udp_factory::mock_udp_port_coordinator::send(string dest, const char *
 }
 
 // Clears the message queue for this host and notifies with no message if recv is being called
-void mock_udp_factory::mock_udp_port_coordinator::stop_server(string hostname) {
+void mock_udp_factory::mock_udp_port_coordinator::stop_server(string const& hostname) {
     std::lock_guard<std::mutex> guard(msg_mutex);
 
     if (msg_queues.find(hostname) == msg_queues.end()) {
@@ -146,7 +144,7 @@ void mock_udp_factory::mock_udp_port_coordinator::stop_server(string hostname) {
 }
 
 // A wrapper that multiplexes the start_server call to the correct mock_udp_port_coordinator
-void mock_udp_factory::mock_udp_coordinator::start_server(string hostname, int port) {
+void mock_udp_factory::mock_udp_coordinator::start_server(string const& hostname, int port) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         coordinators[port] = std::make_unique<mock_udp_port_coordinator>();
@@ -156,7 +154,7 @@ void mock_udp_factory::mock_udp_coordinator::start_server(string hostname, int p
 }
 
 // A wrapper that multiplexes the notify_waiting call to the correct mock_udp_port_coordinator
-void mock_udp_factory::mock_udp_coordinator::notify_waiting(string hostname, int port, volatile bool *flag) {
+void mock_udp_factory::mock_udp_coordinator::notify_waiting(string const& hostname, int port, volatile bool *flag) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         assert(false && "notify_waiting should not be called before start_server");
@@ -166,7 +164,7 @@ void mock_udp_factory::mock_udp_coordinator::notify_waiting(string hostname, int
 }
 
 // A wrapper that multiplexes the recv call to the correct mock_udp_port_coordinator
-int mock_udp_factory::mock_udp_coordinator::recv(string hostname, int port, char *buf, unsigned length) {
+auto mock_udp_factory::mock_udp_coordinator::recv(string const& hostname, int port, char *buf, unsigned length) -> int {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         assert(false && "recv should not be called before start_server");
@@ -176,7 +174,7 @@ int mock_udp_factory::mock_udp_coordinator::recv(string hostname, int port, char
 }
 
 // A wrapper that multiplexes the send call to the correct mock_udp_port_coordinator
-void mock_udp_factory::mock_udp_coordinator::send(string dest, int port, const char *msg, unsigned length) {
+void mock_udp_factory::mock_udp_coordinator::send(string const& dest, int port, const char *msg, unsigned length) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         // There is no one listening
@@ -187,7 +185,7 @@ void mock_udp_factory::mock_udp_coordinator::send(string dest, int port, const c
 }
 
 // A wrapper that multiplexes the stop_server call to the correct mock_udp_port_coordinator
-void mock_udp_factory::mock_udp_coordinator::stop_server(string hostname, int port) {
+void mock_udp_factory::mock_udp_coordinator::stop_server(string const& hostname, int port) {
     std::lock_guard<std::mutex> guard(coordinators_mutex);
     if (coordinators.find(port) == coordinators.end()) {
         assert(false && "Cannot call stop_server before start_server is called");
@@ -197,10 +195,10 @@ void mock_udp_factory::mock_udp_coordinator::stop_server(string hostname, int po
 }
 
 // Sends a UDP packet to the specified destination
-void mock_udp_factory::mock_udp_client::send(string dest, int port, std::string msg) {
+void mock_udp_factory::mock_udp_client::send(string const& dest, int port, string const& msg) {
     if (static_cast<double>(std::rand() % RAND_MAX) / RAND_MAX >= drop_probability) {
         if (show_packets) {
-            std::string log_msg = "[Delivered on port " +
+            string log_msg = "[Delivered on port " +
                 std::to_string(port) + "] " +
                 hostname + " -> " + dest + " - ";
             for (unsigned i = 0; i < msg.length(); i++) {
@@ -211,7 +209,7 @@ void mock_udp_factory::mock_udp_client::send(string dest, int port, std::string 
         coordinator->send(dest, port, msg.c_str(), msg.length());
     }
     else if (show_packets) {
-        std::string log_msg = "[Dropped on port " +
+        string log_msg = "[Dropped on port " +
             std::to_string(port) + "] " +
             hostname + " -> " + dest + " - ";
         for (unsigned i = 0; i < msg.length(); i++) {
@@ -236,7 +234,7 @@ void mock_udp_factory::mock_udp_server::stop_server() {
 }
 
 // Wrapper function around recvfrom that handles errors
-int mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) {
+auto mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) -> int {
     volatile bool flag = false;
 
     // Make sure the server is running and notify the coordinator if so

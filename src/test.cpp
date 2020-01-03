@@ -19,15 +19,17 @@ using std::make_unique;
 
 std::vector<std::tuple<std::string, std::string, unsigned, std::function<void(logger::log_level)>>> testing::tests;
 
-testing::register_test::register_test(std::string name, std::string description, unsigned approx_length, std::function<void(logger::log_level)> test_fn) {
-    tests.push_back(std::make_tuple(name, description, approx_length, test_fn));
+testing::register_test::register_test(std::string const& name, std::string const& description,
+    unsigned approx_length, std::function<void(logger::log_level)> const& test_fn)
+{
+    tests.push_back({name, description, approx_length, test_fn});
 }
 
-void testing::run_tests(std::string prefix, logger::log_level level, int parallelism, bool show_description) {
+void testing::run_tests(std::string const& prefix, logger::log_level level, int parallelism, bool show_description) {
     std::vector<test*> tests_to_run;
 
     for (unsigned i = 0; i < tests.size(); i++) {
-        std::string test_name = std::get<0>(tests[i]);
+        auto const& [test_name, _1, _2, _3] = tests[i];
 
         if (test_name.find(prefix) == 0) {
             tests_to_run.push_back(&tests[i]);
@@ -72,8 +74,7 @@ void testing::run_tests(std::string prefix, logger::log_level level, int paralle
         test_threads.push_back(std::thread([i, &tests_to_run, level, show_description, &cout_mutex, num_threads, &tests_per_thread] {
             // Run the tasks that were assigned to this thread
             for (unsigned test_index : tests_per_thread[i]) {
-                std::string test_name = std::get<0>(*tests_to_run[test_index]);
-                std::string test_description = std::get<1>(*tests_to_run[test_index]);
+                auto const& [test_name, test_description, _, test_fn] = *tests_to_run[test_index];
 
                 { // Atomically print out that we are running the test
                     std::lock_guard<std::mutex> guard(cout_mutex);
@@ -83,7 +84,6 @@ void testing::run_tests(std::string prefix, logger::log_level level, int paralle
                     }
                 }
 
-                std::function<void(logger::log_level)> test_fn = std::get<3>(*tests_to_run[test_index]);
                 test_fn(level);
                 std::cout << "Finished " << test_name << std::endl;
             }

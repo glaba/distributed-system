@@ -13,19 +13,19 @@ public:
 
     cli_command() {}
 
-    bool parse(std::string command, int argc, char **argv);
+    auto parse(std::string const& command, int argc, char **argv) -> bool;
 
     // Returns true if this command was invoked
-    bool was_invoked() {
+    auto was_invoked() const -> bool {
         return invoked;
     }
 
     // Adds a subcommand and returns a pointer to the subcommand object
-    cli_command *add_subcommand(std::string command);
+    auto add_subcommand(std::string const& command) -> cli_command*;
     // Adds an argument that must be present, which will be stored in the provided pointer
     // If a callback is passed instead of a pointer, the callback will be called
     template <typename T> // T may be: int, string, callback
-    void add_argument(std::string short_desc, std::string description, T *result) {
+    void add_argument(std::string const& short_desc, std::string const& description, T *result) {
         arguments.push_back(result);
         argument_descriptions.push_back(description);
         argument_short_descriptions.push_back(short_desc);
@@ -35,7 +35,7 @@ public:
     // If the pointer is a bool, it will just check for the presence of the option, but otherwise an argument must follow
     // If a callback is passed instead of a pointer, the callback will be called
     template <typename T, typename V = T> // T may be: bool, int, string, callback, V should be the same as T except for callback, where it should be 
-    void add_option(std::string flag, std::string short_desc, std::string description, T *result, V default_value = V()) {
+    void add_option(std::string const& flag, std::string const& short_desc, std::string const& description, T *result, V default_value = V()) {
         options[flag] = result;
         option_descriptions[flag] = description;
         option_short_descriptions[flag] = short_desc;
@@ -45,7 +45,7 @@ public:
     // Adds a required option whose result will be stored in the provided pointer
     // If a callback is passed instead of a pointer, the callback will be called
     template <typename T> // T may be: int, string, callback
-    void add_required_option(std::string flag, std::string short_desc, std::string description, T *result) {
+    void add_required_option(std::string const& flag, std::string const& short_desc, std::string const& description, T *result) {
         options[flag] = result;
         option_descriptions[flag] = description;
         option_short_descriptions[flag] = short_desc;
@@ -61,7 +61,7 @@ private:
     using option_value = std::variant<std::monostate, bool, std::string, int>;
     using argument_result = std::variant<std::string*, int*, std::function<bool(std::string)>*>;
 
-    void print_help(std::string command);
+    void print_help(std::string const& command);
 
     bool invoked = false;
     std::unordered_map<std::string, std::unique_ptr<cli_command>> subcommands;

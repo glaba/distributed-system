@@ -7,7 +7,7 @@
 const uint64_t new_member_heartbeat_slack = 2000;
 
 // Adds a member to the membership list using hostname and ID and returns the ID
-uint32_t member_list::add_member(std::string hostname, uint32_t id) {
+auto member_list::add_member(std::string const& hostname, uint32_t id) -> uint32_t {
     uint32_t original_size = num_members();
 
     node *prev = nullptr;
@@ -45,7 +45,7 @@ uint32_t member_list::add_member(std::string hostname, uint32_t id) {
 }
 
 // Gets a member from the membership list by ID
-member member_list::get_member_by_id(uint32_t id) {
+auto member_list::get_member_by_id(uint32_t id) const -> member {
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         if (cur->m.id == id) {
             return cur->m;
@@ -105,7 +105,7 @@ void member_list::update_heartbeat(uint32_t id) {
 }
 
 // Gets a list of the 2 successors and 2 predecessors (or fewer if there are <5 members)
-std::vector<member> member_list::get_neighbors() {
+auto member_list::get_neighbors() const -> std::vector<member> {
     std::vector<member> ret;
 
     node *cur;
@@ -182,7 +182,7 @@ std::vector<member> member_list::get_neighbors() {
 }
 
 // Get the number of members total
-uint32_t member_list::num_members() {
+auto member_list::num_members() const -> uint32_t {
     uint32_t count = 0;
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         count++;
@@ -191,7 +191,7 @@ uint32_t member_list::num_members() {
 }
 
 // Whether or not we are in the member list
-bool member_list::joined_list() {
+auto member_list::joined_list() const -> bool {
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         if (cur->m.hostname == local_hostname)
             return true;
@@ -200,7 +200,7 @@ bool member_list::joined_list() {
 }
 
 // Gets a list of all the members
-std::vector<member> member_list::get_members() {
+auto member_list::get_members() const -> std::vector<member> {
     std::vector<member> list;
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         list.push_back(cur->m);
@@ -210,7 +210,7 @@ std::vector<member> member_list::get_members() {
 
 // Gets the successor to the node with the given ID
 // Returns a member with ID 0 if the given ID was not found
-member member_list::get_successor(uint32_t id) {
+auto member_list::get_successor(uint32_t id) const -> member {
     for (node *cur = head; cur != nullptr; cur = cur->next) {
         if (cur->m.id == id) {
             if (cur->next == nullptr) {
@@ -225,6 +225,6 @@ member member_list::get_successor(uint32_t id) {
     return member();
 }
 
-bool member::operator==(const member &m) {
+auto member::operator==(const member &m) const -> bool {
     return hostname == m.hostname && id == m.id && last_heartbeat == m.last_heartbeat;
 }

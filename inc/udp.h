@@ -11,18 +11,18 @@ public:
     // Stops the server
     virtual void stop_server() = 0;
     // Wrapper function around recvfrom that handles errors
-    virtual int recv(char *buf, unsigned length) = 0;
+    virtual auto recv(char *buf, unsigned length) -> int = 0;
 };
 
 class udp_client {
 public:
     virtual ~udp_client() {}
     // Sends a UDP packet to the specified destination
-    virtual void send(std::string host, int port, std::string msg) = 0;
+    virtual void send(std::string const& host, int port, std::string const& msg) = 0;
 };
 
 class udp_factory {
 public:
-    virtual std::unique_ptr<udp_client> get_udp_client() = 0;
-    virtual std::unique_ptr<udp_server> get_udp_server() = 0;
+    virtual auto get_udp_client() -> std::unique_ptr<udp_client> = 0;
+    virtual auto get_udp_server() -> std::unique_ptr<udp_server> = 0;
 };

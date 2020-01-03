@@ -7,11 +7,11 @@
 using std::unique_ptr;
 using std::make_unique;
 
-void serializer::add_field(field f) {
+void serializer::add_field(field const& f) {
     fields.push_back(f);
 }
 
-std::string serializer::serialize() {
+auto serializer::serialize() const -> std::string {
     // First, compute the length
     unsigned length = 0;
     for (field f : fields) {
@@ -58,7 +58,7 @@ void serializer::write_uint32_to_char_buf(uint32_t n, char *buf) {
     buf[3] = (n & (0xFF << 24)) >> 24;
 }
 
-uint32_t deserializer::get_int() {
+auto deserializer::get_int() -> uint32_t {
     if (length - pos < sizeof(uint32_t)) {
         throw "Could not extract uint32_t from buffer";
     }
@@ -69,7 +69,7 @@ uint32_t deserializer::get_int() {
     return val;
 }
 
-std::string deserializer::get_string() {
+auto deserializer::get_string() -> std::string {
     if (length - pos < sizeof(uint32_t)) {
         throw "Could not extract string from buffer";
     }
@@ -99,7 +99,7 @@ void deserializer::done() {
     }
 }
 
-uint32_t deserializer::read_uint32_from_char_buf(const char *buf) {
+auto deserializer::read_uint32_from_char_buf(const char *buf) -> uint32_t {
     uint32_t retval = 0;
     retval += (buf[0] & 0xFF);
     retval += (buf[1] & 0xFF) << 8;
