@@ -7,9 +7,9 @@
 #include "threadpool.h"
 #include "utils.h"
 
-#include <stdlib.h>
 #include <algorithm>
 #include <fstream>
+#include <filesystem>
 
 using std::string;
 using std::optional;
@@ -176,8 +176,8 @@ void mj_worker_impl::start_job(unlocked<job_state_map> &&job_states, int job_id,
         // TODO: handle the executable being missing, as opposed to a failed get
         return sdfsc->get(exe_path, state->exe) == 0;
     });
-    FILE *stream = popen(("chmod +x \"" + exe_path + "\"").c_str(), "r");
-    pclose(stream);
+    std::error_code ec;
+    std::filesystem::permissions(exe_path, std::filesystem::perms::owner_exec, ec);
     lg->debug("[Job " + std::to_string(job_id) + "] Downloaded executable " + state->exe + " from SDFS");
 
     std::thread add_files_thread([=] {
@@ -224,7 +224,9 @@ void mj_worker_impl::monitor_job(int job_id) {
 
             // Delete the exe for this job
             string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
-            pclose(popen(("rm " + exe_path).c_str(), "r"));
+            utils::backoff([&] {
+                return std::filesystem::remove(exe_path);
+            });
 
             // Delete the job
             unlocked<job_state_map> job_states = job_states_lock();
@@ -325,7 +327,9 @@ void mj_worker_impl::process_file(int job_id, string const& filename, string con
     }
 
     append_output(job_id, proc.get(), filename, sdfs_output_dir, num_appends_parallel);
-    pclose(popen(("rm " + local_file_path).c_str(), "r"));
+    utils::backoff([&] {
+        return std::filesystem::remove(local_file_path);
+    });
 }
 
 void mj_worker_impl::append_output(int job_id, processor *proc, string const& input_file,
