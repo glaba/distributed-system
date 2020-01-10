@@ -11,37 +11,35 @@ threadpool_impl::threadpool_impl(environment &env, unsigned num_threads_)
     : num_threads(num_threads_)
     , lg(env.get<logger_factory>()->get_logger("threadpool"))
 {
-    running = true;
-    num_started = 0;
+    unlocked<threadpool_state> tp_state = tp_state_lock();
+
+    tp_state->running = true;
+    tp_state->num_started = 0;
+    tp_state->working = 0;
     for (unsigned i = 0; i < num_threads; i++) {
         threads.push_back(std::thread([&, i] {
             thread_fn(i);
         }));
     }
 
-    std::unique_lock<std::mutex> lock(cv_mutex);
-    cv_started.wait(lock, [&] {
-        return num_started == num_threads;
+    cv_started.wait(tp_state.unsafe_get_mutex(), [&] {
+        return tp_state->num_started == num_threads;
     });
 }
 
 threadpool_impl::~threadpool_impl() {
-    {
-        std::unique_lock<std::mutex> lock(cv_mutex);
-        if (!running.load()) {
-            return;
-        }
+    if (tp_state_lock()->running) {
+        finish();
     }
-    finish();
 }
 
 void threadpool_impl::finish() {
     {
-        std::unique_lock<std::mutex> lock(cv_mutex);
-        cv_finished.wait(lock, [&] {
-            return tasks.empty() && working == 0;
+        unlocked<threadpool_state> tp_state = tp_state_lock();
+        cv_finished.wait(tp_state.unsafe_get_mutex(), [&] {
+            return tp_state->tasks.empty() && tp_state->working == 0;
         });
-        running = false;
+        tp_state->running = false;
     }
     cv_task.notify_all();
     for (unsigned i = 0; i < num_threads; i++) {
@@ -50,42 +48,33 @@ void threadpool_impl::finish() {
 }
 
 void threadpool_impl::enqueue(std::function<void()> const& task) {
-    {
-        std::lock_guard<std::mutex> guard(cv_mutex);
-        tasks.push(task);
-    }
+    tp_state_lock()->tasks.push(task);
     cv_task.notify_one();
 }
 
 void threadpool_impl::thread_fn(unsigned thread_index) {
-    {
-        std::lock_guard<std::mutex> guard(cv_mutex);
-        num_started++;
-    }
+    tp_state_lock()->num_started++;
     cv_started.notify_one();
 
     while (true) {
         std::function<void()> task;
         {
-            std::unique_lock<std::mutex> lock(cv_mutex);
-            cv_task.wait(lock, [&] {
-                return !tasks.empty() || !running.load();
+            unlocked<threadpool_state> tp_state = tp_state_lock();
+            cv_task.wait(tp_state.unsafe_get_mutex(), [&] {
+                return !tp_state->tasks.empty() || !tp_state->running;
             });
 
-            if (!running.load()) {
+            if (!tp_state->running) {
                 break;
             }
 
-            task = tasks.front();
-            tasks.pop();
-            working++;
+            task = tp_state->tasks.front();
+            tp_state->tasks.pop();
+            tp_state->working++;
         }
 
         task();
-        {
-            std::lock_guard<std::mutex> guard(cv_mutex);
-            working--;
-        }
+        tp_state_lock()->working--;
         cv_finished.notify_all();
     }
 }

@@ -9,9 +9,9 @@
 #include <string>
 #include <unordered_map>
 #include <queue>
-#include <mutex>
 #include <tuple>
 #include <memory>
+#include <atomic>
 
 // Factory which produces mock UDP clients and servers
 class mock_udp_factory : public udp_factory, public service_impl<mock_udp_factory> {
@@ -54,12 +54,13 @@ private:
         // Clears the message queue for this host and notifies with no message if recv is being called
         void stop_server(std::string const& hostname);
     private:
-        // Lock access to both maps
-        std::mutex msg_mutex;
-        // A map from hostname of receiving machine to a queue of (char *msg, unsigned length)
-        std::unordered_map<std::string, std::queue<std::tuple<std::unique_ptr<char[]>, unsigned>>> msg_queues;
-        // A map from hostname waiting for a message to arrive to a pointer to the flag that should be set to wake them
-        std::unordered_map<std::string, volatile bool*> notify_flags;
+        struct coordinator_state {
+            // A map from hostname of receiving machine to a queue of (char *msg, unsigned length)
+            std::unordered_map<std::string, std::queue<std::tuple<std::unique_ptr<char[]>, unsigned>>> msg_queues;
+            // A map from hostname waiting for a message to arrive to a pointer to the flag that should be set to wake them
+            std::unordered_map<std::string, volatile bool*> notify_flags;
+        };
+        locked<coordinator_state> coord_state_lock;
     };
 
     // Coordinator class which passes mock UDP messages for any number of ports
@@ -72,8 +73,10 @@ private:
         void send(std::string const& dest, int port, const char *msg, unsigned length);
         void stop_server(std::string const& hostname, int port);
     private:
-        std::mutex coordinators_mutex;
-        std::unordered_map<int, std::unique_ptr<mock_udp_port_coordinator>> coordinators;
+        struct coordinator_state {
+            std::unordered_map<int, std::unique_ptr<mock_udp_port_coordinator>> coordinators;
+        };
+        locked<coordinator_state> coord_state_lock;
     };
 
     class mock_udp_state : public service_state {
@@ -111,8 +114,7 @@ private:
         auto recv(char *buf, unsigned length) -> int;
     private:
         std::string hostname;
-        int port;
-        std::mutex port_mutex;
+        std::atomic<int> port;
         mock_udp_coordinator *coordinator;
     };
 

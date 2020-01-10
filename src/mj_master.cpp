@@ -13,6 +13,8 @@
 #include <algorithm>
 
 using std::string;
+using std::unordered_map;
+using std::unordered_set;
 
 mj_master_impl::mj_master_impl(environment &env)
     : mt(std::chrono::system_clock::now().time_since_epoch().count())
@@ -62,8 +64,8 @@ void mj_master_impl::start() {
             string input_file = des.get_string();
             int job_id = des.get_int();
 
-            std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-            job_states[job_id].committed_outputs.insert({input_file, sdfs_path});
+            unlocked<job_state_map> job_states = job_states_lock();
+            (*job_states)[job_id].committed_outputs.insert({input_file, sdfs_path});
             lg->trace("Marking " + input_file + ", " + sdfs_path + " as committed");
         });
     });
@@ -146,9 +148,9 @@ void mj_master_impl::run_master() {
                 lg->info("Received notice from worker node that job with ID " + std::to_string(info.job_id) + " failed, stopping job");
 
                 // Mark the job as failed, which will automatically cause it to complete
-                std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-                if (job_states.find(info.job_id) != job_states.end()) {
-                    job_states[info.job_id].failed = true;
+                unlocked<job_state_map> job_states = job_states_lock();
+                if (job_states->find(info.job_id) != job_states->end()) {
+                    (*job_states)[info.job_id].failed = true;
                 }
                 return;
             }
@@ -158,10 +160,10 @@ void mj_master_impl::run_master() {
 
                 bool allow_append;
                 {
-                    std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+                    unlocked<job_state_map> job_states = job_states_lock();
 
-                    std::unordered_set<std::pair<string, string>, string_pair_hash> &committed_outputs =
-                        job_states[info.job_id].committed_outputs;
+                    unordered_set<std::pair<string, string>, string_pair_hash> &committed_outputs =
+                        (*job_states)[info.job_id].committed_outputs;
                     allow_append = (committed_outputs.find({info.input_file, info.output_file}) == committed_outputs.end());
                 }
 
@@ -198,22 +200,22 @@ void mj_master_impl::run_master() {
                 mj_file_done info = msg.get_msg_data<mj_file_done>();
 
                 {
-                    std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-                    std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+                    unlocked<node_state_map> node_states = node_states_lock();
+                    unlocked<job_state_map> job_states = job_states_lock();
 
-                    if (job_states.find(info.job_id) == job_states.end()) {
+                    if (job_states->find(info.job_id) == job_states->end()) {
                         return;
                     }
 
-                    std::unordered_set<std::string> &unprocessed_files = job_states[info.job_id].unprocessed_files[info.hostname];
-                    std::unordered_set<std::string> &processed_files = job_states[info.job_id].processed_files[info.hostname];
+                    unordered_set<string> &unprocessed_files = (*job_states)[info.job_id].unprocessed_files[info.hostname];
+                    unordered_set<string> &processed_files = (*job_states)[info.job_id].processed_files[info.hostname];
                     lg->debug("Node at " + info.hostname + " completed processing file " + info.file +
                         " for job with ID " + std::to_string(info.job_id));
                     assert(unprocessed_files.find(info.file) != unprocessed_files.end() ||
                            processed_files.find(info.file) != processed_files.end() ||
                            !"File that node claims to have completed was not assigned to node");
 
-                    node_states[info.hostname].num_files--;
+                    (*node_states)[info.hostname].num_files--;
 
                     if (processed_files.find(info.file) == processed_files.end()) {
                         unprocessed_files.erase(info.file);
@@ -242,9 +244,9 @@ void mj_master_impl::handle_job(int fd, mj_start_job const& info)
     // Tell the client that the job is complete
     int succeeded;
     {
-        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-        assert(job_states.find(job_id) != job_states.end());
-        succeeded = job_states[job_id].failed ? 0 : 1;
+        unlocked<job_state_map> job_states = job_states_lock();
+        assert(job_states->find(job_id) != job_states->end());
+        succeeded = (*job_states)[job_id].failed ? 0 : 1;
     }
     mj_message msg(hb->get_id(), mj_job_end{succeeded});
     server->write_to_client(fd, msg.serialize());
@@ -255,17 +257,17 @@ void mj_master_impl::handle_job(int fd, mj_start_job const& info)
 }
 
 auto mj_master_impl::job_complete(int job_id) -> bool {
-    std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
+    unlocked<job_state_map> job_states = job_states_lock();
 
-    assert(job_states.find(job_id) != job_states.end());
+    assert(job_states->find(job_id) != job_states->end());
 
     // If the job has failed, it has also completed
-    if (job_states[job_id].failed) {
+    if ((*job_states)[job_id].failed) {
         return true;
     }
 
     // Otherwise, check if there are no more files left in the job
-    job_state &state = job_states[job_id];
+    job_state &state = (*job_states)[job_id];
 
     unsigned num_files = 0;
     for (auto const& pair : state.unprocessed_files) {
@@ -285,22 +287,22 @@ void mj_master_impl::stop_job(int job_id) {
     // Delete the job information, storing the list of workers
     std::vector<string> workers;
     {
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-        std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
-        if (job_states.find(job_id) == job_states.end()) {
+        unlocked<node_state_map> node_states = node_states_lock();
+        unlocked<job_state_map> job_states = job_states_lock();
+        if (job_states->find(job_id) == job_states->end()) {
             return;
         }
 
-        for (auto const& [worker, _] : job_states[job_id].unprocessed_files) {
+        for (auto const& [worker, _] : (*job_states)[job_id].unprocessed_files) {
             workers.push_back(worker);
         }
 
         // Delete the job from the node_states, keeping the number of files assigned to the node correct
-        for (auto &[worker, state] : node_states) {
+        for (auto &[worker, state] : *node_states) {
             state.jobs.erase(job_id);
-            state.num_files -= job_states[job_id].unprocessed_files[worker].size();
+            state.num_files -= (*job_states)[job_id].unprocessed_files[worker].size();
         }
-        job_states.erase(job_id);
+        job_states->erase(job_id);
     }
 
     // Tell all the nodes in parallel that the job is over
@@ -332,34 +334,34 @@ auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
         ", num_appends_parallel=" + std::to_string(info.num_appends_parallel) + "]");
 
     // Get the list of input files
-    std::optional<std::vector<std::string>> input_files_opt = sdfsm->ls_files(info.sdfs_src_dir);
+    std::optional<std::vector<string>> input_files_opt = sdfsm->ls_files(info.sdfs_src_dir);
     if (!input_files_opt) {
         // TODO: handle failure here
     }
 
-    std::vector<std::string> input_files = input_files_opt.value();
+    std::vector<string> input_files = input_files_opt.value();
 
     // Assign files to nodes based on the specified partitioner and fill the job_state struct
-    std::unordered_map<std::string, std::unordered_set<std::string>> unprocessed_files_copy;
+    unordered_map<string, unordered_set<string>> unprocessed_files_copy;
     {
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-        std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+        unlocked<node_state_map> node_states = node_states_lock();
+        unlocked<job_state_map> job_states = job_states_lock();
 
-        job_states[job_id].exe = info.exe;
-        job_states[job_id].sdfs_src_dir = info.sdfs_src_dir;
-        job_states[job_id].sdfs_output_dir = info.sdfs_output_dir;
-        job_states[job_id].processor_type = info.processor_type;
-        job_states[job_id].num_files_parallel = info.num_files_parallel;
-        job_states[job_id].num_appends_parallel = info.num_appends_parallel;
-        job_states[job_id].failed = false;
+        (*job_states)[job_id].exe = info.exe;
+        (*job_states)[job_id].sdfs_src_dir = info.sdfs_src_dir;
+        (*job_states)[job_id].sdfs_output_dir = info.sdfs_output_dir;
+        (*job_states)[job_id].processor_type = info.processor_type;
+        (*job_states)[job_id].num_files_parallel = info.num_files_parallel;
+        (*job_states)[job_id].num_appends_parallel = info.num_appends_parallel;
+        (*job_states)[job_id].failed = false;
 
-        job_states[job_id].unprocessed_files =
+        (*job_states)[job_id].unprocessed_files =
             partitioner_factory::get_partitioner(info.partitioner_type)->partition(hb->get_members(), info.num_workers, input_files);
-        unprocessed_files_copy = job_states[job_id].unprocessed_files;
+        unprocessed_files_copy = (*job_states)[job_id].unprocessed_files;
 
         string members_log_str = "Assigning job with ID " + std::to_string(job_id) + " to: ";
-        for (auto const& pair : job_states[job_id].unprocessed_files) {
-            node_states[pair.first].num_files += pair.second.size();
+        for (auto const& pair : (*job_states)[job_id].unprocessed_files) {
+            (*node_states)[pair.first].num_files += pair.second.size();
 
             members_log_str += pair.first + " ";
         }
@@ -367,12 +369,12 @@ auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
     }
 
     { // Print the files assigned to each node
-        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-        for (auto const& pair : job_states[job_id].unprocessed_files) {
-            string log_str = "[Job " + std::to_string(job_id) + "] Files assigned to node at " + pair.first + ": ";
-            for (auto it = pair.second.begin(); it != pair.second.end(); ++it) {
+        unlocked<job_state_map> job_states = job_states_lock();
+        for (auto const& [hostname, files] : (*job_states)[job_id].unprocessed_files) {
+            string log_str = "[Job " + std::to_string(job_id) + "] Files assigned to node at " + hostname + ": ";
+            for (auto it = files.begin(); it != files.end(); ++it) {
                 log_str += *it;
-                if (std::next(it) != pair.second.end()) {
+                if (std::next(it) != files.end()) {
                     log_str += ", ";
                 }
             }
@@ -382,8 +384,8 @@ auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
 
     // Actually send the message to assign the job to each of the nodes
     std::unique_ptr<threadpool> tp = tp_fac->get_threadpool(unprocessed_files_copy.size());
-    for (auto const& pair : unprocessed_files_copy) {
-        tp->enqueue([=] {assign_job_to_node(job_id, pair.first, pair.second);});
+    for (auto const& [hostname, files] : unprocessed_files_copy) {
+        tp->enqueue([=] {assign_job_to_node(job_id, hostname, files);});
     }
     tp->finish();
 
@@ -392,44 +394,43 @@ auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
 
 auto mj_master_impl::get_least_busy_node() -> member {
     std::vector<member> members = hb->get_members();
+
     // Choose the members that have the least amount of work currently
-    {
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
+    unlocked<node_state_map> node_states = node_states_lock();
 
-        unsigned least_busy_index = -1;
-        unsigned least_busy_load = UINT_MAX;
+    unsigned least_busy_index = -1;
+    unsigned least_busy_load = UINT_MAX;
 
-        for (unsigned j = 0; j < members.size(); j++) {
-            unsigned load = node_states[members[j].hostname].num_files;
-            if (load < least_busy_load) {
-                least_busy_load = load;
-                least_busy_index = j;
-            }
+    for (unsigned j = 0; j < members.size(); j++) {
+        unsigned load = (*node_states)[members[j].hostname].num_files;
+        if (load < least_busy_load) {
+            least_busy_load = load;
+            least_busy_index = j;
         }
-
-        return members[least_busy_index];
     }
+
+    return members[least_busy_index];
 }
 
-void mj_master_impl::assign_job_to_node(int job_id, std::string const& hostname, std::unordered_set<std::string> const& input_files)
+void mj_master_impl::assign_job_to_node(int job_id, string const& hostname, unordered_set<string> const& input_files)
 {
-    std::string exe;
-    std::string sdfs_src_dir;
-    std::string sdfs_output_dir;
+    string exe;
+    string sdfs_src_dir;
+    string sdfs_output_dir;
     processor::type processor_type;
     int num_files_parallel;
     int num_appends_parallel;
-    {
-        std::lock_guard<std::recursive_mutex> guard(job_state_mutex);
-        if (job_states.find(job_id) == job_states.end()) {
+    { // Get the job information
+        unlocked<job_state_map> job_states = job_states_lock();
+        if (job_states->find(job_id) == job_states->end()) {
             return;
         }
-        exe = job_states[job_id].exe;
-        sdfs_src_dir = job_states[job_id].sdfs_src_dir;
-        sdfs_output_dir = job_states[job_id].sdfs_output_dir;
-        processor_type = job_states[job_id].processor_type;
-        num_files_parallel = job_states[job_id].num_files_parallel;
-        num_appends_parallel = job_states[job_id].num_appends_parallel;
+        exe = (*job_states)[job_id].exe;
+        sdfs_src_dir = (*job_states)[job_id].sdfs_src_dir;
+        sdfs_output_dir = (*job_states)[job_id].sdfs_output_dir;
+        processor_type = (*job_states)[job_id].processor_type;
+        num_files_parallel = (*job_states)[job_id].num_files_parallel;
+        num_appends_parallel = (*job_states)[job_id].num_appends_parallel;
     }
 
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
@@ -444,49 +445,45 @@ void mj_master_impl::assign_job_to_node(int job_id, std::string const& hostname,
         lg->debug("Sent ASSIGN_JOB message for job with id " + std::to_string(job_id) + " to node at " + hostname);
 
         // Mark the job as assigned to this node
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-        node_states[hostname].jobs.insert(job_id);
+        unlocked<node_state_map> node_states = node_states_lock();
+        (*node_states)[hostname].jobs.insert(job_id);
     }
 }
 
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
-void mj_master_impl::node_dropped(std::string const& hostname) {
-    std::unordered_set<int> jobs;
+void mj_master_impl::node_dropped(string const& hostname) {
+    unordered_set<int> jobs;
 
     lg->info("Lost node at " + hostname + ", reassigning its work to other nodes");
 
     { // Get the jobs it was a part of and then delete it
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-        jobs = node_states[hostname].jobs;
-        node_states.erase(hostname);
+        unlocked<node_state_map> node_states = node_states_lock();
+        jobs = (*node_states)[hostname].jobs;
+        node_states->erase(hostname);
     }
 
-    std::unordered_map<int, job_state> participating_job_states;
-    for (int job_id : jobs) {
-        { // Get the job states that this node was a part of and then erase its portion
-            std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
-            participating_job_states[job_id] = job_states[job_id];
-            job_states[job_id].unprocessed_files.erase(hostname);
-            job_states[job_id].processed_files.erase(hostname);
-        }
-    }
-
-    // Redistribute the work for each job to the least busy node
-    std::unordered_map<int, string> targets;
+    // Map from job ID to <hostname, files newly assigned to hostname>
+    unordered_map<int, std::tuple<string, unordered_set<string>>> assignments;
     {
-        std::lock_guard<std::recursive_mutex> guard_node_states(node_state_mutex);
-        std::lock_guard<std::recursive_mutex> guard_job_states(job_state_mutex);
+        unlocked<node_state_map> node_states = node_states_lock();
+        unlocked<job_state_map> job_states = job_states_lock();
         for (int job_id : jobs) {
+            // Redistribute the work for this job to the least busy node
             string target = get_least_busy_node().hostname;
-            targets[job_id] = target;
+            assignments[job_id] = {target, (*job_states)[job_id].unprocessed_files[hostname]};
+
+            // Erase all data associated with the dropped node
+            (*job_states)[job_id].unprocessed_files.erase(hostname);
+            (*job_states)[job_id].processed_files.erase(hostname);
 
             lg->info("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
 
-            for (string const& file : participating_job_states[job_id].unprocessed_files[hostname]) {
-                job_states[job_id].unprocessed_files[target].insert(file);
+            auto const& [_, files] = assignments[job_id];
+            for (string const& file : files) {
+                (*job_states)[job_id].unprocessed_files[target].insert(file);
             }
-            node_states[target].num_files += participating_job_states[job_id].unprocessed_files[hostname].size();
+            (*node_states)[target].num_files += files.size();
         }
     }
 
@@ -496,7 +493,8 @@ void mj_master_impl::node_dropped(std::string const& hostname) {
 
         // Send the message to assign the new work to each of the nodes
         for (int job_id : jobs) {
-            assign_job_to_node(job_id, targets[job_id], participating_job_states[job_id].unprocessed_files[hostname]);
+            auto const& [target, files] = assignments[job_id];
+            assign_job_to_node(job_id, target, files);
         }
     });
     assign_thread.detach();

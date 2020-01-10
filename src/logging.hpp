@@ -4,6 +4,7 @@
 #include "configuration.h"
 #include "environment.h"
 #include "service.h"
+#include "locking.h"
 
 #include <string>
 #include <cstdio>
@@ -23,11 +24,13 @@ public:
     auto get_logger(std::string const& prefix) const -> std::unique_ptr<logger>;
 
 protected:
-    mutable std::mutex logger_factory_mutex;
-    logger::log_level level;
-    std::string log_file_path;
-    bool using_stdout;
-    bool including_hostname;
+    struct logging_state {
+        logger::log_level level;
+        std::string log_file_path;
+        bool using_stdout;
+        bool including_hostname;
+    };
+    locked<logging_state> lg_state_lock;
 
     configuration *config;
 

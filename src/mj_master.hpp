@@ -11,10 +11,10 @@
 #include "sdfs_master.h"
 #include "processor.h"
 #include "threadpool.h"
+#include "locking.h"
 
 #include <memory>
 #include <atomic>
-#include <mutex>
 #include <unordered_map>
 #include <string>
 
@@ -55,6 +55,9 @@ private:
         unsigned num_files; // The number of files being processed by this node
         std::unordered_set<int> jobs;
     };
+    // A map from each node in the cluster's hostname to its state
+    using node_state_map = std::unordered_map<std::string, node_state>;
+    locked<node_state_map> node_states_lock;
 
     struct job_state {
         std::string exe;
@@ -74,17 +77,12 @@ private:
 
         bool failed;
     };
+    // A map from job ID to the state of the job
+    using job_state_map = std::unordered_map<int, job_state>;
+    locked<job_state_map> job_states_lock;
 
     // RNG to generate job IDs
     std::mt19937 mt;
-
-    // A map from each node in the cluster's hostname to its state, with a mutex protecting it
-    mutable std::recursive_mutex node_state_mutex;
-    std::unordered_map<std::string, node_state> node_states;
-
-    // A map from job ID to the state of the job, with a mutex protecting it
-    mutable std::recursive_mutex job_state_mutex;
-    std::unordered_map<int, job_state> job_states;
 
     // Services that this depends on
     std::unique_ptr<logger> lg;

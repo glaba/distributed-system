@@ -7,14 +7,12 @@
 // Adds an item to the queue with a certain redundancy
 template <typename T>
 void redundant_queue<T>::push(T const& item, int redundancy) {
-    std::lock_guard<std::mutex> guard(data_mutex);
     data.push_back({item, redundancy});
 }
 
 // Returns a vector of all the items in the queue and decrements the redundancy for them
 template <typename T>
 auto redundant_queue<T>::pop() -> std::vector<T> {
-    std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
     // Pop all the items off, decrement redundancy and remove those with redundancy 0
@@ -38,7 +36,6 @@ auto redundant_queue<T>::pop() -> std::vector<T> {
 // Returns a vector of all the items in the queue without decrementing the redundancy
 template <typename T>
 auto redundant_queue<T>::peek() const -> std::vector<T> {
-    std::lock_guard<std::mutex> guard(data_mutex);
     std::vector<T> ret;
 
     for (auto const& [item, _] : data) {
@@ -50,7 +47,6 @@ auto redundant_queue<T>::peek() const -> std::vector<T> {
 
 template <typename T>
 void redundant_queue<T>::clear() {
-    std::lock_guard<std::mutex> guard(data_mutex);
     data.clear();
 }
 

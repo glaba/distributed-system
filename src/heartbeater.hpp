@@ -8,10 +8,10 @@
 #include "redundant_queue.h"
 #include "environment.h"
 #include "configuration.h"
+#include "locking.h"
 
 #include <string>
 #include <thread>
-#include <mutex>
 #include <tuple>
 #include <set>
 #include <functional>
@@ -76,29 +76,31 @@ private:
     std::unique_ptr<udp_client> client;
     std::unique_ptr<udp_server> server;
 
-    // Lists of nodes that have failed / left / joined that we will tell our neighbors
-    redundant_queue<uint32_t> failed_nodes_queue;
-    redundant_queue<uint32_t> left_nodes_queue;
-    redundant_queue<member> joined_nodes_queue;
-    // Queue of new nodes that should be sent the membership list
-    redundant_queue<member> new_nodes_queue;
+    struct heartbeater_state {
+        heartbeater_state(environment &env) : mem_list(env) {}
+
+        // Lists of nodes that have failed / left / joined that we will tell our neighbors
+        redundant_queue<uint32_t> failed_nodes_queue;
+        redundant_queue<uint32_t> left_nodes_queue;
+        redundant_queue<member> joined_nodes_queue;
+        // Queue of new nodes that should be sent the membership list
+        redundant_queue<member> new_nodes_queue;
+
+        // Set containing all IDs that have ever joined
+        std::set<uint32_t> joined_ids;
+
+        // Membership list containing the known members of the cluster
+        member_list mem_list;
+
+        // Handlers that will be called when the membership list changes
+        std::vector<std::function<void(member const&)>> on_fail_handlers;
+        std::vector<std::function<void(member const&)>> on_join_handlers;
+        std::vector<std::function<void(member const&)>> on_leave_handlers;
+    };
+    locked<heartbeater_state> hb_state_lock;
 
     // Boolean indicating whether or not new nodes can join
     std::atomic<bool> nodes_can_join;
 
-    // Set containing all IDs that have ever joined
-    std::set<uint32_t> joined_ids;
-
-    // Membership list and mutex protecting membership list access
-    member_list mem_list;
-    mutable std::recursive_mutex member_list_mutex;
-
-    // Handlers that will be called when the membership list changes
-    std::vector<std::function<void(member const&)>> on_fail_handlers;
-    std::vector<std::function<void(member const&)>> on_join_handlers;
-    std::vector<std::function<void(member const&)>> on_leave_handlers;
-
-    // The client and server threads and a boolean used to stop the threads
-    std::unique_ptr<std::thread> server_thread, client_thread;
     std::atomic<bool> running;
 };

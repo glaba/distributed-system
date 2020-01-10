@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <mutex>
 
 template <typename T>
 class redundant_queue {
@@ -24,5 +23,4 @@ public:
     }
 private:
     std::vector<std::tuple<T, int>> data;
-    mutable std::mutex data_mutex;
 };

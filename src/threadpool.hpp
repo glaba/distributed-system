@@ -5,7 +5,6 @@
 #include "threadpool.h"
 
 #include <functional>
-#include <mutex>
 #include <thread>
 #include <vector>
 #include <queue>
@@ -26,16 +25,16 @@ private:
     void thread_fn(unsigned thread_index);
 
     unsigned num_threads;
-
-    std::queue<std::function<void()>> tasks;
-    unsigned working = 0;
-
-    std::mutex cv_mutex;
-    std::condition_variable cv_started, cv_task, cv_finished;
     std::vector<std::thread> threads;
 
-    unsigned num_started;
-    std::atomic<bool> running;
+    struct threadpool_state {
+        bool running;
+        unsigned num_started;
+        std::queue<std::function<void()>> tasks;
+        unsigned working;
+    };
+    locked<threadpool_state> tp_state_lock;
+    std::condition_variable_any cv_started, cv_task, cv_finished;
 
     std::unique_ptr<logger> lg;
 };

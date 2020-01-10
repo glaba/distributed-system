@@ -72,15 +72,13 @@ public:
             services[id] = std::move(svc);
 
             // Initialize the state if needed
-            std::lock_guard<std::recursive_mutex> guard_state(service::state_mutex);
-
+            unlocked<service::global_state_map> global_states = service::global_states_lock();
             services[id]->env_id = env_id;
 
             // Service state uses the impl ID instead of the intf ID because each impl has different shared state
             std::string impl_id = services[id]->get_service_id();
-            if (service::state[env_id].find(impl_id) == service::state[env_id].end()) {
-                service::state[env_id][impl_id].svc_state_mutex = std::make_unique<std::recursive_mutex>();
-                service::state[env_id][impl_id].svc_state = services[id]->init_state();
+            if ((*global_states)[env_id].find(impl_id) == (*global_states)[env_id].end()) {
+                (*global_states)[env_id].emplace(impl_id, services[id]->init_state());
             }
 
         // If it's already being constructed / done being constructed, we just poll while waiting for the service to appear

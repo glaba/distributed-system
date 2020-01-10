@@ -9,9 +9,9 @@
 #include "election_messages.h"
 #include "service.h"
 #include "environment.h"
+#include "locking.h"
 
 #include <atomic>
-#include <mutex>
 #include <thread>
 #include <memory>
 #include <random>
@@ -40,36 +40,45 @@ public:
     void stop();
 private:
     // The state of the state machine for the election
-    // The state machine essentially works in the following way:
-    //  When events occur, two things atomically occur: transition, post-transition action
-    //  These 2 things occur atomically thanks to the mutex state_mutex
-    enum election_state {
+    // When events occur, two things atomically occur: transition, post-transition action
+    enum election_state_enum {
         no_master, normal, election_wait, election_init, electing, elected
     };
-    election_state state;
-    mutable std::recursive_mutex state_mutex;
+    struct election_state {
+        election_state_enum state;
+        // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
+        redundant_queue<std::tuple<std::string, election_message>> message_queue;
+        // A "redundant" queue that will be popped every 1 minute containing all the message IDs seen so far
+        redundant_queue<uint32_t> seen_message_ids;
+        // The random number generator which we will use to generate message IDs
+        std::mt19937 mt_rand;
+        // Keeps track of the highest initiator ID seen for ELECTION messages so far
+        uint32_t highest_initiator_id;
+        // The current master node (an ID of 0 means there is no master node)
+        member master_node;
+    };
+    locked<election_state> el_state_lock;
 
     // Transitions the current state to the given state
-    void transition(election_state origin_state, election_state dest_state);
+    void transition(election_state_enum origin_state, election_state_enum dest_state);
 
-    // Keeps track of the highest initiator ID seen for ELECTION messages so far
-    uint32_t highest_initiator_id;
-    void add_to_cache(election_message const& msg);
+    void add_to_cache(election_message const& msg, unlocked<election_state> const& el_state);
     // Passes on an ELECTION message as defined by the protocol
-    void propagate(election_message const& msg);
+    void propagate(election_message const& msg, unlocked<election_state> const& el_state);
 
     // Sets and updates the timer, and when the timer reaches 0, performs the appropriate action depending on the state
-    bool timer_on;
-    uint32_t timer;
-    uint32_t prev_time;
+    struct timer_state {
+        bool timer_on;
+        uint32_t timer;
+        uint32_t prev_time;
+    };
     void start_timer(uint32_t time);
     void stop_timer();
     void update_timer();
-    std::unique_ptr<std::thread> timer_thread; // Thread that will update the timer
-    mutable std::recursive_mutex timer_mutex; // Mutex that protects the timer variables
+    locked<timer_state> tm_state_lock;
 
     // Debugging function to print a string value for the enum
-    auto print_state(election_state const& s) -> std::string;
+    auto print_state(election_state_enum const& s) -> std::string;
 
     // Services that we depend on
     heartbeater *hb;
@@ -89,22 +98,12 @@ private:
     // TTL of the list of seen message IDs in minutes (effectively a limit on how late UDP messages can be delayed)
     const int seen_ids_ttl = 5;
 
-    // Thread for the server / client as well as the corresponding functions
-    std::unique_ptr<std::thread> server_thread, client_thread;
+    // Thread functions for the server / client
     void server_thread_function();
     void client_thread_function();
-    // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
-    redundant_queue<std::tuple<std::string, election_message>> message_queue;
     // Enqueues a message into the message_queue and prints debug information
-    void enqueue_message(std::string const& dest, election_message const& msg, int redundancy);
-
-    // A "redundant" queue that will be popped every 1 minute containing all the message IDs seen so far
-    redundant_queue<uint32_t> seen_message_ids;
-    // The random number generator which we will use to generate message IDs
-    std::mt19937 mt_rand;
-
-    // The current master node (an ID of 0 means there is no master node)
-    member master_node;
+    void enqueue_message(std::string const& dest, election_message const& msg,
+        int redundancy, unlocked<election_state> const& el_state);
 
     // Indicates whether or not the election is running
     std::atomic<bool> running;

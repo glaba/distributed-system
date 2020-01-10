@@ -5,13 +5,13 @@
 #include "configuration.h"
 #include "environment.h"
 #include "service.h"
+#include "locking.h"
 
 #include <string>
 #include <memory>
 #include <queue>
 #include <functional>
 #include <unordered_map>
-#include <mutex>
 #include <atomic>
 #include <tuple>
 #include <thread>
@@ -26,13 +26,14 @@ public:
 class mock_tcp_factory : public tcp_factory, public service_impl<mock_tcp_factory> {
 public:
     mock_tcp_factory(environment &env_)
-        : env(env_),
-          config(env.get<configuration>()) {}
+        : env(env_)
+        , config(env.get<configuration>())
+        , mock_udp_env_lock(locked<environment>::empty()) {}
 
     auto init_state() -> std::unique_ptr<service_state> {
         mock_tcp_state *state = new mock_tcp_state();
         state->udp_env_group = std::make_unique<environment_group>(true);
-        return std::unique_ptr<service_state>(state);
+        return std::unique_ptr<service_state>(static_cast<service_state*>(state));
     }
     auto get_tcp_client(std::string const& host, int port) -> std::unique_ptr<tcp_client>;
     auto get_tcp_server(int port) -> std::unique_ptr<tcp_server>;
@@ -87,18 +88,18 @@ private:
         int id;
         int port;
 
-        // Thread which reads UDP messages and pushes them into the correct queue
-        std::thread msg_thread;
         std::atomic<bool> running;
 
-        // Queues for incoming connections as well as regular messages and mutex protecting them
-        std::recursive_mutex msg_mutex;
-        // A queue of tuples of the form (client id, client hostname)
-        std::queue<std::tuple<uint32_t, std::string>> incoming_connections;
-        std::unordered_map<uint32_t, std::queue<std::string>> msg_queues;
+        struct server_state {
+            // Queues for incoming connections as well as regular messages
+            // A queue of tuples of the form (client id, client hostname)
+            std::queue<std::tuple<uint32_t, std::string>> incoming_connections;
+            std::unordered_map<uint32_t, std::queue<std::string>> msg_queues;
 
-        // A map of client IDs to client hostnames
-        std::unordered_map<uint32_t, std::string> client_hostnames;
+            // A map of client IDs to client hostnames
+            std::unordered_map<uint32_t, std::string> client_hostnames;
+        };
+        locked<server_state> serv_state_lock;
     };
 
     // Mock TCP client, which is just a wrapper around a no-failure mock UDP client
@@ -130,29 +131,23 @@ private:
         std::mt19937 mt;
         uint32_t id;
 
-        // Threads which read UDP messages per server (indexed by server ID) and push them into the message queue
-        std::unordered_map<uint32_t, std::thread> msg_threads;
-        std::unordered_map<uint32_t, std::atomic<bool>> running;
-
-        // Queues for messages and mutex protecting them
-        std::recursive_mutex msg_mutex;
-        std::unordered_map<uint32_t, std::queue<std::string>> msg_queues;
-
-        // Indicator variable per socket which indicates whether or not we are currently reading from that socket
-        std::unordered_map<uint32_t, bool> is_reading;
-
-        // A map of server IDs to server hostnames
-        std::unordered_map<uint32_t, std::string> server_hostnames;
-        // A map of server IDs to server ports
-        std::unordered_map<uint32_t, int> server_ports;
-
         int fixed_socket;
+
+        struct client_state {
+            std::unordered_map<uint32_t, std::atomic<bool>> running;
+            std::unordered_map<uint32_t, std::queue<std::string>> msg_queues;
+            // A map of server IDs to server hostnames
+            std::unordered_map<uint32_t, std::string> server_hostnames;
+            // A map of server IDs to server ports
+            std::unordered_map<uint32_t, int> server_ports;
+
+        };
+        locked<client_state> cl_state_lock;
     };
 
     environment &env;
     configuration *config;
 
-    std::mutex env_mutex;
-    std::unique_ptr<environment> mock_udp_env;
+    locked<environment> mock_udp_env_lock;
 };
 
