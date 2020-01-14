@@ -1,7 +1,7 @@
 INC_DIR        := inc
 CXX            := g++-9
 CXXFLAGS       := -I$(INC_DIR) -std=c++17 -Wall -DDEBUG -O3 -g
-LDFLAGS        := -pthread
+LDFLAGS        := -pthread -rdynamic
 
 OBJ_DIR        := obj
 SRC_DIR        := src

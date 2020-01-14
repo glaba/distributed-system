@@ -5,13 +5,15 @@
 #include "configuration.h"
 #include "environment.h"
 #include "service.h"
+#include "locking.h"
 
 #include <string>
 #include <unordered_map>
 #include <queue>
 #include <tuple>
 #include <memory>
-#include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 // Factory which produces mock UDP clients and servers
 class mock_udp_factory : public udp_factory, public service_impl<mock_udp_factory> {
@@ -39,42 +41,49 @@ private:
     auto get_udp_client(std::string const& hostname) -> std::unique_ptr<udp_client>;
     auto get_udp_server(std::string const& hostname) -> std::unique_ptr<udp_server>;
 
-    // Coordinator class which passes mock UDP messages around for one port
-    class mock_udp_port_coordinator {
-    public:
-        // Notifies the coordinator that the server is now started
-        void start_server(std::string const& hostname);
-        // Notify the coordinator that this thread is waiting for messages
-        // and will wake up when flag is set to true
-        void notify_waiting(std::string const& hostname, volatile bool *flag);
-        // Reads a packet (non-blocking) after notify_waiting was called and flag was set to true
-        auto recv(std::string const& hostname, char *buf, unsigned length) -> int;
-        // Sends a packet to the specified destination
-        void send(std::string const& dest, const char *msg, unsigned length);
-        // Clears the message queue for this host and notifies with no message if recv is being called
-        void stop_server(std::string const& hostname);
-    private:
-        struct coordinator_state {
-            // A map from hostname of receiving machine to a queue of (char *msg, unsigned length)
-            std::unordered_map<std::string, std::queue<std::tuple<std::unique_ptr<char[]>, unsigned>>> msg_queues;
-            // A map from hostname waiting for a message to arrive to a pointer to the flag that should be set to wake them
-            std::unordered_map<std::string, volatile bool*> notify_flags;
-        };
-        locked<coordinator_state> coord_state_lock;
+    struct host {
+        host(std::string const& hostname_, int port_) : hostname(hostname_), port(port_) {}
+        auto operator==(host const& h) const -> bool {
+            return hostname == h.hostname && port == h.port;
+        }
+        std::string hostname;
+        int port;
     };
 
-    // Coordinator class which passes mock UDP messages for any number of ports
+    struct host_hash {
+        inline auto operator()(host const& v) const -> size_t {
+            return (static_cast<size_t>(static_cast<uint32_t>(std::hash<std::string>()(v.hostname))) << 32) +
+                    static_cast<uint32_t>(v.port);
+        }
+    };
+
+    struct notify_state {
+        notify_state(std::recursive_mutex &m_, std::condition_variable_any &cv_, bool &flag_)
+            : m(m_), cv(cv_), flag(flag_) {}
+        std::recursive_mutex &m;
+        std::condition_variable_any &cv;
+        bool &flag;
+    };
+
+    // Coordinator class which passes mock UDP messages around
     class mock_udp_coordinator {
     public:
-        // All these functions essentially just multiplex to the correct mock_udp_port_coordinator
-        void start_server(std::string const& hostname, int port);
-        void notify_waiting(std::string const& hostname, int port, volatile bool *flag);
-        auto recv(std::string const& hostname, int port, char *buf, unsigned length) -> int;
-        void send(std::string const& dest, int port, const char *msg, unsigned length);
-        void stop_server(std::string const& hostname, int port);
+        // Notifies the coordinator that the server is now started
+        void start_server(host const& h);
+        // Notify the coordinator that a thread is waiting for messages using the provided notify_state
+        void notify_waiting(host const& h, notify_state const& ns);
+        // Reads a packet (non-blocking) after notify_waiting was called and flag was set to true
+        auto recv(host const& h, char *buf, unsigned length) -> int;
+        // Sends a packet to the specified destination
+        void send(host const& dest, char const* msg_buf, unsigned length);
+        // Clears the message queue for this host and notifies with no message if recv is being called
+        void stop_server(host const& h);
     private:
         struct coordinator_state {
-            std::unordered_map<int, std::unique_ptr<mock_udp_port_coordinator>> coordinators;
+            // A map from host of receiving machine to a queue of messages
+            std::unordered_map<host, std::queue<std::string>, host_hash> msg_queues;
+            // A map from host waiting for a message to the condition variable / mutex pair it is waiting on
+            std::unordered_map<host, notify_state, host_hash> cv_map;
         };
         locked<coordinator_state> coord_state_lock;
     };
@@ -103,7 +112,7 @@ private:
     class mock_udp_server : public udp_server {
     public:
         mock_udp_server(std::string const& hostname_, mock_udp_coordinator *coordinator_)
-            : hostname(hostname_), port(0), coordinator(coordinator_) {}
+            : hostname(hostname_), coordinator(coordinator_) {}
         ~mock_udp_server() {}
 
         // Starts the server on the machine with the given hostname on the given port
@@ -113,8 +122,14 @@ private:
         // Wrapper function around recvfrom that handles errors
         auto recv(char *buf, unsigned length) -> int;
     private:
+        struct server_state {
+            int port = 0;
+        };
+        locked<server_state> serv_state_lock;
+        std::condition_variable_any cv_msg;
+
         std::string hostname;
-        std::atomic<int> port;
+        int port;
         mock_udp_coordinator *coordinator;
     };
 
