@@ -92,5 +92,5 @@ private:
     threadpool_factory *tp_fac;
 
     std::atomic<bool> running;
-    std::mt19937 mt;
+    locked<std::mt19937> mt;
 };

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
+#include <stdlib.h>
 
 using std::string;
 using std::optional;
@@ -176,8 +177,11 @@ void mj_worker_impl::start_job(unlocked<job_state_map> &&job_states, int job_id,
         // TODO: handle the executable being missing, as opposed to a failed get
         return sdfsc->get(exe_path, state->exe) == 0;
     });
-    std::error_code ec;
-    std::filesystem::permissions(exe_path, std::filesystem::perms::owner_exec, ec);
+    try {
+        std::filesystem::permissions(exe_path, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+    } catch (...) {
+        assert(false && "Setting permissions failed, meaning the program is not being run with sufficient privileges");
+    }
     lg->debug("[Job " + std::to_string(job_id) + "] Downloaded executable " + state->exe + " from SDFS");
 
     std::thread add_files_thread([=] {
@@ -191,24 +195,20 @@ void mj_worker_impl::monitor_job(int job_id) {
     // Repeat until the master tells us the job is done (job_complete is true), at which point we can delete the job
     bool sent_job_failed_msg = false;
     do {
-        // We are required to use unsafe locking due to the condition variable
-        job_state &state = (*job_states_lock())[job_id].unsafe_get_data();
-        std::recursive_mutex &state_lock = (*job_states_lock())[job_id].unsafe_get_mutex();
-
         bool failed;
-        bool job_complete;
+        threadpool *tp;
         {
-            std::unique_lock<std::recursive_mutex> lock(state_lock);
-            state.cv_done.wait(lock, [&] {
-                return state.job_complete || state.job_failed || !running.load();
+            unlocked<job_state> state = (*job_states_lock())[job_id]();
+            state->cv_done.wait(state.unsafe_get_mutex(), [&] {
+                return state->job_complete || state->job_failed || !running.load();
             });
 
             if (!running.load()) {
                 return;
             }
 
-            failed = state.job_failed;
-            job_complete = state.job_complete;
+            failed = state->job_failed;
+            tp = state->tp.get();
         }
 
         // If some portion of the job irrecoverably failed and we haven't told the master yet
@@ -217,24 +217,22 @@ void mj_worker_impl::monitor_job(int job_id) {
             sent_job_failed_msg = true;
         }
 
-        if (job_complete) {
-            // This is safe to call despite state not being locked since threadpools are threadsafe!
-            // Wait for all the workers to complete (they should be nearly / already complete at this point)
-            state.tp->finish();
+        // This is safe to call despite state not being locked since threadpools are threadsafe!
+        // Wait for all the workers to complete (they should be nearly / already complete at this point)
+        tp->finish();
 
-            // Delete the exe for this job
-            string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
-            utils::backoff([&] {
-                return std::filesystem::remove(exe_path);
-            });
+        // Delete the exe for this job
+        string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
+        utils::backoff([&] {
+            return std::filesystem::remove(exe_path);
+        });
 
-            // Delete the job
-            unlocked<job_state_map> job_states = job_states_lock();
-            job_states->erase(job_id);
+        // Delete the job
+        unlocked<job_state_map> job_states = job_states_lock();
+        job_states->erase(job_id);
 
-            lg->info("Removed job with ID " + std::to_string(job_id));
-            break;
-        }
+        lg->info("Removed job with ID " + std::to_string(job_id));
+        break;
     } while (true);
 }
 
@@ -299,7 +297,7 @@ void mj_worker_impl::process_file(int job_id, string const& filename, string con
     string exe_path = config->get_mj_dir() + "exe_" + std::to_string(job_id);
 
     // Download the file from the SDFS
-    string local_file_path = config->get_mj_dir() + filename + "_" + std::to_string(job_id) + "_" + std::to_string(mt());
+    string local_file_path = config->get_mj_dir() + filename + "_" + std::to_string(job_id) + "_" + std::to_string((*mt())());
     if (!utils::backoff([&] {
             return sdfsc->get(local_file_path, sdfs_file_path) == 0;
         }, [&] {return !running.load();}))
@@ -319,9 +317,11 @@ void mj_worker_impl::process_file(int job_id, string const& filename, string con
 
     // The provided executable was not valid
     if (!success) {
+        lg->info("[Job " + std::to_string(job_id) + "] Failed to run executable, informing master node of job failure");
+
         // Notify the job monitor that the job is failed
         unlocked<job_state> state = (*job_states_lock())[job_id]();
-        state->job_failed = false;
+        state->job_failed = true;
         state->cv_done.notify_all();
         return;
     }
@@ -456,7 +456,7 @@ auto mj_worker_impl::run_command(string const& command, function<bool(string con
         string cur_line = "";
         while (!feof(stream)) {
             size_t bytes_read = fread(static_cast<void*>(buffer), 1, 1024, stream);
-            if (bytes_read == 1024 || feof(stream)) {
+            if (bytes_read == 1024 || (feof(stream) && bytes_read > 0)) {
                 cur_line += string(buffer, bytes_read);
 
                 while (true) {
@@ -484,8 +484,7 @@ auto mj_worker_impl::run_command(string const& command, function<bool(string con
                 lg->debug("Error occurred while processing output of command");
             }
         }
-        pclose(stream);
-        return true;
+        return pclose(stream) == 0;
     } else {
         return false;
     }

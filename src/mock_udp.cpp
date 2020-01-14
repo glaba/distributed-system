@@ -179,7 +179,8 @@ void mock_udp_factory::mock_udp_server::start_server(int port) {
 
 // Stops the server, this function is not threadsafe and should only be called once
 void mock_udp_factory::mock_udp_server::stop_server() {
-    coordinator->stop_server(host(hostname, serv_state_lock()->port));
+    int port = serv_state_lock()->port;
+    coordinator->stop_server(host(hostname, port));
 
     unlocked<server_state> serv_state = serv_state_lock();
     serv_state->port = 0;
@@ -191,11 +192,10 @@ auto mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) -> int 
     bool flag = false;
 
     // Notify the coordinator that we are waiting for a message
-    coordinator->notify_waiting(host(hostname, serv_state_lock()->port),
-        notify_state(serv_state_lock.unsafe_get_mutex(), cv_msg, flag));
+    int port = serv_state_lock()->port;
+    coordinator->notify_waiting(host(hostname, port), notify_state(serv_state_lock.unsafe_get_mutex(), cv_msg, flag));
 
     // Wait for a message to arrive or for the server to stop
-    int port;
     {
         unlocked<server_state> serv_state = serv_state_lock();
         cv_msg.wait(serv_state.unsafe_get_mutex(), [&] {
@@ -205,8 +205,6 @@ auto mock_udp_factory::mock_udp_server::recv(char *buf, unsigned length) -> int 
         if (serv_state->port == 0) {
             return 0;
         }
-
-        port = serv_state->port;
     }
 
     return coordinator->recv(host(hostname, port), buf, length);

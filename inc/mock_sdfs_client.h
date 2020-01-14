@@ -6,7 +6,6 @@
 #include "logging.h"
 #include "inputter.h"
 #include "election.h"
-#include "mt_safe.h"
 #include "locking.h"
 
 #include <atomic>
@@ -102,7 +101,7 @@ private:
     election *el;
 
     // RNG to generate temporary filenames
-    mt_safe mt;
+    locked<std::mt19937> mt;
 
     // mock_sdfs_master essentially relies completely on mock_sdfs_client for all functionality
     friend class mock_sdfs_master;

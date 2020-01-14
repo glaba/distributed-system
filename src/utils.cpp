@@ -17,7 +17,7 @@ namespace utils {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(std::rand() % delay));
             delay *= 2;
-            if (delay > 5000) {
+            if (delay > 1000) {
                 print_stacktrace();
                 assert(false && "Waited too long in backoff");
             }

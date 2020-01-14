@@ -188,7 +188,7 @@ auto mock_sdfs_client::write(string const& local_filename, string const& sdfs_pa
 
     // Copy the file into a temporary location
     string sdfs_root_dir = get_sdfs_root_dir();
-    string temp_location = sdfs_root_dir + sdfs::convert_path(sdfs_path).path + ".~" + std::to_string(mt());
+    string temp_location = sdfs_root_dir + sdfs::convert_path(sdfs_path).path + ".~" + std::to_string((*mt())());
     std::error_code ec;
     if (!std::filesystem::copy_file(local_filename, temp_location, std::filesystem::copy_options::overwrite_existing, ec)) {
         return -1;
@@ -219,7 +219,7 @@ auto mock_sdfs_client::write(inputter<string> const& in, string const& sdfs_path
 
     // Write the inputter to a temporary location
     string sdfs_root_dir = get_sdfs_root_dir();
-    string temp_location = sdfs_root_dir + sdfs::convert_path(sdfs_path).path + "~." + std::to_string(mt());
+    string temp_location = sdfs_root_dir + sdfs::convert_path(sdfs_path).path + "~." + std::to_string((*mt())());
 
     std::ofstream dest(temp_location, std::ios::binary);
     if (!dest) {

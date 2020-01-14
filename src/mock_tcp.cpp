@@ -10,6 +10,8 @@ using std::string;
 using std::unique_ptr;
 using std::make_unique;
 
+locked<std::mt19937> mock_tcp_factory::mock_tcp_client::mt;
+
 auto mock_tcp_factory::get_tcp_client(string const& host, int port) -> unique_ptr<tcp_client> {
     mock_tcp_client *retval = new mock_tcp_client(get_mock_udp_factory(), config->get_hostname());
     retval->setup_connection(host, port);

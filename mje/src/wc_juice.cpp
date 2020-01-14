@@ -9,6 +9,9 @@ using namespace std;
 int main(int argc, char **argv) {
     unsigned count = 0;
 
+    if (argc < 3) {
+        return 0;
+    }
     string key = string(argv[2]);
 
     string line;

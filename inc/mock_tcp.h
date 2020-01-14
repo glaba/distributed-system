@@ -107,8 +107,7 @@ private:
     class mock_tcp_client : public tcp_client {
     public:
         mock_tcp_client(mock_udp_factory *factory_, std::string hostname_)
-            : factory(factory_), hostname(hostname_), mt(std::chrono::system_clock::now().time_since_epoch().count()),
-              id(mt() & 0x7FFFFFFF) {}
+            : factory(factory_), hostname(hostname_), id((*mt())() & 0x7FFFFFFF) {}
         ~mock_tcp_client() {
             close_connection();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -128,7 +127,7 @@ private:
         std::string hostname;
 
         // RNG to generate the ID and the ID itself
-        std::mt19937 mt;
+        static locked<std::mt19937> mt;
         uint32_t id;
 
         int fixed_socket;

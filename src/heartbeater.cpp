@@ -127,27 +127,34 @@ void heartbeater_impl::client_thread_function() {
 
 // Scans through neighbors and marks those with a heartbeat past the timeout as failed
 void heartbeater_impl::check_for_failed_neighbors() {
-    unlocked<heartbeater_state> hb_state = hb_state_lock();
-    std::vector<member> const& neighbors = hb_state->mem_list.get_neighbors();
+    std::vector<std::function<void()>> handler_calls;
+    {
+        unlocked<heartbeater_state> hb_state = hb_state_lock();
+        std::vector<member> const& neighbors = hb_state->mem_list.get_neighbors();
 
-    uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    for (auto const& mem : neighbors) {
-        if (current_time > mem.last_heartbeat + timeout_interval_ms) {
-            lg->info("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
-            hb_state->mem_list.remove_member(mem.id);
+        uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        for (auto const& mem : neighbors) {
+            if (current_time > mem.last_heartbeat + timeout_interval_ms) {
+                lg->info("Node at " + mem.hostname + " with id " + std::to_string(mem.id) + " timed out!");
+                hb_state->mem_list.remove_member(mem.id);
 
-            // Only tell neighbors about failure if we are still in the group
-            // If we are not still in the group, all members will drop out eventually
-            if (joined_group.load()) {
-                // Tell our neighbors about this failure
-                hb_state->failed_nodes_queue.push(mem.id, message_redundancy);
+                // Only tell neighbors about failure if we are still in the group
+                // If we are not still in the group, all members will drop out eventually
+                if (joined_group.load()) {
+                    // Tell our neighbors about this failure
+                    hb_state->failed_nodes_queue.push(mem.id, message_redundancy);
 
-                // Call the on_fail handler if provided
-                for (auto const& handler : hb_state->on_fail_handlers) {
-                    handler(mem);
+                    // Queue the on_fail handlers to be called
+                    for (auto const& handler : hb_state->on_fail_handlers) {
+                        handler_calls.push_back([=] {handler(mem);});
+                    }
                 }
             }
         }
+    }
+
+    for (auto handler_call : handler_calls) {
+        handler_call();
     }
 }
 
@@ -238,6 +245,8 @@ void heartbeater_impl::server_thread_function() {
             continue;
         }
 
+        // Vector of lambdas which call various handlers
+        std::vector<std::function<void()>> handler_calls;
         // Listen for messages and process each one
         if ((size = server->recv(buf, 1024)) > 0) {
             unlocked<heartbeater_state> hb_state = hb_state_lock();
@@ -276,9 +285,9 @@ void heartbeater_impl::server_thread_function() {
                     lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
                     hb_state->new_nodes_queue.push(m, message_redundancy);
 
-                    // Call the join handlers after adding this node
-                    for (auto const& handler :hb_state->on_join_handlers) {
-                        handler(m);
+                    // Queue join handlers to be called after adding this node
+                    for (auto const& handler : hb_state->on_join_handlers) {
+                        handler_calls.push_back([=] {handler(m);});
                     }
                 }
             }
@@ -299,7 +308,7 @@ void heartbeater_impl::server_thread_function() {
                     hb_state->joined_nodes_queue.push(m, message_redundancy);
 
                     for (auto const& handler : hb_state->on_join_handlers) {
-                        handler(m);
+                        handler_calls.push_back([=] {handler(m);});
                     }
                 }
             }
@@ -312,7 +321,7 @@ void heartbeater_impl::server_thread_function() {
                     hb_state->left_nodes_queue.push(id, message_redundancy);
 
                     for (auto const& handler : hb_state->on_leave_handlers) {
-                        handler(mem);
+                        handler_calls.push_back([=] {handler(mem);});
                     }
                 }
             }
@@ -325,12 +334,16 @@ void heartbeater_impl::server_thread_function() {
                     hb_state->failed_nodes_queue.push(id, message_redundancy);
 
                     for (auto const& handler : hb_state->on_fail_handlers) {
-                        handler(mem);
+                        handler_calls.push_back([=] {handler(mem);});
                     }
                 }
             }
 
             hb_state->mem_list.update_heartbeat(msg.get_id());
+        }
+
+        for (auto handler_call : handler_calls) {
+            handler_call();
         }
     }
 }

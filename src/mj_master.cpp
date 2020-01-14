@@ -453,32 +453,31 @@ void mj_master_impl::assign_job_to_node(int job_id, string const& hostname, unor
 // Find all the files that this node was responsible for that it did not yet process and assign them
 // TODO: make this process resilient so that if we crash during it, the new master can pick up at the right place
 void mj_master_impl::node_dropped(string const& hostname) {
-    unordered_set<int> jobs;
 
     lg->info("Lost node at " + hostname + ", reassigning its work to other nodes");
-
-    { // Get the jobs it was a part of and then delete it
-        unlocked<node_state_map> node_states = node_states_lock();
-        jobs = (*node_states)[hostname].jobs;
-        node_states->erase(hostname);
-    }
 
     // Map from job ID to <hostname, files newly assigned to hostname>
     unordered_map<int, std::tuple<string, unordered_set<string>>> assignments;
     {
         unlocked<node_state_map> node_states = node_states_lock();
         unlocked<job_state_map> job_states = job_states_lock();
+
+        // Save which jobs it was a part of then delete all information associated with the node
+        unordered_set<int> jobs = (*node_states)[hostname].jobs;
+        node_states->erase(hostname);
+
         for (int job_id : jobs) {
             // Redistribute the work for this job to the least busy node
             string target = get_least_busy_node().hostname;
             assignments[job_id] = {target, (*job_states)[job_id].unprocessed_files[hostname]};
 
-            // Erase all data associated with the dropped node
+            // Erase all data associated with the dropped node for this job
             (*job_states)[job_id].unprocessed_files.erase(hostname);
             (*job_states)[job_id].processed_files.erase(hostname);
 
             lg->info("Redistributing work of node " + hostname + " on job with ID " + std::to_string(job_id) + " to node " + target);
 
+            // Mark the newly assigned files as belonging to the target node
             auto const& [_, files] = assignments[job_id];
             for (string const& file : files) {
                 (*job_states)[job_id].unprocessed_files[target].insert(file);
@@ -492,8 +491,8 @@ void mj_master_impl::node_dropped(string const& hostname) {
         sdfsm->wait_transactions();
 
         // Send the message to assign the new work to each of the nodes
-        for (int job_id : jobs) {
-            auto const& [target, files] = assignments[job_id];
+        for (auto const& [job_id, assignment] : assignments) {
+            auto const& [target, files] = assignment;
             assign_job_to_node(job_id, target, files);
         }
     });
