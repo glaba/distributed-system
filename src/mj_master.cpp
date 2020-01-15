@@ -56,9 +56,9 @@ void mj_master_impl::start() {
         hb->on_fail(callback);
 
         // Add callbacks for files being appended to in SDFS so that work can be marked as committed
-        sdfsm->on_append({"maplejuice"}, [this] (const string &sdfs_path, unsigned index, const sdfs_metadata &metadata) {
+        sdfsm->on_append({"maplejuice"}, [this] (string const& sdfs_path, unsigned index, sdfs_metadata const& metadata) {
             assert(metadata.find("maplejuice") != metadata.end() && "SDFS master callback logic is incorrect");
-            const string &mj_metadata = metadata.find("maplejuice")->second;
+            string const& mj_metadata = metadata.find("maplejuice")->second;
 
             deserializer des(mj_metadata.c_str(), mj_metadata.length());
             string input_file = des.get_string();

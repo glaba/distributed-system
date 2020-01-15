@@ -9,6 +9,17 @@ public:
     inputter(std::function<std::optional<T>()> source_) : source(source_) {}
     virtual ~inputter() {}
 
+    static auto constant_inputter(T value) -> inputter {
+        return inputter([value, done = false] () mutable -> std::optional<T> {
+            if (done) {
+                return std::nullopt;
+            } else {
+                done = true;
+                return value;
+            }
+        });
+    }
+
     class iterator {
     public:
         iterator(std::function<std::optional<T>()> const& source_) : source(source_), end(false) {

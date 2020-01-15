@@ -15,6 +15,7 @@ public:
     virtual void set_dir(std::string const& dir) = 0;
     virtual void set_sdfs_subdir(std::string const& subdir) = 0;
     virtual void set_mj_subdir(std::string const& subdir) = 0;
+    virtual void set_shared_config_subdir(std::string const& subdir) = 0;
 
     virtual auto get_hostname() const -> std::string = 0;
     virtual auto is_first_node() const -> bool = 0;
@@ -27,4 +28,5 @@ public:
     virtual auto get_dir() const -> std::string = 0;
     virtual auto get_sdfs_dir() const -> std::string = 0;
     virtual auto get_mj_dir() const -> std::string = 0;
+    virtual auto get_shared_config_dir() const -> std::string = 0;
 };

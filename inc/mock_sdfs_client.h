@@ -5,7 +5,6 @@
 #include "configuration.h"
 #include "logging.h"
 #include "inputter.h"
-#include "election.h"
 #include "locking.h"
 
 #include <atomic>
@@ -98,7 +97,6 @@ private:
     // Services this depends on
     configuration *config;
     std::unique_ptr<logger> lg;
-    election *el;
 
     // RNG to generate temporary filenames
     locked<std::mt19937> mt;

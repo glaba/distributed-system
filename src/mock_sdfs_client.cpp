@@ -4,16 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <chrono>
 
 using std::string;
 using std::unique_ptr;
 using std::optional;
 using namespace sdfs;
+using namespace std::chrono;
 
 mock_sdfs_client::mock_sdfs_client(environment &env)
     : config(env.get<configuration>())
     , lg(env.get<logger_factory>()->get_logger("mock_sdfs_client"))
-    , el(env.get<election>())
     , mt(std::chrono::system_clock::now().time_since_epoch().count()) {}
 
 auto mock_sdfs_client::init_state() -> unique_ptr<service_state> {

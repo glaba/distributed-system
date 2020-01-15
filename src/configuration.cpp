@@ -102,6 +102,19 @@ auto configuration_impl::get_mj_dir() const -> std::string {
     return mj_dir;
 }
 
+void configuration_impl::set_shared_config_subdir(std::string const& subdir) {
+    shared_config_dir = dir + subdir + "/";
+    if (mkdir(shared_config_dir.c_str(), ACCESSPERMS) != 0) {
+        std::cout << "Directory is " << shared_config_dir << std::endl;
+        std::cerr << "Could not create shared configuration subdirectory, exiting" << std::endl;
+        exit(1);
+    }
+}
+
+auto configuration_impl::get_shared_config_dir() const -> std::string {
+    return shared_config_dir;
+}
+
 void configuration_test_impl::set_dir(std::string const& dir_) {
     // Create our own subdirectory within this directory only for files within this environment
     std::mt19937 mt(std::chrono::system_clock::now().time_since_epoch().count());

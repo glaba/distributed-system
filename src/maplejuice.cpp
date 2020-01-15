@@ -25,8 +25,6 @@ int main(int argc, char **argv) {
     int hb_port;
     int el_port;
     std::string dir;
-    std::string sdfs_subdir;
-    std::string mj_subdir;
     int sdfs_internal_port;
     int sdfs_master_port;
     int mj_internal_port;
@@ -52,8 +50,6 @@ int main(int argc, char **argv) {
         return true;
     };
     cli_parser.add_required_option<>("d", "dir", "The empty directory to store any files in, ending with a /", &dir_validator);
-    cli_parser.add_required_option<>("sd", "sdfs_subdir", "The name of the subdirectory to store SDFS files in", &sdfs_subdir);
-    cli_parser.add_required_option<>("md", "mj_subdir", "The name of the subdirectory to store temporary MapleJuice files in", &mj_subdir);
 
     std::function<bool(std::string)> log_level_parser = [&log_level] (std::string str) {
         if (str == "OFF") {
@@ -95,12 +91,13 @@ int main(int argc, char **argv) {
         config->set_hb_port(hb_port);
         config->set_election_port(el_port);
         config->set_dir(dir);
-        config->set_sdfs_subdir(sdfs_subdir);
+        config->set_sdfs_subdir("sdfs");
         config->set_sdfs_internal_port(sdfs_internal_port);
         config->set_sdfs_master_port(sdfs_master_port);
-        config->set_mj_subdir(mj_subdir);
+        config->set_mj_subdir("mj");
         config->set_mj_internal_port(mj_internal_port);
         config->set_mj_master_port(mj_master_port);
+        config->set_shared_config_subdir("shared_config");
 
         env.get<logger_factory>()->configure(log_level);
 

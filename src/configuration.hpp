@@ -27,6 +27,7 @@ public:
     void set_dir(std::string const& dir);
     void set_sdfs_subdir(std::string const& subdir);
     void set_mj_subdir(std::string const& subdir);
+    void set_shared_config_subdir(std::string const& subdir);
 
     auto get_hostname() const -> std::string;
     auto is_first_node() const -> bool;
@@ -39,6 +40,7 @@ public:
     auto get_dir() const -> std::string;
     auto get_sdfs_dir() const -> std::string;
     auto get_mj_dir() const -> std::string;
+    auto get_shared_config_dir() const -> std::string;
 
 protected:
     std::string hostname;
@@ -52,6 +54,7 @@ protected:
     std::string dir;
     std::string sdfs_dir;
     std::string mj_dir;
+    std::string shared_config_dir;
 
     configuration_impl() {}
 };
