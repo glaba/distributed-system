@@ -524,22 +524,4 @@ auto mock_sdfs_client::ls_dirs(string const& sdfs_dir) -> std::optional<std::vec
     return retval;
 }
 
-auto mock_sdfs_client::get_num_shards(string const& sdfs_path) -> int {
-    uint64_t timestamp = mark_transaction_started();
-    int retval;
-    internal_path int_path = sdfs::convert_path(sdfs_path);
-
-    access_pieces([&] (dir_state_map &dir_states, file_state_map &file_states, master_callback_type const& master_callback)
-    {
-        if (file_states.find(int_path) == file_states.end()) {
-            retval = -1;
-        } else {
-            retval = file_states[int_path]()->num_pieces;
-        }
-    });
-
-    mark_transaction_completed(timestamp);
-    return retval;
-}
-
 register_test_service<sdfs_client, mock_sdfs_client> register_mock_sdfs_client;

@@ -36,7 +36,6 @@ public:
     auto rmdir(std::string const& sdfs_dir) -> int;
     auto ls_files(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
     auto ls_dirs(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>>;
-    auto get_num_shards(std::string const& sdfs_path) -> int;
 
     // Virtual method for service_impl
     auto init_state() -> std::unique_ptr<service_state>;

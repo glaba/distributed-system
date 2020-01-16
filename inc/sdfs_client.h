@@ -35,6 +35,4 @@ public:
     // Returns a list of files / directories within the provided directory
     virtual auto ls_files(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>> = 0;
     virtual auto ls_dirs(std::string const& sdfs_dir) -> std::optional<std::vector<std::string>> = 0;
-    // Gets the number of shards that a file is split into
-    virtual auto get_num_shards(std::string const& sdfs_path) -> int = 0;
 };
