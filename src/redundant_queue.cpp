@@ -53,5 +53,5 @@ void redundant_queue<T>::clear() {
 // Force the compiler to compile the required templates
 template class redundant_queue<uint32_t>;
 template class redundant_queue<member>;
-template class redundant_queue<std::tuple<std::string, election_message>>;
+template class redundant_queue<std::tuple<std::string, std::string>>;
 template class redundant_queue<std::tuple<char*, unsigned>>;

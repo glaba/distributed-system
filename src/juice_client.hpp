@@ -8,12 +8,17 @@
 #include "logging.h"
 
 #include <memory>
+#include <string>
+#include <optional>
 
 class juice_client_impl : public juice_client, public service_impl<juice_client_impl> {
 public:
     juice_client_impl(environment &env);
 
     auto get_error() const -> std::string;
+
+    template <typename Msg>
+    auto filter_msg(std::string const& msg_str) -> std::optional<Msg>;
 
     auto run_job(std::string const& juice_node, std::string const& local_exe, std::string const& juice_exe, int num_juices,
         partitioner::type partitioner_type, std::string const& sdfs_src_dir, std::string const& sdfs_output_dir) -> bool;

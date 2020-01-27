@@ -17,6 +17,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <string>
+#include <optional>
 
 class mj_master_impl : public mj_master, public service_impl<mj_master_impl> {
 public:
@@ -29,10 +30,10 @@ private:
     // Server thread which listens for incoming TCP messages as a master node
     void run_master();
     // Initiates a new job, waits for it to complete, and informs the client that started the job
-    void handle_job(int fd, mj_start_job const& info);
+    void handle_job(int fd, mj_message::start_job const& info);
     // Assigns files to nodes in the cluster, sends them a message assigning them work,
     // and returns the job ID, which is negative on failure
-    auto assign_job(mj_start_job const& info) -> int;
+    auto assign_job(mj_message::start_job const& info) -> int;
     // Specifically assigns a list of input files to the provided node
     void assign_job_to_node(int job_id, std::string const& hostname, std::unordered_set<std::string> const& input_files);
     // Returns the node with the current least amount of files being processed
@@ -43,6 +44,15 @@ private:
     auto job_complete(int job_id) -> bool;
     // Callback called by heartbeater when a node goes down, which will redistribute its work to other nodes
     void node_dropped(std::string const& hostname);
+
+    // Filters messages that are invalid or from outside the group
+    template <typename Msg>
+    auto filter_msg(std::string msg_str) -> std::optional<Msg>;
+    // Process various types of incoming messages
+    void process_start_job_msg(mj_message::start_job const& msg, int fd, bool is_master, std::string master_hostname);
+    void process_request_append_msg(mj_message::request_append_perm const& msg_, int fd);
+    void process_job_failed_msg(mj_message::job_failed const& msg);
+    void process_file_done_msg(mj_message::file_done const& msg);
 
     struct string_pair_hash {
         inline std::size_t operator()(const std::pair<std::string, std::string> &v) const {

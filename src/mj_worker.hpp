@@ -55,12 +55,19 @@ private:
     using job_state_map = std::unordered_map<int, locked<job_state>>;
     locked<job_state_map> job_states_lock;
 
+    // Filters invalid messages
+    template <typename Msg>
+    auto filter_msg(std::string msg_str) -> std::optional<Msg>;
+    // Processes the different types of messages a MapleJuice worker can receive
+    void process_assign_job_msg(mj_message::assign_job const& data);
+    void process_job_end_worker_msg(mj_message::job_end_worker const& data);
+
     // Runs continuously waiting for commands from the master
     void server_thread_function();
     // Runs a Linux command and feeds the results line by line to the callback
     auto run_command(std::string const& command, std::function<bool(std::string const&)> const& callback) const -> bool;
     // Starts a new job, filling in its job_state struct and starting work on the initial set of files
-    void start_job(unlocked<job_state_map> &&job_states, int job_id, mj_assign_job const& data);
+    void start_job(unlocked<job_state_map> &&job_states, int job_id, mj_message::assign_job const& data);
     // Monitors the progress of a job, informing the master on failure and ending the job when master says it's over
     void monitor_job(int job_id);
     // Notifies the master node that the specified job has failed

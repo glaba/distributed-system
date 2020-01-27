@@ -7,11 +7,15 @@
 #include <cassert>
 #include <iostream>
 #include <algorithm>
+#include <type_traits>
 
 using namespace std::chrono;
 using std::unique_ptr;
 using std::make_unique;
 using std::string;
+using std::optional;
+using std::vector;
+using std::function;
 
 heartbeater_impl::heartbeater_impl(environment &env)
     : lg(env.get<logger_factory>()->get_logger("heartbeater")),
@@ -67,7 +71,7 @@ void heartbeater_impl::stop() {
 }
 
 // Returns the list of members of the group that this node is aware of
-auto heartbeater_impl::get_members() const -> std::vector<member> {
+auto heartbeater_impl::get_members() const -> vector<member> {
     return hb_state_lock()->mem_list.get_members();
 }
 
@@ -97,17 +101,13 @@ void heartbeater_impl::client_thread_function() {
             check_for_failed_neighbors();
 
             // For each of fails / leaves / joins, send a message out to our neighbors
-            std::vector<uint32_t> const& failed_nodes = hb_state->failed_nodes_queue.pop();
-            std::vector<uint32_t> const& left_nodes = hb_state->left_nodes_queue.pop();
-            std::vector<member> const& joined_nodes = hb_state->joined_nodes_queue.pop();
+            vector<uint32_t> const& failed_nodes = hb_state->failed_nodes_queue.pop();
+            vector<uint32_t> const& left_nodes = hb_state->left_nodes_queue.pop();
+            vector<member> const& joined_nodes = hb_state->joined_nodes_queue.pop();
 
-            // Create the message to send out
-            hb_message msg(our_id);
-            msg.set_failed_nodes(failed_nodes);
-            msg.set_left_nodes(left_nodes);
-            msg.set_joined_nodes(joined_nodes);
-            string msg_str = msg.serialize();
-            assert(msg_str.length() > 0);
+            // Create the heartbeat message to send out
+            hb_message::heartbeat hb_msg(our_id, failed_nodes, left_nodes, joined_nodes);
+            string msg_str = hb_msg.serialize();
 
             // Send the message out to all the neighbors
             for (auto const& mem : hb_state->mem_list.get_neighbors()) {
@@ -127,10 +127,10 @@ void heartbeater_impl::client_thread_function() {
 
 // Scans through neighbors and marks those with a heartbeat past the timeout as failed
 void heartbeater_impl::check_for_failed_neighbors() {
-    std::vector<std::function<void()>> handler_calls;
+    vector<function<void()>> handler_calls;
     {
         unlocked<heartbeater_state> hb_state = hb_state_lock();
-        std::vector<member> const& neighbors = hb_state->mem_list.get_neighbors();
+        vector<member> const& neighbors = hb_state->mem_list.get_neighbors();
 
         uint64_t current_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         for (auto const& mem : neighbors) {
@@ -161,12 +161,10 @@ void heartbeater_impl::check_for_failed_neighbors() {
 // Sends pending messages to newly joined nodes
 void heartbeater_impl::send_introducer_msg() {
     unlocked<heartbeater_state> hb_state = hb_state_lock();
-    std::vector<member> const& all_members = hb_state->mem_list.get_members();
+    vector<member> const& all_members = hb_state->mem_list.get_members();
 
-    hb_message intro_msg(our_id);
-    intro_msg.set_joined_nodes(all_members);
+    hb_message::heartbeat intro_msg(our_id, vector<uint32_t>(), vector<uint32_t>(), all_members);
     string msg_str = intro_msg.serialize();
-    assert(msg_str.length() > 0);
 
     auto const& new_nodes = hb_state->new_nodes_queue.pop();
     auto const& updated = hb_state->new_nodes_queue.peek();
@@ -184,7 +182,7 @@ void heartbeater_impl::send_introducer_msg() {
 }
 
 // Runs the provided function atomically with any functions that read or write to the membership list
-void heartbeater_impl::run_atomically_with_mem_list(std::function<void()> const& fn) const {
+void heartbeater_impl::run_atomically_with_mem_list(function<void()> const& fn) const {
     auto guard = hb_state_lock();
     fn();
 }
@@ -201,14 +199,8 @@ void heartbeater_impl::join_group(string const& node) {
     int join_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     our_id = std::hash<string>()(config->get_hostname()) ^ std::hash<int>()(join_time);
 
-    member us;
-    us.id = our_id;
-    us.hostname = config->get_hostname();
-
-    hb_message join_req(our_id);
-    join_req.make_join_request(us);
+    hb_message::join_request join_req(our_id, member(our_id, config->get_hostname()));
     string msg_str = join_req.serialize();
-    assert(msg_str.length() > 0);
 
     for (int i = 0; i < message_redundancy; i++) {
         client->send(node, config->get_hb_port(), msg_str);
@@ -221,6 +213,106 @@ void heartbeater_impl::leave_group() {
 
     joined_group = false;
     hb_state_lock()->left_nodes_queue.push(our_id, message_redundancy);
+}
+
+template <typename Msg>
+auto heartbeater_impl::filter_msg(unlocked<heartbeater_state> const& hb_state, char const* buf, int size) -> optional<Msg> {
+    Msg msg;
+    if (!msg.deserialize_from(string(buf, size))) {
+        lg->debug("Received malformed heartbeat message!");
+        return std::nullopt;
+    }
+
+    // If we are in the group and the message is not from within the group, ignore it
+    if (hb_state->mem_list.get_member_by_id(our_id).id == our_id &&
+        hb_state->mem_list.get_member_by_id(msg.common.id).id != msg.common.id)
+    {
+        // Allow the message to be processed only if it's a join request
+        if constexpr (std::is_same<Msg, hb_message::join_request>::value) {
+            if (!nodes_can_join.load()) {
+                lg->debug("Nodes cannot join because leader election is occurring!");
+                return std::nullopt;
+            }
+        } else {
+            lg->trace("Ignoring heartbeat message from " + std::to_string(msg.common.id) + " because they are not in the group");
+            return std::nullopt;
+        }
+    }
+
+    return msg;
+}
+
+void heartbeater_impl::process_join_request(unlocked<heartbeater_state> const& hb_state,
+    hb_message::join_request const& msg, vector<function<void()>> &handler_calls)
+{
+    member const& m = msg.candidate;
+
+    // Make sure this is a node we haven't seen yet
+    if (hb_state->joined_ids.find(m.id) == hb_state->joined_ids.end()) {
+        hb_state->joined_ids.insert(m.id);
+        hb_state->mem_list.add_member(m.hostname, m.id);
+
+        lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
+        hb_state->new_nodes_queue.push(m, message_redundancy);
+
+        // Queue join handlers to be called after adding this node
+        for (auto const& handler : hb_state->on_join_handlers) {
+            handler_calls.push_back([=] {handler(m);});
+        }
+    }
+}
+
+void heartbeater_impl::process_heartbeat(unlocked<heartbeater_state> const& hb_state,
+    hb_message::heartbeat const& msg, vector<function<void()>> &handler_calls)
+{
+    for (member const& m : msg.joined_nodes) {
+        assert(m.id != 0 && m.hostname != "");
+
+        // Only add and propagate information about this join if we've never seen this node
+        if (hb_state->joined_ids.find(m.id) == hb_state->joined_ids.end()) {
+            hb_state->joined_ids.insert(m.id);
+            hb_state->mem_list.add_member(m.hostname, m.id);
+
+            // Check if the newly joined member is us
+            if (m.id == our_id) {
+                lg->info("Successfully joined group");
+            }
+
+            hb_state->joined_nodes_queue.push(m, message_redundancy);
+
+            for (auto const& handler : hb_state->on_join_handlers) {
+                handler_calls.push_back([=] {handler(m);});
+            }
+        }
+    }
+
+    for (uint32_t id : msg.left_nodes) {
+        // Only propagate this message if the member has not yet been removed
+        member const& mem = hb_state->mem_list.get_member_by_id(id);
+        if (mem.id == id) {
+            hb_state->mem_list.remove_member(id);
+            hb_state->left_nodes_queue.push(id, message_redundancy);
+
+            for (auto const& handler : hb_state->on_leave_handlers) {
+                handler_calls.push_back([=] {handler(mem);});
+            }
+        }
+    }
+
+    for (uint32_t id : msg.failed_nodes) {
+        // Only propagate this message if the member has not yet been removed
+        member const& mem = hb_state->mem_list.get_member_by_id(id);
+        if (mem.id == id) {
+            hb_state->mem_list.remove_member(id);
+            hb_state->failed_nodes_queue.push(id, message_redundancy);
+
+            for (auto const& handler : hb_state->on_fail_handlers) {
+                handler_calls.push_back([=] {handler(mem);});
+            }
+        }
+    }
+
+    hb_state->mem_list.update_heartbeat(msg.common.id);
 }
 
 // Server thread function
@@ -245,122 +337,57 @@ void heartbeater_impl::server_thread_function() {
             continue;
         }
 
-        // Vector of lambdas which call various handlers
-        std::vector<std::function<void()>> handler_calls;
+        // Vector of lambdas which call various handlers based on the received message
+        vector<function<void()>> handler_calls;
+
         // Listen for messages and process each one
         if ((size = server->recv(buf, 1024)) > 0) {
             unlocked<heartbeater_state> hb_state = hb_state_lock();
 
-            hb_message msg(buf, size);
-
-            if (!msg.is_well_formed()) {
-                lg->debug("Received malformed heartbeat message!");
+            // TODO: replace manual checking of type with messaging
+            hb_message::common_data common;
+            if (!common.deserialize_from(string(buf + 4, size - 4), true)) {
+                lg->debug("Received malformed heartbeat message! Missing all data");
                 continue;
             }
 
-            // If we are in the group and the message is not from within the group, ignore it
-            if (hb_state->mem_list.get_member_by_id(our_id).id == our_id &&
-                hb_state->mem_list.get_member_by_id(msg.get_id()).id != msg.get_id())
-            {
-                // Allow the message to be processed if it's a join request
-                if (msg.is_join_request()) {
-                    if (!nodes_can_join.load()) {
-                        lg->debug("Nodes cannot join because leader election is occurring!");
-                        continue;
+            switch (common.type) {
+                case static_cast<uint32_t>(hb_message::msg_type::join_request): {
+                    if (auto msg = filter_msg<hb_message::join_request>(hb_state, buf, size)) {
+                        process_join_request(hb_state, msg.value(), handler_calls);
                     }
-                } else {
-                    lg->trace("Ignoring heartbeat message from " + std::to_string(msg.get_id()) + " because they are not in the group");
-                    continue;
+                    break;
                 }
-            }
-
-            if (msg.is_join_request()) {
-                member const& m = msg.get_join_request();
-
-                // Make sure this is a node we haven't seen yet
-                if (hb_state->joined_ids.find(m.id) == hb_state->joined_ids.end()) {
-                    hb_state->joined_ids.insert(m.id);
-                    hb_state->mem_list.add_member(m.hostname, m.id);
-
-                    lg->info("Received request to join group from (" + m.hostname + ", " + std::to_string(m.id) + ")");
-                    hb_state->new_nodes_queue.push(m, message_redundancy);
-
-                    // Queue join handlers to be called after adding this node
-                    for (auto const& handler : hb_state->on_join_handlers) {
-                        handler_calls.push_back([=] {handler(m);});
+                case static_cast<uint32_t>(hb_message::msg_type::heartbeat): {
+                    if (auto msg = filter_msg<hb_message::heartbeat>(hb_state, buf, size)) {
+                        process_heartbeat(hb_state, msg.value(), handler_calls);
                     }
+                    break;
                 }
+                default: lg->debug("Received malformed heartbeat message! Invalid message type");
             }
-
-            for (member const& m : msg.get_joined_nodes()) {
-                assert(m.id != 0 && m.hostname != "");
-
-                // Only add and propagate information about this join if we've never seen this node
-                if (hb_state->joined_ids.find(m.id) == hb_state->joined_ids.end()) {
-                    hb_state->joined_ids.insert(m.id);
-                    hb_state->mem_list.add_member(m.hostname, m.id);
-
-                    // Check if the newly joined member is us
-                    if (m.id == our_id) {
-                        lg->info("Successfully joined group");
-                    }
-
-                    hb_state->joined_nodes_queue.push(m, message_redundancy);
-
-                    for (auto const& handler : hb_state->on_join_handlers) {
-                        handler_calls.push_back([=] {handler(m);});
-                    }
-                }
-            }
-
-            for (uint32_t id : msg.get_left_nodes()) {
-                // Only propagate this message if the member has not yet been removed
-                member const& mem = hb_state->mem_list.get_member_by_id(id);
-                if (mem.id == id) {
-                    hb_state->mem_list.remove_member(id);
-                    hb_state->left_nodes_queue.push(id, message_redundancy);
-
-                    for (auto const& handler : hb_state->on_leave_handlers) {
-                        handler_calls.push_back([=] {handler(mem);});
-                    }
-                }
-            }
-
-            for (uint32_t id : msg.get_failed_nodes()) {
-                // Only propagate this message if the member has not yet been removed
-                member const& mem = hb_state->mem_list.get_member_by_id(id);
-                if (mem.id == id) {
-                    hb_state->mem_list.remove_member(id);
-                    hb_state->failed_nodes_queue.push(id, message_redundancy);
-
-                    for (auto const& handler : hb_state->on_fail_handlers) {
-                        handler_calls.push_back([=] {handler(mem);});
-                    }
-                }
-            }
-
-            hb_state->mem_list.update_heartbeat(msg.get_id());
         }
 
-        for (auto handler_call : handler_calls) {
+        // Call function handlers after the lock is released
+        for (auto const& handler_call : handler_calls) {
             handler_call();
         }
     }
 }
 
 // Adds a handler to the list of handlers that will be called when a node fails
-void heartbeater_impl::on_fail(std::function<void(member const&)> handler) {
+void heartbeater_impl::on_fail(function<void(member const&)> handler) {
     // Acquire mutex to prevent concurrent modification of vector
     hb_state_lock()->on_fail_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node leaves
-void heartbeater_impl::on_leave(std::function<void(member const&)> handler) {
+void heartbeater_impl::on_leave(function<void(member const&)> handler) {
     hb_state_lock()->on_leave_handlers.push_back(handler);
 }
 
 // Adds a handler to the list of handlers that will be called when a node joins
-void heartbeater_impl::on_join(std::function<void(member const&)> handler) {
+void heartbeater_impl::on_join(function<void(member const&)> handler) {
     hb_state_lock()->on_join_handlers.push_back(handler);
 }
 

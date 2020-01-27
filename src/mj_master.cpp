@@ -15,6 +15,7 @@
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
+using std::optional;
 
 mj_master_impl::mj_master_impl(environment &env)
     : mt(std::chrono::system_clock::now().time_since_epoch().count())
@@ -60,13 +61,12 @@ void mj_master_impl::start() {
             assert(metadata.find("maplejuice") != metadata.end() && "SDFS master callback logic is incorrect");
             string const& mj_metadata = metadata.find("maplejuice")->second;
 
-            deserializer des(mj_metadata.c_str(), mj_metadata.length());
-            string input_file = des.get_string();
-            int job_id = des.get_int();
+            mj_message::metadata md;
+            md.deserialize_from(mj_metadata);
 
             unlocked<job_state_map> job_states = job_states_lock();
-            (*job_states)[job_id].committed_outputs.insert({input_file, sdfs_path});
-            lg->trace("Marking " + input_file + ", " + sdfs_path + " as committed");
+            (*job_states)[md.job_id].committed_outputs.insert({md.input_file, sdfs_path});
+            lg->trace("Marking " + md.input_file + ", " + sdfs_path + " as committed");
         });
     });
     election_thread.detach();
@@ -84,6 +84,128 @@ void mj_master_impl::stop() {
     running = false;
 }
 
+template <typename Msg>
+auto mj_master_impl::filter_msg(string msg_str) -> optional<Msg> {
+    Msg msg;
+    if (!msg.deserialize_from(msg_str)) {
+        lg->debug("Received ill-formed message from MapleJuice client!");
+        return std::nullopt;
+    }
+
+    // Make sure the message is coming from within the group (unless it's a START_JOB message)
+    if constexpr (!std::is_same<Msg, mj_message::start_job>::value) {
+        if (hb->get_member_by_id(msg.common.id).id != msg.common.id) {
+            // lg->trace("Received message from member outside of group");
+            lg->info("Received message from member outside of group with ID " + std::to_string(msg.common.id));
+            return std::nullopt;
+        }
+    }
+
+    return msg;
+}
+
+void mj_master_impl::process_start_job_msg(mj_message::start_job const& msg, int fd, bool is_master, string master_hostname) {
+    if (is_master) {
+        handle_job(fd, msg);
+    } else {
+        lg->trace("Redirecting request to start job with executable " + msg.exe + " to master node");
+
+        // Send a message to the client informing them of the actual master node
+        mj_message::not_master not_master_msg(hb->get_id(), master_hostname);
+        server->write_to_client(fd, not_master_msg.serialize());
+    }
+    return;
+}
+
+void mj_master_impl::process_request_append_msg(mj_message::request_append_perm const& msg_, int fd) {
+    mj_message::request_append_perm msg = msg_;
+    mj_message::file_done done_msg;
+
+    while (true) {
+        bool allow_append;
+        {
+            unlocked<job_state_map> job_states = job_states_lock();
+
+            auto &committed_outputs = (*job_states)[msg.job_id].committed_outputs;
+            allow_append = (committed_outputs.find({msg.input_file, msg.output_file}) == committed_outputs.end());
+        }
+
+        lg->trace("[Job " + std::to_string(msg.job_id) + "] Node at " + msg.hostname +
+            " requested permission to append values to output file " + msg.output_file +
+            " from input file " + msg.input_file +
+            (allow_append ? ", allowing append" : ", disallowing append"));
+
+        // Send the permission back to the node
+        mj_message::append_perm perm_msg(hb->get_id(), allow_append);
+        server->write_to_client(fd, perm_msg.serialize()); // Ignore failure, that will be handled in node_dropped
+
+        // We do not mark the file as committed now, we will mark it when we get a callback from SDFS
+        string msg_str = server->read_from_client(fd);
+        mj_message::common_data common;
+        // TODO: replace this with messaging
+        if (msg_str.length() < 4) {
+            return;
+        }
+        if (!common.deserialize_from(string(msg_str.c_str() + 4, msg_str.length() - 4), true)) {
+            lg->debug("Received ill-formed message from MapleJuice client during append requests! Missing all data");
+            return;
+        }
+
+        if (common.type == static_cast<uint32_t>(mj_message::msg_type::request_append_perm)) {
+            if (!msg.deserialize_from(msg_str)) {
+                lg->debug("Received ill-formed request_append_perm message from MapleJuice client!");
+                return;
+            }
+            continue; // Continue processing appends
+        } else if (common.type == static_cast<uint32_t>(mj_message::msg_type::file_done)) {
+            if (!done_msg.deserialize_from(msg_str)) {
+                lg->debug("Received ill-formed file_done message from MapleJuice client!");
+                return;
+            }
+            break; // Mark the file as complete
+        } else {
+            assert(false && "Node in cluster is not behaving correctly");
+        }
+    }
+
+    process_file_done_msg(done_msg);
+}
+
+void mj_master_impl::process_job_failed_msg(mj_message::job_failed const& msg) {
+    lg->info("Received notice from worker node that job with ID " + std::to_string(msg.job_id) + " failed, stopping job");
+
+    // Mark the job as failed, which will automatically cause it to complete
+    unlocked<job_state_map> job_states = job_states_lock();
+    if (job_states->find(msg.job_id) != job_states->end()) {
+        (*job_states)[msg.job_id].failed = true;
+    }
+}
+
+void mj_master_impl::process_file_done_msg(mj_message::file_done const& msg) {
+    unlocked<node_state_map> node_states = node_states_lock();
+    unlocked<job_state_map> job_states = job_states_lock();
+
+    if (job_states->find(msg.job_id) == job_states->end()) {
+        return;
+    }
+
+    unordered_set<string> &unprocessed_files = (*job_states)[msg.job_id].unprocessed_files[msg.hostname];
+    unordered_set<string> &processed_files = (*job_states)[msg.job_id].processed_files[msg.hostname];
+    lg->debug("Node at " + msg.hostname + " completed processing file " + msg.file +
+        " for job with ID " + std::to_string(msg.job_id));
+    assert(unprocessed_files.find(msg.file) != unprocessed_files.end() ||
+           processed_files.find(msg.file) != processed_files.end() ||
+           !"File that node claims to have completed was not assigned to node");
+
+    (*node_states)[msg.hostname].num_files--;
+
+    if (processed_files.find(msg.file) == processed_files.end()) {
+        unprocessed_files.erase(msg.file);
+        processed_files.insert(msg.file);
+    }
+}
+
+
 void mj_master_impl::run_master() {
     server = fac->get_tcp_server(config->get_mj_master_port());
 
@@ -99,18 +221,14 @@ void mj_master_impl::run_master() {
 
         std::thread client_thread([this, fd] {
             string msg_str = server->read_from_client(fd);
-            mj_message msg(msg_str.c_str(), msg_str.length());
 
-            if (!msg.is_well_formed()) {
-                lg->debug("Received ill-formed message from client");
-                server->close_connection(fd);
+            // TODO: replace manual checking of message type with messaging
+            mj_message::common_data common;
+            if (msg_str.length() < 4) {
                 return;
             }
-
-            // Make sure the message is coming from within the group (unless it's a START_JOB message)
-            if (hb->get_member_by_id(msg.get_id()).id != msg.get_id() && msg.get_msg_type() != mj_message::mj_msg_type::START_JOB) {
-                lg->trace("Received message from member outside of group");
-                server->close_connection(fd);
+            if (!common.deserialize_from(string(msg_str.c_str() + 4, msg_str.length() - 4), true)) {
+                lg->debug("Received ill-formed message from MapleJuice client! Missing all data");
                 return;
             }
 
@@ -121,118 +239,47 @@ void mj_master_impl::run_master() {
                 master_hostname = m.hostname;
             });
 
-            if (msg.get_msg_type() == mj_message::mj_msg_type::START_JOB) {
-                mj_start_job info = msg.get_msg_data<mj_start_job>();
-
-                if (is_master) {
-                    handle_job(fd, info);
-                } else {
-                    lg->trace("Redirecting request to start job with executable " + info.exe + " to master node");
-
-                    // Send a message to the client informing them of the actual master node
-                    mj_message not_master_msg(hb->get_id(), mj_not_master{master_hostname});
-                    server->write_to_client(fd, not_master_msg.serialize());
-                    server->close_connection(fd);
-                }
-                return;
-            }
-
-            if (!is_master) {
+            // The only message we respond to if we're not master is START_JOB, to redirect the client to the master node
+            if (!is_master && common.type != static_cast<uint32_t>(mj_message::msg_type::start_job)) {
                 server->close_connection(fd);
                 return;
             }
 
-            if (msg.get_msg_type() == mj_message::mj_msg_type::JOB_FAILED) {
-                mj_job_failed info = msg.get_msg_data<mj_job_failed>();
-
-                lg->info("Received notice from worker node that job with ID " + std::to_string(info.job_id) + " failed, stopping job");
-
-                // Mark the job as failed, which will automatically cause it to complete
-                unlocked<job_state_map> job_states = job_states_lock();
-                if (job_states->find(info.job_id) != job_states->end()) {
-                    (*job_states)[info.job_id].failed = true;
+            switch (common.type) {
+                case static_cast<uint32_t>(mj_message::msg_type::start_job): {
+                    if (auto msg = filter_msg<mj_message::start_job>(msg_str)) {
+                        process_start_job_msg(msg.value(), fd, is_master, master_hostname);
+                    }
+                    break;
                 }
-                return;
+                case static_cast<uint32_t>(mj_message::msg_type::request_append_perm): {
+                    if (auto msg = filter_msg<mj_message::request_append_perm>(msg_str)) {
+                        process_request_append_msg(msg.value(), fd);
+                    }
+                    break;
+                }
+                case static_cast<uint32_t>(mj_message::msg_type::job_failed): {
+                    if (auto msg = filter_msg<mj_message::job_failed>(msg_str)) {
+                        process_job_failed_msg(msg.value());
+                    }
+                    break;
+                }
+                case static_cast<uint32_t>(mj_message::msg_type::file_done): {
+                    if (auto msg = filter_msg<mj_message::file_done>(msg_str)) {
+                        process_file_done_msg(msg.value());
+                    }
+                    break;
+                }
+                default: lg->debug("Received unexpected message type from client");
             }
 
-            while (msg.get_msg_type() == mj_message::mj_msg_type::REQUEST_APPEND_PERM) {
-                mj_request_append_perm info = msg.get_msg_data<mj_request_append_perm>();
-
-                bool allow_append;
-                {
-                    unlocked<job_state_map> job_states = job_states_lock();
-
-                    unordered_set<std::pair<string, string>, string_pair_hash> &committed_outputs =
-                        (*job_states)[info.job_id].committed_outputs;
-                    allow_append = (committed_outputs.find({info.input_file, info.output_file}) == committed_outputs.end());
-                }
-
-                lg->trace("[Job " + std::to_string(info.job_id) + "] Node at " + info.hostname +
-                    " requested permission to append values to output file " + info.output_file +
-                    " from input file " + info.input_file +
-                    (allow_append ? ", allowing append" : ", disallowing append"));
-
-                // Send the permission back to the node
-                mj_message perm_msg(hb->get_id(), mj_append_perm{allow_append});
-                server->write_to_client(fd, perm_msg.serialize()); // Ignore failure, that will be handled in node_dropped
-
-                // We do not mark the file as committed now, we will mark it when we get a callback from SDFS
-
-                msg_str = server->read_from_client(fd);
-                msg = mj_message(msg_str.c_str(), msg_str.length());
-                if (!msg.is_well_formed()) {
-                    lg->trace("Received ill-formed message from client after it requested permission to append");
-                    server->close_connection(fd);
-                    return;
-                }
-                // Check if the client has left the group
-                if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
-                    lg->trace("Received message from member outside of group");
-                    server->close_connection(fd);
-                    return;
-                }
-            }
-
-            // Either we arrived here from a new connection OR after a REQUEST_APPEND_PERM from the previous if block
-            // Either way, we should close the connection with the server
             server->close_connection(fd);
-            if (msg.get_msg_type() == mj_message::mj_msg_type::FILE_DONE) {
-                mj_file_done info = msg.get_msg_data<mj_file_done>();
-
-                {
-                    unlocked<node_state_map> node_states = node_states_lock();
-                    unlocked<job_state_map> job_states = job_states_lock();
-
-                    if (job_states->find(info.job_id) == job_states->end()) {
-                        return;
-                    }
-
-                    unordered_set<string> &unprocessed_files = (*job_states)[info.job_id].unprocessed_files[info.hostname];
-                    unordered_set<string> &processed_files = (*job_states)[info.job_id].processed_files[info.hostname];
-                    lg->debug("Node at " + info.hostname + " completed processing file " + info.file +
-                        " for job with ID " + std::to_string(info.job_id));
-                    assert(unprocessed_files.find(info.file) != unprocessed_files.end() ||
-                           processed_files.find(info.file) != processed_files.end() ||
-                           !"File that node claims to have completed was not assigned to node");
-
-                    (*node_states)[info.hostname].num_files--;
-
-                    if (processed_files.find(info.file) == processed_files.end()) {
-                        unprocessed_files.erase(info.file);
-                        processed_files.insert(info.file);
-                    }
-                }
-                return;
-            }
-
-            lg->debug("Received unexpected message type from client");
         });
         client_thread.detach();
     }
 }
 
-void mj_master_impl::handle_job(int fd, mj_start_job const& info)
-{
+void mj_master_impl::handle_job(int fd, mj_message::start_job const& info) {
     // Assign the appropriate nodes a partitioning of the input files based on the specified partitioner
     int job_id = assign_job(info);
 
@@ -248,7 +295,7 @@ void mj_master_impl::handle_job(int fd, mj_start_job const& info)
         assert(job_states->find(job_id) != job_states->end());
         succeeded = (*job_states)[job_id].failed ? 0 : 1;
     }
-    mj_message msg(hb->get_id(), mj_job_end{succeeded});
+    mj_message::job_end msg(hb->get_id(), succeeded);
     server->write_to_client(fd, msg.serialize());
     server->close_connection(fd);
 
@@ -309,7 +356,7 @@ void mj_master_impl::stop_job(int job_id) {
     std::vector<std::thread> stop_threads;
     for (string const& worker : workers) {
         stop_threads.push_back(std::thread([=] {
-            mj_message done_msg(hb->get_id(), mj_job_end_worker{job_id});
+            mj_message::job_end_worker done_msg(hb->get_id(), job_id);
 
             std::unique_ptr<tcp_client> client = fac->get_tcp_client(worker, config->get_mj_internal_port());
             if (client.get() == nullptr) {
@@ -324,12 +371,14 @@ void mj_master_impl::stop_job(int job_id) {
     }
 }
 
-auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
+auto mj_master_impl::assign_job(mj_message::start_job const& info) -> int {
     int job_id = mt() & 0x7FFFFFFF;
 
     lg->info("Starting new job with parameters [job_id=" + std::to_string(job_id) + ", exe=" + info.exe +
-        ", num_workers=" + std::to_string(info.num_workers) + ", partitioner=" + partitioner::print_type(info.partitioner_type) +
-        ", sdfs_src_dir=" + info.sdfs_src_dir + ", processor=" + processor::print_type(info.processor_type) +
+        ", num_workers=" + std::to_string(info.num_workers) +
+        ", partitioner=" + partitioner::print_type(static_cast<partitioner::type>(info.partitioner_type)) +
+        ", sdfs_src_dir=" + info.sdfs_src_dir +
+        ", processor=" + processor::print_type(static_cast<processor::type>(info.processor_type)) +
         ", sdfs_output_dir=" + info.sdfs_output_dir + ", num_files_parallel=" + std::to_string(info.num_files_parallel) +
         ", num_appends_parallel=" + std::to_string(info.num_appends_parallel) + "]");
 
@@ -350,13 +399,15 @@ auto mj_master_impl::assign_job(mj_start_job const& info) -> int {
         (*job_states)[job_id].exe = info.exe;
         (*job_states)[job_id].sdfs_src_dir = info.sdfs_src_dir;
         (*job_states)[job_id].sdfs_output_dir = info.sdfs_output_dir;
-        (*job_states)[job_id].processor_type = info.processor_type;
+        (*job_states)[job_id].processor_type = static_cast<processor::type>(info.processor_type);
         (*job_states)[job_id].num_files_parallel = info.num_files_parallel;
         (*job_states)[job_id].num_appends_parallel = info.num_appends_parallel;
         (*job_states)[job_id].failed = false;
 
         (*job_states)[job_id].unprocessed_files =
-            partitioner_factory::get_partitioner(info.partitioner_type)->partition(hb->get_members(), info.num_workers, input_files);
+            partitioner_factory::get_partitioner(static_cast<partitioner::type>(info.partitioner_type))->partition(
+                hb->get_members(), info.num_workers, input_files
+            );
         unprocessed_files_copy = (*job_states)[job_id].unprocessed_files;
 
         string members_log_str = "Assigning job with ID " + std::to_string(job_id) + " to: ";
@@ -434,8 +485,8 @@ void mj_master_impl::assign_job_to_node(int job_id, string const& hostname, unor
     }
 
     std::vector<string> input_files_vec(input_files.begin(), input_files.end());
-    mj_message msg(hb->get_id(), mj_assign_job{job_id, exe, sdfs_src_dir, input_files_vec,
-        processor_type, sdfs_output_dir, num_files_parallel, num_appends_parallel});
+    mj_message::assign_job msg(hb->get_id(), job_id, exe, processor_type, input_files_vec,
+        sdfs_src_dir, sdfs_output_dir, num_files_parallel, num_appends_parallel);
 
     std::unique_ptr<tcp_client> client = fac->get_tcp_client(hostname, config->get_mj_internal_port());
     if (client.get() == nullptr || client->write_to_server(msg.serialize()) <= 0) {

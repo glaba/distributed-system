@@ -68,7 +68,7 @@ void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
             assert(length >= 5);
 
             char magic_byte = buf[0];
-            uint32_t client_id = deserializer::read_uint32_from_char_buf(buf + 1);
+            uint32_t client_id = serialization::read_uint32_from_char_buf(buf + 1);
 
             // Check the magic byte
             switch (magic_byte) {
@@ -132,7 +132,7 @@ auto mock_tcp_factory::mock_tcp_server::accept_connection() -> int {
                 // Send a message back to the client saying that we've accepted the connection
                 char accept_msg[5];
                 accept_msg[0] = accept_magic_byte;
-                serializer::write_uint32_to_char_buf(id, accept_msg + 1);
+                serialization::write_uint32_to_char_buf(id, accept_msg + 1);
                 client->send(client_hostname + std::to_string(client_id) + "->" + hostname + "_client", port,
                     string(accept_msg, 5));
 
@@ -158,7 +158,7 @@ void mock_tcp_factory::mock_tcp_server::close_connection(int client_socket) {
     // Send a message saying the connection is closed
     char closed_msg[5];
     closed_msg[0] = close_magic_byte;
-    serializer::write_uint32_to_char_buf(id, closed_msg + 1);
+    serialization::write_uint32_to_char_buf(id, closed_msg + 1);
     uint32_t client_id = client_socket;
     client->send(serv_state->client_hostnames[client_socket] + std::to_string(client_id) + "->" + hostname + "_client",
         port, string(closed_msg, 5));
@@ -225,7 +225,7 @@ auto mock_tcp_factory::mock_tcp_server::write_to_client(int client_fd, string co
 
     // Create the message with the required fields
     msg[0] = msg_magic_byte;
-    serializer::write_uint32_to_char_buf(id, msg.get() + 1);
+    serialization::write_uint32_to_char_buf(id, msg.get() + 1);
     std::memcpy(msg.get() + 5, data.c_str(), data.size());
 
     uint32_t client_id = client_fd;
@@ -257,7 +257,7 @@ auto mock_tcp_factory::mock_tcp_client::setup_connection(string const& host, int
         // Send connection initiation message to server
         unique_ptr<char[]> initiation_msg = make_unique<char[]>(5 + hostname.size());
         initiation_msg[0] = initiate_magic_byte;
-        serializer::write_uint32_to_char_buf(id, initiation_msg.get() + 1);
+        serialization::write_uint32_to_char_buf(id, initiation_msg.get() + 1);
         std::memcpy(initiation_msg.get() + 5, hostname.c_str(), hostname.size());
 
         clients[server_id]->send(host + "_server", port, string(initiation_msg.get(), 5 + hostname.size()));
@@ -286,7 +286,7 @@ auto mock_tcp_factory::mock_tcp_client::setup_connection(string const& host, int
 
                 char magic_byte = buf[0];
                 // Make sure that we are receiving messages from the correct ID
-                assert(deserializer::read_uint32_from_char_buf(buf + 1) == server_id &&
+                assert(serialization::read_uint32_from_char_buf(buf + 1) == server_id &&
                        "Received unexpected message from server on wrong UDP server instance");
 
                 // Check the magic byte
@@ -375,7 +375,7 @@ auto mock_tcp_factory::mock_tcp_client::write_to_server(string const& data) -> s
 
     // Create the message with the required fields
     msg[0] = msg_magic_byte;
-    serializer::write_uint32_to_char_buf(id, msg.get() + 1);
+    serialization::write_uint32_to_char_buf(id, msg.get() + 1);
     std::memcpy(msg.get() + 5, data.c_str(), data.size());
     clients[fixed_socket]->send(cl_state->server_hostnames[fixed_socket] + "_server",
         cl_state->server_ports[fixed_socket], string(msg.get(), 5 + data.size()));
@@ -393,7 +393,7 @@ void mock_tcp_factory::mock_tcp_client::close_connection() {
     // Send a message saying we are closing the connection
     char closed_msg[5];
     closed_msg[0] = close_magic_byte;
-    serializer::write_uint32_to_char_buf(id, closed_msg + 1);
+    serialization::write_uint32_to_char_buf(id, closed_msg + 1);
     clients[fixed_socket]->send(cl_state->server_hostnames[fixed_socket] + "_server",
         cl_state->server_ports[fixed_socket], string(closed_msg, 5));
 

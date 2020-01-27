@@ -16,6 +16,7 @@
 #include <set>
 #include <functional>
 #include <atomic>
+#include <optional>
 
 class heartbeater_impl : public heartbeater, public service_impl<heartbeater_impl> {
 public:
@@ -47,8 +48,40 @@ public:
     void on_join(std::function<void(member const&)>);
 
 private:
+    struct heartbeater_state {
+        heartbeater_state(environment &env) : mem_list(env) {}
+
+        // Lists of nodes that have failed / left / joined that we will tell our neighbors
+        redundant_queue<uint32_t> failed_nodes_queue;
+        redundant_queue<uint32_t> left_nodes_queue;
+        redundant_queue<member> joined_nodes_queue;
+        // Queue of new nodes that should be sent the membership list
+        redundant_queue<member> new_nodes_queue;
+
+        // Set containing all IDs that have ever joined
+        std::set<uint32_t> joined_ids;
+
+        // Membership list containing the known members of the cluster
+        member_list mem_list;
+
+        // Handlers that will be called when the membership list changes
+        std::vector<std::function<void(member const&)>> on_fail_handlers;
+        std::vector<std::function<void(member const&)>> on_join_handlers;
+        std::vector<std::function<void(member const&)>> on_leave_handlers;
+    };
+
     // Fuction that runs the client side code in its own thread
     void client_thread_function();
+
+    // Filters messages from unknown nodes, other than join requests, which are allowed through
+    template <typename Msg>
+    auto filter_msg(unlocked<heartbeater_state> const& hb_state, char const* buf, int size) -> std::optional<Msg>;
+
+    // Processes the two types of messages that can be received and sets handlers to be called based on the message
+    void process_join_request(unlocked<heartbeater_state> const& hb_state, hb_message::join_request const& msg,
+        std::vector<std::function<void()>> &handler_calls);
+    void process_heartbeat(unlocked<heartbeater_state> const& hb_state, hb_message::heartbeat const& msg,
+        std::vector<std::function<void()>> &handler_calls);
 
     // Function that runs the server side code in its own thread
     void server_thread_function();
@@ -76,27 +109,6 @@ private:
     std::unique_ptr<udp_client> client;
     std::unique_ptr<udp_server> server;
 
-    struct heartbeater_state {
-        heartbeater_state(environment &env) : mem_list(env) {}
-
-        // Lists of nodes that have failed / left / joined that we will tell our neighbors
-        redundant_queue<uint32_t> failed_nodes_queue;
-        redundant_queue<uint32_t> left_nodes_queue;
-        redundant_queue<member> joined_nodes_queue;
-        // Queue of new nodes that should be sent the membership list
-        redundant_queue<member> new_nodes_queue;
-
-        // Set containing all IDs that have ever joined
-        std::set<uint32_t> joined_ids;
-
-        // Membership list containing the known members of the cluster
-        member_list mem_list;
-
-        // Handlers that will be called when the membership list changes
-        std::vector<std::function<void(member const&)>> on_fail_handlers;
-        std::vector<std::function<void(member const&)>> on_join_handlers;
-        std::vector<std::function<void(member const&)>> on_leave_handlers;
-    };
     locked<heartbeater_state> hb_state_lock;
 
     // Boolean indicating whether or not new nodes can join

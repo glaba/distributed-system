@@ -65,8 +65,7 @@ void shared_configuration_impl::set_value(string const& key, string const& value
     }
 
     utils::backoff([&] {
-        int retval = sdfsc->put(inputter<string>::constant_inputter(value), CONFIG_DIR + "/" + key);
-        return retval == 0;
+        return sdfsc->put(inputter<string>::constant_inputter(value), CONFIG_DIR + "/" + key) == 0;
     });
 }
 

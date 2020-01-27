@@ -3,6 +3,7 @@
 #include "logging.h"
 #include "environment.h"
 #include "configuration.h"
+#include "serialization.h"
 
 #include <string>
 #include <vector>
@@ -13,13 +14,15 @@
 
 using namespace std::chrono;
 
-typedef struct member {
+class member : public serializable<member> {
+public:
     member() : id(0), hostname("") {}
+    member(uint32_t id, std::string hostname) : id(id), hostname(hostname) {}
+    auto operator==(const member &m) const -> bool;
     uint32_t id;
     std::string hostname;
     uint64_t last_heartbeat;
-    auto operator==(const member &m) const -> bool;
-} member;
+};
 
 // A linked list of members sorted by ID
 class member_list {

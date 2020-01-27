@@ -17,6 +17,16 @@ auto maple_client_impl::get_error() const -> string {
     return error;
 }
 
+template <typename Msg>
+auto maple_client_impl::filter_msg(std::string const& msg_str) -> std::optional<Msg> {
+    Msg msg;
+    if (msg.deserialize_from(msg_str)) {
+        return msg;
+    } else {
+        return std::nullopt;
+    }
+}
+
 auto maple_client_impl::run_job(string const& mj_node, string const& local_exe, string const& maple_exe,
     int num_maples, string const& sdfs_src_dir, string const& sdfs_output_dir) -> bool
 {
@@ -27,12 +37,12 @@ auto maple_client_impl::run_job(string const& mj_node, string const& local_exe, 
             return false;
         }
 
-        mj_message msg(0, mj_start_job{maple_exe, num_maples, partitioner::type::round_robin,
-            sdfs_src_dir, processor::type::maple, sdfs_output_dir, 10, 50});
+        mj_message::start_job start_msg(0, maple_exe, num_maples, static_cast<uint32_t>(partitioner::type::round_robin),
+            static_cast<uint32_t>(processor::type::maple), sdfs_src_dir, sdfs_output_dir, 10, 50);
 
         // Send the data to the node
         std::unique_ptr<tcp_client> client = fac->get_tcp_client(mj_node, config->get_mj_master_port());
-        if (client.get() == nullptr || client->write_to_server(msg.serialize()) <= 0) {
+        if (client.get() == nullptr || client->write_to_server(start_msg.serialize()) <= 0) {
             error = "Node at " + mj_node + " is not running Maplejuice, retry";
             return false;
         }
@@ -46,33 +56,45 @@ auto maple_client_impl::run_job(string const& mj_node, string const& local_exe, 
             // TODO: implement reconnecting to the new master and continuing the job
         }
 
-        mj_message response_msg(response.c_str(), response.length());
-
-        if (!response_msg.is_well_formed()) {
+        mj_message::common_data common;
+        if (!common.deserialize_from(string(response.c_str() + 4, response.length() - 4), true)) {
             lg->info("Received invalid response from Maple master");
-            error = "MapleJuice master node is behaving unexpectedly";
+            error = "MapleJuice master node sent invalid data";
             return false;
         }
 
-        // If the node we connected to was not the master, it will tell us who is
-        if (response_msg.get_msg_type() == mj_message::mj_msg_type::NOT_MASTER) {
-            string master_node = response_msg.get_msg_data<mj_not_master>().master_node;
-            // If there is no master node, retry in a couple seconds
-            if (master_node == "") {
-                lg->info("Master node is currently being re-elected, querying again in 5 seconds");
-                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-                continue;
-            } else {
-                lg->info("Contacted node was not the master, but told us that the master is at " + master_node);
-                return run_job(master_node, local_exe, maple_exe, num_maples, sdfs_src_dir, sdfs_output_dir);
+        switch (common.type) {
+            case static_cast<uint32_t>(mj_message::msg_type::not_master): {
+                if (auto msg = filter_msg<mj_message::not_master>(response)) {
+                    string master_node = msg.value().master_node;
+                    // If there is no master node, retry in a couple seconds
+                    if (master_node == "") {
+                        lg->info("Master node is currently being re-elected, querying again in 5 seconds");
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                        continue;
+                    } else {
+                        lg->info("Contacted node was not the master, but told us that the master is at " + master_node);
+                        return run_job(master_node, local_exe, maple_exe, num_maples, sdfs_src_dir, sdfs_output_dir);
+                    }
+                }
+                break;
             }
-        } else if (response_msg.get_msg_type() == mj_message::mj_msg_type::JOB_END) {
-            if (response_msg.get_msg_data<mj_job_end>().succeeded) {
-                lg->info("Maple job completed successfully");
-                return true;
-            } else {
-                lg->info("Maple job failed to run successfully");
-                error = "Provided executable failed to run correctly on MapleJuice nodes";
+            case static_cast<uint32_t>(mj_message::msg_type::job_end): {
+                if (auto msg = filter_msg<mj_message::job_end>(response)) {
+                    if (msg.value().succeeded) {
+                        lg->info("Maple job completed successfully");
+                        return true;
+                    } else {
+                        lg->info("Maple job failed to run successfully");
+                        error = "Provided executable failed to run correctly on MapleJuice nodes";
+                        return false;
+                    }
+                }
+                break;
+            }
+            default: {
+                lg->info("Received invalid response from Maple master");
+                error = "MapleJuice master node sent invalid data";
                 return false;
             }
         }

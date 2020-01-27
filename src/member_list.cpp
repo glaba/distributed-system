@@ -228,3 +228,7 @@ auto member_list::get_successor(uint32_t id) const -> member {
 auto member::operator==(const member &m) const -> bool {
     return hostname == m.hostname && id == m.id && last_heartbeat == m.last_heartbeat;
 }
+
+register_serializable<member> register_member([] (auto &registry) {
+    registry.register_fields(&member::id, &member::hostname);
+});

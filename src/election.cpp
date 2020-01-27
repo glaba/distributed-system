@@ -1,6 +1,7 @@
 #include "election.h"
 #include "election.hpp"
 #include "environment.h"
+#include "serialization.h"
 
 #include <functional>
 #include <chrono>
@@ -11,6 +12,7 @@
 
 using std::unique_ptr;
 using std::string;
+using std::optional;
 
 election_impl::election_impl(environment &env)
     : hb(env.get<heartbeater>()),
@@ -43,8 +45,8 @@ void election_impl::start() {
     tm_state_lock()->timer_on = false;
 
     // Initialize RNG with a slight delay so that unit tests have different seeds
-    el_state_lock()->mt_rand = std::mt19937(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    el_state_lock()->mt = std::mt19937(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     std::thread timer_thread([&] {
         update_timer();
@@ -64,7 +66,7 @@ void election_impl::start() {
     std::function<void(member const&)> callback = [this] (member const& m) {
         unlocked<election_state> el_state = el_state_lock();
 
-        // If we don't know who the master node is, we cannot participate in elections
+        // If we don't know who the master node is, we cannot participate in election since we don't know if failed node was master
         if (el_state->state == no_master) {
             assert(false && "Did not receive master node introduction message at all OR in time for election");
         }
@@ -91,9 +93,8 @@ void election_impl::start() {
             lg->debug("Telling node at " + m.hostname + " that we are the master node");
 
             // Tell the new node we are the master node
-            election_message intro_msg(hb->get_id(), el_state->mt_rand());
-            intro_msg.set_type_introduction(el_state->master_node.id);
-            enqueue_message(m.hostname, intro_msg, introduction_message_redundancy, el_state);
+            auto msg = election_message::introduction(hb->get_id(), el_state->mt(), el_state->master_node.id);
+            enqueue_message(m.hostname, msg, el_state);
         }
 
         // If the master node is down, the new node will in state NO_MASTER, and will
@@ -155,9 +156,8 @@ void election_impl::transition(election_state_enum origin_state, election_state_
         }
         case election_init: {
             // Send an election initiation message to our successor
-            election_message init_msg(hb->get_id(), el_state->mt_rand());
-            init_msg.set_type_election(hb->get_id(), hb->get_id());
-            enqueue_message(hb->get_successor().hostname, init_msg, message_redundancy, el_state);
+            auto msg = election_message::election(hb->get_id(), el_state->mt(), hb->get_id(), hb->get_id());
+            enqueue_message(hb->get_successor().hostname, msg, el_state);
 
             el_state->highest_initiator_id = hb->get_id();
             transition(election_init, electing);
@@ -171,9 +171,8 @@ void election_impl::transition(election_state_enum origin_state, election_state_
         }
         case elected: {
             // Send a message to the successor stating that we have been elected
-            election_message elected_msg(hb->get_id(), el_state->mt_rand());
-            elected_msg.set_type_elected(hb->get_id());
-            enqueue_message(hb->get_successor().hostname, elected_msg, message_redundancy, el_state);
+            auto msg = election_message::elected(hb->get_id(), el_state->mt(), hb->get_id());
+            enqueue_message(hb->get_successor().hostname, msg, el_state);
             lg->debug("We have been nominated as the new master node");
 
             // Set a timer in case the ELECTED message gets lost in the ring
@@ -245,9 +244,8 @@ void election_impl::update_timer() {
                 lg->info("Election has timed out, restarting election by sending PROPOSAL message");
 
                 // Create a proposal message to send to the next node to start a new election
-                election_message proposal_msg(hb->get_id(), el_state->mt_rand());
-                proposal_msg.set_type_proposal();
-                enqueue_message(hb->get_successor().hostname, proposal_msg, message_redundancy, el_state);
+                auto msg = election_message::proposal(hb->get_id(), el_state->mt());
+                enqueue_message(hb->get_successor().hostname, msg, el_state);
 
                 // Transition to a waiting state while the proposal message makes the rounds and
                 //  the membership list stabilizes
@@ -272,68 +270,199 @@ void election_impl::update_timer() {
 }
 
 // Keeps track of the highest initiator ID seen for ELECTION messages so far
-void election_impl::add_to_cache(election_message const& msg, unlocked<election_state> const& el_state) {
-    assert(msg.get_type() == election_message::msg_type::election);
-
-    if (el_state->highest_initiator_id < msg.get_initiator_id()) {
-        el_state->highest_initiator_id = msg.get_initiator_id();
+void election_impl::add_to_cache(election_message::election const& msg, unlocked<election_state> const& el_state) {
+    if (el_state->highest_initiator_id < msg.initiator_id) {
+        el_state->highest_initiator_id = msg.initiator_id;
     }
 }
 
 // Passes on an ELECTION message as defined by the protocol
-void election_impl::propagate(election_message const& msg, unlocked<election_state> const& el_state) {
-    assert(msg.get_type() == election_message::msg_type::election);
+void election_impl::propagate(election_message::election const& msg, unlocked<election_state> const& el_state) {
+    if (msg.initiator_id >= el_state->highest_initiator_id) {
+        assert(msg.vote_id != hb->get_id());
 
-    if (msg.get_initiator_id() >= el_state->highest_initiator_id) {
-        assert(msg.get_vote_id() != hb->get_id());
-
-        // Create the new message to pass on
         // If we are the initiator, change the UUID of the message to indicate that
         //  we are beginning the second cycle through the ring
-        uint32_t uuid = (msg.get_initiator_id() == hb->get_id()) ? el_state->mt_rand() : msg.get_uuid();
-        election_message new_msg(hb->get_id(), uuid);
-        if (msg.get_vote_id() > hb->get_id()) {
-            new_msg.set_type_election(msg.get_initiator_id(), msg.get_vote_id());
-        } else {
-            new_msg.set_type_election(msg.get_initiator_id(), hb->get_id());
-        }
+        uint32_t uuid = (msg.initiator_id == hb->get_id()) ? el_state->mt() : msg.common.uuid;
+        // Update the vote ID to max(current ID, our ID)
+        uint32_t vote_id = std::max(msg.vote_id, hb->get_id());
 
-        // Send the message
-        enqueue_message(hb->get_successor().hostname, new_msg, message_redundancy, el_state);
+        election_message::election new_msg(hb->get_id(), uuid, msg.initiator_id, vote_id);
+        enqueue_message(hb->get_successor().hostname, new_msg, el_state);
     }
 }
 
 // Enqueues a message into the message_queue and prints debug information
-void election_impl::enqueue_message(string const& dest, election_message const& msg,
-    int redundancy, unlocked<election_state> const& el_state)
-{
-    // Print log information first
-    if (msg.get_type() == election_message::msg_type::introduction) {
-        lg->debug("Informing new node at " + dest + " that master node is " +
-            hb->get_member_by_id(msg.get_master_id()).hostname);
+void election_impl::enqueue_message(string const& dest, election_message::introduction const& msg, unlocked<election_state> const& el_state) {
+    lg->debug("Informing new node at " + dest + " that master node is " + hb->get_member_by_id(msg.master_id).hostname);
+    el_state->message_queue.push({dest, msg.serialize()}, introduction_message_redundancy);
+}
+
+void election_impl::enqueue_message(string const& dest, election_message::election const& msg, unlocked<election_state> const& el_state) {
+    lg->debug("Sending ELECTION message with initiator ID " + std::to_string(msg.initiator_id) +
+        " and vote ID " + std::to_string(msg.vote_id) + " to node at " + dest);
+    el_state->message_queue.push({dest, msg.serialize()}, message_redundancy);
+}
+
+void election_impl::enqueue_message(string const& dest, election_message::elected const& msg, unlocked<election_state> const& el_state) {
+    lg->debug("Sending ELECTED message with master ID " + std::to_string(msg.master_id) + " to node at " + dest);
+    el_state->message_queue.push({dest, msg.serialize()}, message_redundancy);
+}
+
+void election_impl::enqueue_message(string const& dest, election_message::proposal const& msg, unlocked<election_state> const& el_state) {
+    lg->debug("Sending PROPOSAL message with UUID " + std::to_string(msg.common.uuid) + " to node at " + dest);
+    el_state->message_queue.push({dest, msg.serialize()}, message_redundancy);
+}
+
+template <typename Msg>
+auto election_impl::filter_msg(unlocked<election_state> const& el_state, char const* buf, int size) -> optional<Msg> {
+    Msg msg;
+    if (!msg.deserialize_from(string(buf, size))) {
+        lg->debug("Received malformed election message!");
+        return std::nullopt;
     }
 
-    if (msg.get_type() == election_message::msg_type::election) {
-        lg->debug("Sending ELECTION message with initiator ID " + std::to_string(msg.get_initiator_id()) +
-            " and vote ID " + std::to_string(msg.get_vote_id()) + " to node at " + dest);
+    // Make sure that the message originates from within our group
+    if (hb->get_member_by_id(msg.common.id).id != msg.common.id) {
+        lg->trace("Ignoring election message from " + std::to_string(msg.common.id) + " because they are not in the group");
+        return std::nullopt;
     }
 
-    if (msg.get_type() == election_message::msg_type::elected) {
-        lg->debug("Sending ELECTED message with master ID " + std::to_string(msg.get_master_id()) +
-            " to node at " + dest);
+    // Check that we have not seen a message with this ID yet
+    std::vector<uint32_t> const& seen_ids = el_state->seen_message_ids.peek();
+    if (std::find(seen_ids.begin(), seen_ids.end(), msg.common.uuid) != seen_ids.end()) {
+        // Ignore the message
+        return std::nullopt;
     }
+    // Mark this message ID as seen
+    el_state->seen_message_ids.push(msg.common.uuid, seen_ids_ttl);
+    return msg;
+}
 
-    if (msg.get_type() == election_message::msg_type::proposal) {
-        lg->debug("Sending PROPOSAL message with UUID " + std::to_string(msg.get_uuid()) +
-            " to node at " + dest);
+void election_impl::process_introduction_msg(unlocked<election_state> const& el_state, election_message::introduction const& msg) {
+    hb->run_atomically_with_mem_list([&] () mutable {
+        // Check if we are in the state no_master
+        if (el_state->state == no_master) {
+            // Check if the master node is in our membership list
+            if (hb->get_member_by_id(msg.master_id).id == msg.master_id) {
+                el_state->master_node = hb->get_member_by_id(msg.master_id);
+
+                lg->info("Received master node at " + el_state->master_node.hostname + " with id " +
+                    std::to_string(el_state->master_node.id));
+
+                transition(no_master, normal);
+            }
+        }
+    });
+}
+
+void election_impl::process_election_msg(unlocked<election_state> const& el_state, election_message::election const& msg) {
+    switch (el_state->state) {
+        case no_master: // If we joined after the master node failed, just participate in the elections as normal
+        case election_wait: {
+            add_to_cache(msg, el_state);
+            propagate(msg, el_state);
+            lg->debug("Received election message from " + hb->get_member_by_id(msg.common.id).hostname +
+                " with initiator ID " + std::to_string(msg.initiator_id) +
+                " and vote ID " + std::to_string(msg.vote_id));
+            transition(election_wait, electing);
+            break;
+        }
+        case electing: {
+            if (msg.vote_id == hb->get_id()) {
+                lg->debug("Received election message with our ID from " + hb->get_member_by_id(msg.common.id).hostname);
+
+                transition(electing, elected);
+            } else {
+                add_to_cache(msg, el_state);
+                propagate(msg, el_state);
+                lg->debug("Received election message from " + hb->get_member_by_id(msg.common.id).hostname +
+                    " with initiator ID " + std::to_string(msg.initiator_id) +
+                    " and vote ID " + std::to_string(msg.vote_id));
+            }
+            break;
+        }
+        case elected: {
+            // Make sure the ELECTION message is nominating a node other than us
+            if (msg.common.id == hb->get_id()) {
+                assert(false && "ELECTION message should not be nominating us");
+            }
+
+            add_to_cache(msg, el_state);
+            propagate(msg, el_state);
+            lg->debug("Received election message from " + hb->get_member_by_id(msg.common.id).hostname +
+                " with initiator ID " + std::to_string(msg.initiator_id) +
+                " and vote ID " + std::to_string(msg.vote_id) +
+                " while in state ELECTED");
+            transition(elected, electing);
+            break;
+        }
+        case normal: assert(false && "Should not be in state NORMAL while receiving election message");
+        case election_init: assert(false && "Should not be in state ELECTION_INIT while receiving election message");
+        default:
+            break;
     }
+}
 
-    if (msg.get_type() == election_message::msg_type::empty) {
-        assert(false && "Should never send an empty message");
+void election_impl::process_elected_msg(unlocked<election_state> const& el_state, election_message::elected const& msg) {
+    switch (el_state->state) {
+        case electing: {
+            hb->run_atomically_with_mem_list([&] () mutable {
+                // If the new master has failed during the election
+                if (hb->get_member_by_id(msg.master_id).id != msg.master_id) {
+                    lg->info("New master failed during the election, restarting election");
+
+                    // Restart the election by going back to election_wait
+                    // We choose election_wait instead of election_init since some nodes may have
+                    //  accepted this node as the master node and reallowed nodes to join
+                    el_state->highest_initiator_id = 0;
+                    transition(electing, election_wait);
+                } else {
+                    el_state->master_node = hb->get_member_by_id(msg.master_id);
+                    lg->info("Election succeeded in electing node at " + el_state->master_node.hostname + " with id " +
+                        std::to_string(el_state->master_node.id) + " as master node");
+
+                    // Pass the message along to the next node
+                    auto propagated_msg = election_message::elected(hb->get_id(), msg.common.uuid, el_state->master_node.id);
+                    enqueue_message(hb->get_successor().hostname, propagated_msg, el_state);
+                    transition(electing, normal);
+                }
+            });
+            break;
+        }
+        case elected: {
+            if (msg.master_id == hb->get_id()) {
+                lg->info("We have been elected as the master node");
+                el_state->master_node = hb->get_member_by_id(msg.master_id);
+                transition(elected, normal);
+            } else {
+                assert(false && "Severe unrecoverable error has occurred that will lead to split braining");
+            }
+            break;
+        }
+        case normal: assert(false && "Should not be in state NORMAL while receiving elected message");
+        case election_wait: assert(false && "Should not be in state ELECTION_WAIT while receiving elected message");
+        case election_init: assert(false && "Should not be in state ELECTION_INIT while receiving elected message");
+        case no_master: assert(false && "Should not be in state NO_MASTER while receiving elected message");
+        default:
+            break;
     }
+}
 
-    // Actually enqueue the message
-    el_state->message_queue.push({dest, msg}, redundancy);
+void election_impl::process_proposal_msg(unlocked<election_state> const& el_state, election_message::proposal const& msg) {
+    lg->info("Received proposal to restart election from " + hb->get_member_by_id(msg.common.id).hostname +
+        ", passing on proposal message and restarting election");
+
+    // Discard all election state
+    el_state->highest_initiator_id = 0;
+    el_state->message_queue.clear();
+
+    // And propagate the proposal message around the circle
+    auto new_msg = election_message::proposal(hb->get_id(), msg.common.uuid);
+    enqueue_message(hb->get_successor().hostname, new_msg, el_state);
+
+    // Wait for an election to begin
+    transition(el_state->state, election_wait);
 }
 
 void election_impl::server_thread_function() {
@@ -344,164 +473,47 @@ void election_impl::server_thread_function() {
 
     while (running.load()) {
         // Listen for messages and process each one
-        if ((size = server->recv(buf, 1024)) > 0) {
-            unlocked<election_state> el_state = el_state_lock();
+        if ((size = server->recv(buf, 1024)) <= 0) {
+            continue;
+        }
 
-            election_message msg(buf, size);
+        unlocked<election_state> el_state = el_state_lock();
 
-            if (!msg.is_well_formed()) {
-                lg->debug("Received malformed election message!");
-                continue;
-            }
+        // TODO: replace manual checking of message type with messaging
+        election_message::common_data common;
+        // The offset of 4 comes from our abuse of our knowledge of how serializable lays out the data
+        // This is really bad and should be removed!
+        if (!common.deserialize_from(string(buf + 4, size - 4), true)) {
+            lg->debug("Received malformed election message! Missing all data");
+            continue;
+        }
 
-            if (msg.get_type() == election_message::msg_type::empty) {
-                assert(false && "Message should not be empty at this point");
-            }
-
-            // Make sure that the message originates from within our group
-            if (hb->get_member_by_id(msg.get_id()).id != msg.get_id()) {
-                lg->trace("Ignoring election message from " + std::to_string(msg.get_id()) + " because they are not in the group");
-                continue;
-            }
-
-            // Check that we have not seen a message with this ID yet
-            std::vector<uint32_t> const& seen_ids = el_state->seen_message_ids.peek();
-            if (std::find(seen_ids.begin(), seen_ids.end(), msg.get_uuid()) != seen_ids.end()) {
-                // Ignore the message
-                lg->trace("Received duplicate message of type " + msg.print_type() + " from host at " +
-                    hb->get_member_by_id(msg.get_id()).hostname);
-                continue;
-            }
-            // Mark this message ID as seen
-            el_state->seen_message_ids.push(msg.get_uuid(), seen_ids_ttl);
-
-            if (msg.get_type() == election_message::msg_type::election) {
-                switch (el_state->state) {
-                    case no_master: // If we joined after the master node failed, just participate in the elections as normal
-                    case election_wait: {
-                        add_to_cache(msg, el_state);
-                        propagate(msg, el_state);
-                        lg->debug("Received election message from " + hb->get_member_by_id(msg.get_id()).hostname +
-                            " with initiator ID " + std::to_string(msg.get_initiator_id()) +
-                            " and vote ID " + std::to_string(msg.get_vote_id()));
-                        transition(election_wait, electing);
-                        break;
-                    }
-                    case electing: {
-                        if (msg.get_vote_id() == hb->get_id()) {
-                            lg->debug("Received election message with our ID from " + hb->get_member_by_id(msg.get_id()).hostname);
-
-                            transition(electing, elected);
-                        } else {
-                            add_to_cache(msg, el_state);
-                            propagate(msg, el_state);
-                            lg->debug("Received election message from " + hb->get_member_by_id(msg.get_id()).hostname +
-                                " with initiator ID " + std::to_string(msg.get_initiator_id()) +
-                                " and vote ID " + std::to_string(msg.get_vote_id()));
-                        }
-                        break;
-                    }
-                    case elected: {
-                        // Make sure the ELECTION message is nominating a node other than us
-                        if (msg.get_id() == hb->get_id()) {
-                            assert(false && "ELECTION message should not be nominating us");
-                        }
-
-                        add_to_cache(msg, el_state);
-                        propagate(msg, el_state);
-                        lg->debug("Received election message from " + hb->get_member_by_id(msg.get_id()).hostname +
-                            " with initiator ID " + std::to_string(msg.get_initiator_id()) +
-                            " and vote ID " + std::to_string(msg.get_vote_id()) +
-                            " while in state ELECTED");
-                        transition(elected, electing);
-                        break;
-                    }
-                    case normal: assert(false && "Should not be in state NORMAL while receiving election message");
-                    case election_init: assert(false && "Should not be in state ELECTION_INIT while receiving election message");
-                    default:
-                        break;
+        switch (common.type) {
+            case static_cast<uint32_t>(election_message::msg_type::introduction): {
+                if (auto msg = filter_msg<election_message::introduction>(el_state, buf, size)) {
+                    process_introduction_msg(el_state, msg.value());
                 }
+                break;
             }
-
-            if (msg.get_type() == election_message::msg_type::elected) {
-                switch (el_state->state) {
-                    case electing: {
-                        hb->run_atomically_with_mem_list([&] () mutable {
-                            // If the new master has failed during the election
-                            if (hb->get_member_by_id(msg.get_master_id()).id != msg.get_master_id()) {
-                                lg->info("New master failed during the election, restarting election");
-
-                                // Restart the election by going back to election_wait
-                                // We choose election_wait instead of election_init since some nodes may have
-                                //  accepted this node as the master node and reallowed nodes to join
-                                el_state->highest_initiator_id = 0;
-                                transition(electing, election_wait);
-                            } else {
-                                el_state->master_node = hb->get_member_by_id(msg.get_master_id());
-                                lg->info("Election succeeded in electing node at " + el_state->master_node.hostname + " with id " +
-                                    std::to_string(el_state->master_node.id) + " as master node");
-
-                                // Pass the message along to the next node
-                                election_message propagated_msg(hb->get_id(), msg.get_uuid());
-                                propagated_msg.set_type_elected(el_state->master_node.id);
-                                enqueue_message(hb->get_successor().hostname, propagated_msg, message_redundancy, el_state);
-                                transition(electing, normal);
-                            }
-                        });
-                        break;
-                    }
-                    case elected: {
-                        if (msg.get_master_id() == hb->get_id()) {
-                            lg->info("We have been elected as the master node");
-                            el_state->master_node = hb->get_member_by_id(msg.get_master_id());
-                            transition(elected, normal);
-                        } else {
-                            assert(false && "Severe unrecoverable error has occurred that will lead to split braining");
-                        }
-                        break;
-                    }
-                    case normal: assert(false && "Should not be in state NORMAL while receiving elected message");
-                    case election_wait: assert(false && "Should not be in state ELECTION_WAIT while receiving elected message");
-                    case election_init: assert(false && "Should not be in state ELECTION_INIT while receiving elected message");
-                    case no_master: assert(false && "Should not be in state NO_MASTER while receiving elected message");
-                    default:
-                        break;
+            case static_cast<uint32_t>(election_message::msg_type::election): {
+                if (auto msg = filter_msg<election_message::election>(el_state, buf, size)) {
+                    process_election_msg(el_state, msg.value());
                 }
+                break;
             }
-
-            if (msg.get_type() == election_message::msg_type::introduction) {
-                hb->run_atomically_with_mem_list([&] () mutable {
-                    // Check if we are in the state no_master
-                    if (el_state->state == no_master) {
-                        // Check if the master node is in our membership list
-                        if (hb->get_member_by_id(msg.get_master_id()).id == msg.get_master_id()) {
-                            el_state->master_node = hb->get_member_by_id(msg.get_master_id());
-
-                            lg->info("Received master node at " + el_state->master_node.hostname + " with id " +
-                                std::to_string(el_state->master_node.id));
-
-                            transition(no_master, normal);
-                        }
-                    }
-                });
+            case static_cast<uint32_t>(election_message::msg_type::elected): {
+                if (auto msg = filter_msg<election_message::elected>(el_state, buf, size)) {
+                    process_elected_msg(el_state, msg.value());
+                }
+                break;
             }
-
-            if (msg.get_type() == election_message::msg_type::proposal) {
-                lg->info("Received proposal to restart election from " + hb->get_member_by_id(msg.get_id()).hostname +
-                    ", passing on proposal message and restarting election");
-
-                // Discard all election state
-                el_state->highest_initiator_id = 0;
-                el_state->message_queue.clear();
-
-                // And propagate the proposal message around the circle
-                election_message new_msg(hb->get_id(), msg.get_uuid());
-                new_msg.set_type_proposal();
-                enqueue_message(hb->get_successor().hostname, new_msg, message_redundancy, el_state);
-
-                // Wait for an election to begin
-                transition(el_state->state, election_wait);
+            case static_cast<uint32_t>(election_message::msg_type::proposal): {
+                if (auto msg = filter_msg<election_message::proposal>(el_state, buf, size)) {
+                    process_proposal_msg(el_state, msg.value());
+                }
+                break;
             }
+            default: lg->debug("Received malformed election message! Invalid message type");
         }
     }
 }
@@ -513,7 +525,7 @@ void election_impl::client_thread_function() {
 
             // Pop off the messages that are waiting to be sent
             for (auto const& [dest, msg] : el_state->message_queue.pop()) {
-                client->send(dest, config->get_election_port(), msg.serialize());
+                client->send(dest, config->get_election_port(), msg);
             }
         }
 

@@ -16,6 +16,7 @@
 #include <memory>
 #include <random>
 #include <unordered_set>
+#include <optional>
 
 // The minimum amount of time it will take for the member list to stabilize
 //  6s in the worst case for all nodes to notice the failure of the master node and prevent new nodes from joining
@@ -47,11 +48,11 @@ private:
     struct election_state {
         election_state_enum state;
         // Queue of messages to be sent by the client thread -- tuple is of the format (hostname, message)
-        redundant_queue<std::tuple<std::string, election_message>> message_queue;
+        redundant_queue<std::tuple<std::string, std::string>> message_queue;
         // A "redundant" queue that will be popped every 1 minute containing all the message IDs seen so far
         redundant_queue<uint32_t> seen_message_ids;
         // The random number generator which we will use to generate message IDs
-        std::mt19937 mt_rand;
+        std::mt19937 mt;
         // Keeps track of the highest initiator ID seen for ELECTION messages so far
         uint32_t highest_initiator_id;
         // The current master node (an ID of 0 means there is no master node)
@@ -62,9 +63,9 @@ private:
     // Transitions the current state to the given state
     void transition(election_state_enum origin_state, election_state_enum dest_state);
 
-    void add_to_cache(election_message const& msg, unlocked<election_state> const& el_state);
+    void add_to_cache(election_message::election const& msg, unlocked<election_state> const& el_state);
     // Passes on an ELECTION message as defined by the protocol
-    void propagate(election_message const& msg, unlocked<election_state> const& el_state);
+    void propagate(election_message::election const& msg, unlocked<election_state> const& el_state);
 
     // Sets and updates the timer, and when the timer reaches 0, performs the appropriate action depending on the state
     struct timer_state {
@@ -101,9 +102,19 @@ private:
     // Thread functions for the server / client
     void server_thread_function();
     void client_thread_function();
+    // Filters an incoming message if it is invalid, doesn't come from within the group, or is a duplicate
+    template <typename Msg>
+    auto filter_msg(unlocked<election_state> const& el_state, char const* buf, int size) -> std::optional<Msg>;
+    // Processes an incoming message of each type
+    void process_introduction_msg(unlocked<election_state> const& el_state, election_message::introduction const& msg);
+    void process_election_msg(unlocked<election_state> const& el_state, election_message::election const& msg);
+    void process_elected_msg(unlocked<election_state> const& el_state, election_message::elected const& msg);
+    void process_proposal_msg(unlocked<election_state> const& el_state, election_message::proposal const& msg);
     // Enqueues a message into the message_queue and prints debug information
-    void enqueue_message(std::string const& dest, election_message const& msg,
-        int redundancy, unlocked<election_state> const& el_state);
+    void enqueue_message(std::string const& dest, election_message::introduction const& msg, unlocked<election_state> const& el_state);
+    void enqueue_message(std::string const& dest, election_message::election const& msg, unlocked<election_state> const& el_state);
+    void enqueue_message(std::string const& dest, election_message::elected const& msg, unlocked<election_state> const& el_state);
+    void enqueue_message(std::string const& dest, election_message::proposal const& msg, unlocked<election_state> const& el_state);
 
     // Indicates whether or not the election is running
     std::atomic<bool> running;

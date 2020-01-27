@@ -78,6 +78,53 @@ void mj_worker_impl::stop() {
     el->stop();
 }
 
+template <typename Msg>
+auto mj_worker_impl::filter_msg(string msg_str) -> optional<Msg> {
+    Msg msg;
+    if (!msg.deserialize_from(msg_str)) {
+        lg->debug("Received ill-formed message from MapleJuice master!");
+        return std::nullopt;
+    } else {
+        return msg;
+    }
+}
+
+void mj_worker_impl::process_assign_job_msg(mj_message::assign_job const& data) {
+    unlocked<job_state_map> job_states = job_states_lock();
+    int job_id = data.job_id;
+    bool already_running = (job_states->find(job_id) != job_states->end());
+
+    // Spin up a thread to process the job if it isn't already running
+    if (!already_running) {
+        start_job(std::move(job_states), job_id, data);
+        std::thread monitor_thread([=] {
+            monitor_job(job_id);
+        });
+        monitor_thread.detach();
+        lg->info("Starting new job with ID " + std::to_string(job_id));
+    } else {
+        std::thread job_thread([=] {
+            add_files_to_job(job_id, data.input_files);
+        });
+        job_thread.detach();
+        lg->info("Accepting extra work due to loss of a node for job with ID " + std::to_string(job_id));
+    }
+}
+
+void mj_worker_impl::process_job_end_worker_msg(mj_message::job_end_worker const& data) {
+    unlocked<job_state_map> job_states = job_states_lock();
+
+    int job_id = data.job_id;
+    if (job_states->find(job_id) != job_states->end()) {
+        unlocked<job_state> state = (*job_states)[job_id]();
+
+        // Notify the condition variable that the job is over, which monitor_job is waiting on
+        state->job_complete = true;
+        state->cv_done.notify_all();
+        lg->info("Master node has informed us that job with ID " + std::to_string(job_id) + " is done");
+    }
+}
+
 void mj_worker_impl::server_thread_function() {
     server = fac->get_tcp_server(config->get_mj_internal_port());
 
@@ -99,66 +146,34 @@ void mj_worker_impl::server_thread_function() {
             string msg_str = server->read_from_client(fd);
             server->close_connection(fd);
 
-            mj_message msg(msg_str.c_str(), msg_str.length());
-
-            // We only handle messages of the type ASSIGN_JOB or JOB_END_WORKER
-            if (!msg.is_well_formed() || (msg.get_msg_type() != mj_message::mj_msg_type::ASSIGN_JOB &&
-                msg.get_msg_type() != mj_message::mj_msg_type::JOB_END_WORKER))
-            {
-                lg->debug("Received malformed message from master, meaning master has most likely crashed");
+            // TODO: replace manual checking of message type with messaging
+            mj_message::common_data common;
+            if (!common.deserialize_from(string(msg_str.c_str() + 4, msg_str.length() - 4), true)) {
+                lg->debug("Received ill-formed message from MapleJuice master! Missing all data");
                 return;
             }
 
-            if (msg.get_msg_type() == mj_message::mj_msg_type::ASSIGN_JOB) {
-                mj_assign_job data = msg.get_msg_data<mj_assign_job>();
-                int job_id = data.job_id;
-
-                bool already_running;
-                { // Start an atomic block to access the job_states map
-                    unlocked<job_state_map> job_states = job_states_lock();
-                    already_running = (job_states->find(job_id) != job_states->end());
-
-                    // Spin up a thread to process the job if it isn't already running
-                    if (!already_running) {
-                        start_job(std::move(job_states), job_id, data);
-                        std::thread monitor_thread([=] {
-                            monitor_job(job_id);
-                        });
-                        monitor_thread.detach();
-                        lg->info("Starting new job with ID " + std::to_string(job_id));
-                    } else {
-                        std::thread job_thread([=] {
-                            add_files_to_job(job_id, data.input_files);
-                        });
-                        job_thread.detach();
-                        lg->info("Accepting extra work due to loss of a node for job with ID " + std::to_string(job_id));
+            switch (common.type) {
+                case static_cast<uint32_t>(mj_message::msg_type::assign_job): {
+                    if (auto msg = filter_msg<mj_message::assign_job>(msg_str)) {
+                        process_assign_job_msg(msg.value());
                     }
+                    break;
                 }
-            }
-
-            if (msg.get_msg_type() == mj_message::mj_msg_type::JOB_END_WORKER) {
-                mj_job_end_worker data = msg.get_msg_data<mj_job_end_worker>();
-
-                { // Atomic block to access job_states map
-                    unlocked<job_state_map> job_states = job_states_lock();
-
-                    int job_id = data.job_id;
-                    if (job_states->find(job_id) != job_states->end()) {
-                        unlocked<job_state> state = (*job_states)[job_id]();
-
-                        // Notify the condition variable that the job is over, which monitor_job is waiting on
-                        state->job_complete = true;
-                        state->cv_done.notify_all();
-                        lg->info("Master node has informed us that job with ID " + std::to_string(job_id) + " is done");
+                case static_cast<uint32_t>(mj_message::msg_type::job_end_worker): {
+                    if (auto msg = filter_msg<mj_message::job_end_worker>(msg_str)) {
+                        process_job_end_worker_msg(msg.value());
                     }
+                    break;
                 }
+                default: lg->debug("Received malformed message from master, meaning master has most likely crashed");
             }
         });
         client_thread.detach();
     }
 }
 
-void mj_worker_impl::start_job(unlocked<job_state_map> &&job_states, int job_id, mj_assign_job const& data) {
+void mj_worker_impl::start_job(unlocked<job_state_map> &&job_states, int job_id, mj_message::assign_job const& data) {
     // Create an entry in job_states and then unlock it
     unlocked<job_state> state = (*job_states)[job_id]();
 
@@ -167,7 +182,7 @@ void mj_worker_impl::start_job(unlocked<job_state_map> &&job_states, int job_id,
     state->exe = data.exe;
     state->sdfs_src_dir = data.sdfs_src_dir;
     state->sdfs_output_dir = data.sdfs_output_dir;
-    state->processor_type = data.processor_type;
+    state->processor_type = static_cast<processor::type>(data.processor_type);
     state->num_files_parallel = data.num_files_parallel;
     state->num_appends_parallel = data.num_appends_parallel;
     state->tp = tp_fac->get_threadpool(data.num_files_parallel);
@@ -237,7 +252,7 @@ void mj_worker_impl::monitor_job(int job_id) {
 }
 
 void mj_worker_impl::notify_job_failed(int job_id) {
-    mj_message failed_msg(hb->get_id(), mj_job_failed{job_id});
+    mj_message::job_failed failed_msg(hb->get_id(), job_id);
 
     // Loop in order to send the message to the correct master node in the case of master failure
     while (running.load()) {
@@ -261,7 +276,7 @@ void mj_worker_impl::notify_job_failed(int job_id) {
     }
 }
 
-void mj_worker_impl::add_files_to_job(int job_id, std::vector<std::string> const& new_files) {
+void mj_worker_impl::add_files_to_job(int job_id, std::vector<string> const& new_files) {
     unlocked<job_state> state{unlocked<job_state>::empty()};
     {
         unlocked<job_state_map> job_states = job_states_lock();
@@ -324,9 +339,10 @@ void mj_worker_impl::process_file(int job_id, string const& filename, string con
         state->job_failed = true;
         state->cv_done.notify_all();
         return;
+    } else {
+        append_output(job_id, proc.get(), filename, sdfs_output_dir, num_appends_parallel);
     }
 
-    append_output(job_id, proc.get(), filename, sdfs_output_dir, num_appends_parallel);
     utils::backoff([&] {
         return std::filesystem::remove(local_file_path);
     });
@@ -377,8 +393,7 @@ void mj_worker_impl::append_output(int job_id, processor *proc, string const& in
         }
 
         // Inform the master node that the file is complete
-        mj_message complete_msg(hb->get_id(), mj_file_done{job_id, config->get_hostname(), input_file});
-
+        mj_message::file_done complete_msg(hb->get_id(), job_id, config->get_hostname(), input_file);
         if (client->write_to_server(complete_msg.serialize()) <= 0) {
             continue;
         }
@@ -390,7 +405,7 @@ auto mj_worker_impl::append_lines(int job_id, tcp_client *client, string const& 
     string const& output_file_path, std::vector<string> const& vals, std::atomic<bool> *master_down) -> optional<function<void()>>
 {
     // Then, construct the message requesting permission to append
-    mj_message msg(hb->get_id(), mj_request_append_perm{job_id, config->get_hostname(), input_file, output_file_path});
+    mj_message::request_append_perm msg(hb->get_id(), job_id, config->get_hostname(), input_file, output_file_path);
     string msg_str = msg.serialize();
 
     // Connect to the master and send the message, and wait for either a yes or no response
@@ -402,15 +417,15 @@ auto mj_worker_impl::append_lines(int job_id, tcp_client *client, string const& 
 
     string response_str = client->read_from_server();
 
-    mj_message response(response_str.c_str(), response_str.length());
-    if (!response.is_well_formed() || response.get_msg_type() != mj_message::mj_msg_type::APPEND_PERM) {
+    mj_message::append_perm response;
+    if (!response.deserialize_from(response_str)) {
         lg->trace("[Job " + std::to_string(job_id) + "] Lost connection with master node while " +
             "requesting permission to append to output file " + output_file_path);
         *master_down = true;
         return std::nullopt;
     }
 
-    bool got_permission = (response.get_msg_data<mj_append_perm>().allowed != 0);
+    bool got_permission = (response.allowed != 0);
     lg->trace("[Job " + std::to_string(job_id) + "] " + (got_permission ? "Received " : "Did not receive ") +
         "permission to append to output file " + output_file_path);
 
@@ -422,11 +437,7 @@ auto mj_worker_impl::append_lines(int job_id, tcp_client *client, string const& 
                 append += val + "\n";
             }
 
-            // TODO: create a type for Maplejuice metadata instead of adhoc serialization
-            serializer ser;
-            ser.add_field(input_file);
-            ser.add_field(job_id);
-            string metadata_val = ser.serialize();
+            mj_message::metadata md(input_file, job_id);
 
             // Include the metadata {maplejuice: input_file} so the master can record the append as successful
             utils::backoff([&] {
@@ -438,7 +449,7 @@ auto mj_worker_impl::append_lines(int job_id, tcp_client *client, string const& 
                         complete = true;
                         return append;
                     }
-                }), output_file_path, {{"maplejuice", metadata_val}}) == 0;
+                }), output_file_path, {{"maplejuice", md.serialize()}}) == 0;
             }, [&] {return !running.load();});
 
             lg->debug("[Job " + std::to_string(job_id) + "] Appended values to output file " + output_file_path + " from input file " + input_file);
