@@ -1,7 +1,7 @@
 INC_DIR        := inc
 CXX            := g++-9
 CXXFLAGS       := -I$(INC_DIR) -std=c++17 -Wall -DDEBUG -O3 -g
-LDFLAGS        := -pthread -rdynamic
+LDFLAGS        := -pthread
 
 OBJ_DIR        := obj
 SRC_DIR        := src
@@ -24,10 +24,10 @@ MJE            := mje
 
 all: $(MAPLE) $(MAPLEJUICE) $(MJE) $(JUICE)
 
-$(MAPLE): $(filter-out obj/maplejuice.o obj/juice.o, $(OBJ_FILES))
+$(MAPLE): $(filter-out obj/maplejuice.o obj/juice.o, $(SRC_OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(JUICE): $(filter-out obj/maplejuice.o obj/maple.o, $(OBJ_FILES))
+$(JUICE): $(filter-out obj/maplejuice.o obj/maple.o, $(SRC_OBJ_FILES))
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(MAPLEJUICE): $(filter-out obj/maple.o  obj/juice.o, $(OBJ_FILES))

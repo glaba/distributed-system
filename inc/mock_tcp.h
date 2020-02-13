@@ -66,7 +66,6 @@ private:
     public:
         mock_tcp_server(mock_udp_factory *factory_, std::string hostname_)
             : factory(factory_), hostname(hostname_) {}
-        ~mock_tcp_server();
 
         void setup_server(int port_);
         void stop_server();

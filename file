@@ -1,0 +1,3103 @@
+1c1
+< //=== DFG2LLVM_NVPTX.cpp ===//
+---
+> //=== DFG2LLVM_OpenCL.cpp ===//
+8a9,16
+> // 
+> // This pass is responsible for generating code for kernel code and code for 
+> // launching kernels for GPU target using HPVM dataflow graph. The kernels are
+> // generated into a separate file which is the C-Backend uses to generate 
+> // OpenCL kernels with.
+> //
+> //===----------------------------------------------------------------------===//
+> 
+17c25,30
+< #define DEBUG_TYPE "DFG2LLVM_NVPTX"
+---
+> #define DEBUG_TYPE "DFG2LLVM_OpenCL"
+> #include "SupportHPVM/DFG2LLVM.h"
+> #include "SupportHPVM/HPVMTimer.h"
+> #include "SupportHPVM/HPVMUtils.h"
+> #include "llvm-c/Core.h"
+> #include "llvm/IR/Attributes.h"
+20,21d32
+< #include "llvm/IR/Module.h"
+< #include "llvm/Pass.h"
+23,25c34
+< #include "llvm/Transforms/Utils/ValueMapper.h"
+< #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+< #include "llvm/Transforms/Utils/Cloning.h"
+---
+> #include "llvm/IR/Module.h"
+28c37
+< #include "llvm/Support/SourceMgr.h"
+---
+> #include "llvm/Pass.h"
+30,34c39,42
+< #include "llvm/IR/Attributes.h"
+< #include "llvm-c/Core.h"
+< #include "llvm/SupportVISC/VISCTimer.h"
+< #include "llvm/SupportVISC/DFG2LLVM.h"
+< #include "llvm/SupportVISC/VISCUtils.h"
+---
+> #include "llvm/Support/SourceMgr.h"
+> #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+> #include "llvm/Transforms/Utils/Cloning.h"
+> #include "llvm/Transforms/Utils/ValueMapper.h"
+38d45
+< #include "llvm/Support/ToolOutputFile.h"
+40c47
+< 
+---
+> #include "llvm/Support/ToolOutputFile.h"
+43a51,58
+> #ifndef LLVM_BUILD_DIR
+> #error LLVM_BUILD_DIR is not defined
+> #endif
+> 
+> #define STR_VALUE(X) #X
+> #define STRINGIFY(X) STR_VALUE(X)
+> #define LLVM_BUILD_DIR_STR STRINGIFY(LLVM_BUILD_DIR)
+> 
+47c62
+< using namespace viscUtils;
+---
+> using namespace hpvmUtils;
+49,51c64,66
+< // VISC Command line option to use timer or not
+< static cl::opt<bool>
+< VISCTimer_NVPTX("visc-timers-ptx", cl::desc("Enable visc timers"));
+---
+> // HPVM Command line option to use timer or not
+> static cl::opt<bool> HPVMTimer_OpenCL("hpvm-timers-ptx",
+>                                       cl::desc("Enable hpvm timers"));
+60,61c75,76
+<   OutputPtr(Value* _h_ptr, Value* _d_ptr, Value* _bytes)
+<     : h_ptr(_h_ptr), d_ptr(_d_ptr), bytes(_bytes) {}
+---
+>   OutputPtr(Value *_h_ptr, Value *_d_ptr, Value *_bytes)
+>       : h_ptr(_h_ptr), d_ptr(_d_ptr), bytes(_bytes) {}
+63,65c78,80
+<   Value* h_ptr;
+<   Value* d_ptr;
+<   Value* bytes;
+---
+>   Value *h_ptr;
+>   Value *d_ptr;
+>   Value *bytes;
+72,86c87,105
+<   Kernel(Function* _KF, DFLeafNode* _KLeafNode, std::map<unsigned, unsigned> _inArgMap =
+<            std::map<unsigned, unsigned>(),
+<          std::map<unsigned, std::pair<Value*, unsigned> > _sharedInArgMap =
+<            std::map<unsigned, std::pair<Value*, unsigned> >(),
+<          std::vector<unsigned> _outArgMap = std::vector<unsigned>(),
+<          unsigned _gridDim = 0, std::vector<Value*> _globalWGSize = std::vector<Value*>(),
+<          unsigned _blockDim = 0, std::vector<Value*> _localWGSize = std::vector<Value*>())
+<     : KernelFunction(_KF), KernelLeafNode(_KLeafNode), inArgMap(_inArgMap),
+<       sharedInArgMap(_sharedInArgMap), outArgMap(_outArgMap), gridDim(_gridDim),
+<       globalWGSize(_globalWGSize), blockDim(_blockDim), localWGSize(_localWGSize) {
+< 
+<     assert(gridDim == globalWGSize.size()
+<            && "gridDim should be same as the size of vector globalWGSize");
+<     assert(blockDim == localWGSize.size()
+<            && "blockDim should be same as the size of vector localWGSize");
+---
+>   Kernel(
+>       Function *_KF, DFLeafNode *_KLeafNode,
+>       std::map<unsigned, unsigned> _inArgMap = std::map<unsigned, unsigned>(),
+>       std::map<unsigned, std::pair<Value *, unsigned>> _sharedInArgMap =
+>           std::map<unsigned, std::pair<Value *, unsigned>>(),
+>       std::vector<unsigned> _outArgMap = std::vector<unsigned>(),
+>       unsigned _gridDim = 0,
+>       std::vector<Value *> _globalWGSize = std::vector<Value *>(),
+>       unsigned _blockDim = 0,
+>       std::vector<Value *> _localWGSize = std::vector<Value *>())
+>       : KernelFunction(_KF), KernelLeafNode(_KLeafNode), inArgMap(_inArgMap),
+>         sharedInArgMap(_sharedInArgMap), outArgMap(_outArgMap),
+>         gridDim(_gridDim), globalWGSize(_globalWGSize), blockDim(_blockDim),
+>         localWGSize(_localWGSize) {
+> 
+>     assert(gridDim == globalWGSize.size() &&
+>            "gridDim should be same as the size of vector globalWGSize");
+>     assert(blockDim == localWGSize.size() &&
+>            "blockDim should be same as the size of vector localWGSize");
+89,90c108,109
+<   Function* KernelFunction;
+<   DFLeafNode* KernelLeafNode;
+---
+>   Function *KernelFunction;
+>   DFLeafNode *KernelLeafNode;
+93c112
+<   std::map<unsigned, std::pair<Value*, unsigned> > sharedInArgMap;
+---
+>   std::map<unsigned, std::pair<Value *, unsigned>> sharedInArgMap;
+95,96c114,115
+<   DFLeafNode* AllocationNode;
+<   Function* AllocationFunction;
+---
+>   DFLeafNode *AllocationNode;
+>   Function *AllocationFunction;
+101c120
+<   std::vector<Value*> globalWGSize;
+---
+>   std::vector<Value *> globalWGSize;
+103c122
+<   std::vector<Value*> localWGSize;
+---
+>   std::vector<Value *> localWGSize;
+106,111c125,126
+<   std::map<unsigned, unsigned> getInArgMap() {
+<     return inArgMap;
+<   }
+<   void setInArgMap(std::map<unsigned, unsigned> map) {
+<     inArgMap = map;
+<   }
+---
+>   std::map<unsigned, unsigned> &getInArgMap() { return inArgMap; }
+>   void setInArgMap(std::map<unsigned, unsigned> map) { inArgMap = map; }
+113c128
+<   std::map<unsigned, std::pair<Value*, unsigned> > getSharedInArgMap() {
+---
+>   std::map<unsigned, std::pair<Value *, unsigned>> &getSharedInArgMap() {
+116c131
+<   void setSharedInArgMap(std::map<unsigned, std::pair<Value*, unsigned> > map) {
+---
+>   void setSharedInArgMap(std::map<unsigned, std::pair<Value *, unsigned>> map) {
+120,125c135,136
+<   std::vector<unsigned> getOutArgMap() {
+<     return outArgMap;
+<   }
+<   void setOutArgMap(std::vector<unsigned> map) {
+<     outArgMap = map;
+<   }
+---
+>   std::vector<unsigned> &getOutArgMap() { return outArgMap; }
+>   void setOutArgMap(std::vector<unsigned> map) { outArgMap = map; }
+127,129c138
+<   void setLocalWGSize(std::vector<Value*> V) {
+<     localWGSize = V;
+<   }
+---
+>   void setLocalWGSize(std::vector<Value *> V) { localWGSize = V; }
+131,133c140
+<   bool hasLocalWG() {
+<     return blockDim != 0;
+<   }
+---
+>   bool hasLocalWG() const { return blockDim != 0; }
+137,143c144,151
+< static bool canBePromoted(Argument* arg, Function* F);
+< static void getExecuteNodeParams(Module &M, Value* &, Value* &, Value* &, Kernel*,
+<                                  ValueToValueMapTy&, Instruction*);
+< static Value* genWorkGroupPtr(Module &M, std::vector<Value*>, ValueToValueMapTy&,
+<                               Instruction*, const Twine& WGName = "WGSize");
+< static std::string getPTXFilename(const Module&);
+< static std::string getFilenameFromModule(const Module& M);
+---
+> static bool canBePromoted(Argument *arg, Function *F);
+> static void getExecuteNodeParams(Module &M, Value *&, Value *&, Value *&,
+>                                  Kernel *, ValueToValueMapTy &, Instruction *);
+> static Value *genWorkGroupPtr(Module &M, std::vector<Value *>,
+>                               ValueToValueMapTy &, Instruction *,
+>                               const Twine &WGName = "WGSize");
+> static std::string getPTXFilename(const Module &);
+> static std::string getFilenameFromModule(const Module &M);
+147c155,156
+< static void findIntrinsicInst(Function *, Intrinsic::ID, std::vector<IntrinsicInst *> &);
+---
+> static void findIntrinsicInst(Function *, Intrinsic::ID,
+>                               std::vector<IntrinsicInst *> &);
+151,152c160,161
+< // DFG2LLVM_NVPTX - The first implementation.
+< struct DFG2LLVM_NVPTX : public DFG2LLVM {
+---
+> // DFG2LLVM_OpenCL - The first implementation.
+> struct DFG2LLVM_OpenCL : public DFG2LLVM {
+154c163
+<   DFG2LLVM_NVPTX() : DFG2LLVM(ID) {}
+---
+>   DFG2LLVM_OpenCL() : DFG2LLVM(ID) {}
+157d165
+< 
+163c171
+< class CGT_NVPTX : public CodeGenTraversal {
+---
+> class CGT_OpenCL : public CodeGenTraversal {
+166c174
+<   //Member variables
+---
+>   // Member variables
+168,169c176,177
+<   DFNode* KernelLaunchNode = NULL;
+<   Kernel* kernel;
+---
+>   DFNode *KernelLaunchNode = NULL;
+>   Kernel *kernel;
+171,182c179,190
+<   // VISC Runtime API
+<   Constant* llvm_visc_ocl_launch;
+<   Constant* llvm_visc_ocl_wait;
+<   Constant* llvm_visc_ocl_initContext;
+<   Constant* llvm_visc_ocl_clearContext;
+<   Constant* llvm_visc_ocl_argument_shared;
+<   Constant* llvm_visc_ocl_argument_scalar;
+<   Constant* llvm_visc_ocl_argument_ptr;
+<   Constant* llvm_visc_ocl_output_ptr;
+<   Constant* llvm_visc_ocl_free;
+<   Constant* llvm_visc_ocl_getOutput;
+<   Constant* llvm_visc_ocl_executeNode;
+---
+>   // HPVM Runtime API
+>   FunctionCallee llvm_hpvm_ocl_launch;
+>   FunctionCallee llvm_hpvm_ocl_wait;
+>   FunctionCallee llvm_hpvm_ocl_initContext;
+>   FunctionCallee llvm_hpvm_ocl_clearContext;
+>   FunctionCallee llvm_hpvm_ocl_argument_shared;
+>   FunctionCallee llvm_hpvm_ocl_argument_scalar;
+>   FunctionCallee llvm_hpvm_ocl_argument_ptr;
+>   FunctionCallee llvm_hpvm_ocl_output_ptr;
+>   FunctionCallee llvm_hpvm_ocl_free;
+>   FunctionCallee llvm_hpvm_ocl_getOutput;
+>   FunctionCallee llvm_hpvm_ocl_executeNode;
+184c192
+<   //Functions
+---
+>   // Functions
+186,191c194,201
+<   void fixValueAddrspace(Value* V, unsigned addrspace);
+<   std::vector<unsigned> globalToConstantMemoryOpt(std::vector<unsigned>*, Function*);
+<   Function* changeArgAddrspace(Function* F, std::vector<unsigned> &Ags, unsigned i);
+<   void addCLMetadata(Function* F);
+<   Function* transformFunctionToVoid(Function* F);
+<   void insertRuntimeCalls(DFInternalNode* N, Kernel* K, const Twine& FileName);
+---
+>   void fixValueAddrspace(Value *V, unsigned addrspace);
+>   std::vector<unsigned> globalToConstantMemoryOpt(std::vector<unsigned> *,
+>                                                   Function *);
+>   Function *changeArgAddrspace(Function *F, std::vector<unsigned> &Ags,
+>                                unsigned i);
+>   void addCLMetadata(Function *F);
+>   Function *transformFunctionToVoid(Function *F);
+>   void insertRuntimeCalls(DFInternalNode *N, Kernel *K, const Twine &FileName);
+195,196c205,206
+<     VISCTimer = VISCTimer_NVPTX;
+<     TargetName = "NVPTX";
+---
+>     HPVMTimer = HPVMTimer_OpenCL;
+>     TargetName = "OpenCL";
+199,200c209,210
+<   void codeGen(DFInternalNode* N);
+<   void codeGen(DFLeafNode* N);
+---
+>   void codeGen(DFInternalNode *N);
+>   void codeGen(DFLeafNode *N);
+203d212
+< 
+205c214,215
+<   CGT_NVPTX(Module &_M, BuildDFG &_DFG) : CodeGenTraversal(_M, _DFG), KernelM(CloneModule(&_M)) {
+---
+>   CGT_OpenCL(Module &_M, BuildDFG &_DFG)
+>       : CodeGenTraversal(_M, _DFG), KernelM(CloneModule(_M)) {
+208,209c218,219
+<     errs() << "Old module pointer: " << &_M << "\n";
+<     errs() << "New module pointer: " <<  KernelM.get() << "\n";
+---
+>     DEBUG(errs() << "Old module pointer: " << &_M << "\n");
+>     DEBUG(errs() << "New module pointer: " << KernelM.get() << "\n");
+211,213c221,223
+<     // Copying instead of creating new, in order to preserve required info (metadata)
+<     // Remove functions, global variables and aliases
+<     std::vector<GlobalVariable*> gvv = std::vector<GlobalVariable*>();
+---
+>     // Copying instead of creating new, in order to preserve required info
+>     // (metadata) Remove functions, global variables and aliases
+>     std::vector<GlobalVariable *> GVVect;
+215,217c225,228
+<          me = KernelM->global_end(); (mi != me); ++mi) {
+<       GlobalVariable* gv = &*mi;
+<       gvv.push_back(gv);
+---
+>                                  me = KernelM->global_end();
+>          (mi != me); ++mi) {
+>       GlobalVariable *GV = &*mi;
+>       GVVect.push_back(GV);
+219,221c230,232
+<     for (std::vector<GlobalVariable*>::iterator vi = gvv.begin(); vi != gvv.end(); ++vi) {
+<       (*vi)->replaceAllUsesWith(UndefValue::get((*vi)->getType()));
+<       (*vi)->eraseFromParent();
+---
+>     for (auto *GV : GVVect) {
+>       GV->replaceAllUsesWith(UndefValue::get(GV->getType()));
+>       GV->eraseFromParent();
+224,228c235,239
+<     std::vector<Function*> fv = std::vector<Function*>();
+<     for (Module::iterator mi = KernelM->begin(),
+<          me = KernelM->end(); (mi != me); ++mi) {
+<       Function* f = &*mi;
+<       fv.push_back(f);
+---
+>     std::vector<Function *> FuncVect;
+>     for (Module::iterator mi = KernelM->begin(), me = KernelM->end();
+>          (mi != me); ++mi) {
+>       Function *F = &*mi;
+>       FuncVect.push_back(F);
+230,232c241,243
+<     for (std::vector<Function*>::iterator vi = fv.begin(); vi != fv.end(); ++vi) {
+<       (*vi)->replaceAllUsesWith(UndefValue::get((*vi)->getType()));
+<       (*vi)->eraseFromParent();
+---
+>     for (auto *F : FuncVect) {
+>       F->replaceAllUsesWith(UndefValue::get(F->getType()));
+>       F->eraseFromParent();
+235c246
+<     std::vector<GlobalAlias*> av = std::vector<GlobalAlias*>();
+---
+>     std::vector<GlobalAlias *> GAVect;
+237,243c248,255
+<          me = KernelM->alias_end(); (mi != me); ++mi) {
+<       GlobalAlias* a = &*mi;
+<       av.push_back(a);
+<     }
+<     for (std::vector<GlobalAlias*>::iterator vi = av.begin(); vi != av.end(); ++vi) {
+<       (*vi)->replaceAllUsesWith(UndefValue::get((*vi)->getType()));
+<       (*vi)->eraseFromParent();
+---
+>                                 me = KernelM->alias_end();
+>          (mi != me); ++mi) {
+>       GlobalAlias *GA = &*mi;
+>       GAVect.push_back(GA);
+>     }
+>     for (auto *GA : GAVect) {
+>       GA->replaceAllUsesWith(UndefValue::get(GA->getType()));
+>       GA->eraseFromParent();
+249d260
+< 
+251d261
+< 
+257,258c267,268
+< // Initialize the VISC runtime API. This makes it easier to insert these calls
+< void CGT_NVPTX::initRuntimeAPI() {
+---
+> // Initialize the HPVM runtime API. This makes it easier to insert these calls
+> void CGT_OpenCL::initRuntimeAPI() {
+263,264c273,274
+<   char* LLVM_SRC_ROOT = getenv("LLVM_SRC_ROOT");
+<   assert(LLVM_SRC_ROOT != NULL && "Define LLVM_SRC_ROOT environment variable!");
+---
+>   std::string runtimeAPI = std::string(LLVM_BUILD_DIR_STR) +
+>                            "/tools/hpvm/projects/hpvm-rt/hpvm-rt.bc";
+266,273c276,281
+<   Twine llvmSrcRoot = LLVM_SRC_ROOT;
+<   Twine runtimeAPI = llvmSrcRoot+"/build/projects/visc-rt/visc-rt.ll";
+< 
+<   runtimeModule = parseIRFile(runtimeAPI.str(), Err, M.getContext());
+<   if(runtimeModule == nullptr)
+<     DEBUG(errs() << Err.getMessage());
+<   else
+<     DEBUG(errs() << "Successfully loaded visc-rt API module\n");
+---
+>   runtimeModule = parseIRFile(runtimeAPI, Err, M.getContext());
+>   if (runtimeModule == nullptr) {
+>     DEBUG(errs() << Err.getMessage() << " " << runtimeAPI << "\n");
+>     assert(false && "couldn't parse runtime");
+>   } else
+>     DEBUG(errs() << "Successfully loaded hpvm-rt API module\n");
+276,286c284,294
+<   DECLARE(llvm_visc_ocl_launch);
+<   DECLARE(llvm_visc_ocl_wait);
+<   DECLARE(llvm_visc_ocl_initContext);
+<   DECLARE(llvm_visc_ocl_clearContext);
+<   DECLARE(llvm_visc_ocl_argument_shared);
+<   DECLARE(llvm_visc_ocl_argument_scalar);
+<   DECLARE(llvm_visc_ocl_argument_ptr);
+<   DECLARE(llvm_visc_ocl_output_ptr);
+<   DECLARE(llvm_visc_ocl_free);
+<   DECLARE(llvm_visc_ocl_getOutput);
+<   DECLARE(llvm_visc_ocl_executeNode);
+---
+>   DECLARE(llvm_hpvm_ocl_launch);
+>   DECLARE(llvm_hpvm_ocl_wait);
+>   DECLARE(llvm_hpvm_ocl_initContext);
+>   DECLARE(llvm_hpvm_ocl_clearContext);
+>   DECLARE(llvm_hpvm_ocl_argument_shared);
+>   DECLARE(llvm_hpvm_ocl_argument_scalar);
+>   DECLARE(llvm_hpvm_ocl_argument_ptr);
+>   DECLARE(llvm_hpvm_ocl_output_ptr);
+>   DECLARE(llvm_hpvm_ocl_free);
+>   DECLARE(llvm_hpvm_ocl_getOutput);
+>   DECLARE(llvm_hpvm_ocl_executeNode);
+292,294c300,302
+<   DEBUG(errs() << "Gen Code to initialize NVPTX Timer\n");
+<   Function* VI = M.getFunction("llvm.visc.init");
+<   assert(VI->getNumUses() == 1 && "__visc__init should only be used once");
+---
+>   DEBUG(errs() << "Gen Code to initialize OpenCL Timer\n");
+>   Function *VI = M.getFunction("llvm.hpvm.init");
+>   assert(VI->getNumUses() == 1 && "__hpvm__init should only be used once");
+298,306c306,314
+<   switchToTimer(visc_TimerID_INIT_CTX, InitCall);
+<   CallInst::Create(llvm_visc_ocl_initContext,
+<                    ArrayRef<Value*>(getTargetID(M, visc::GPU_TARGET)),
+<                    "", InitCall);
+<   switchToTimer(visc_TimerID_NONE, InitCall);
+< 
+<   // Insert print instruction at visc exit
+<   DEBUG(errs() << "Gen Code to print NVPTX Timer\n");
+<   Function* VC = M.getFunction("llvm.visc.cleanup");
+---
+>   switchToTimer(hpvm_TimerID_INIT_CTX, InitCall);
+>   CallInst::Create(llvm_hpvm_ocl_initContext,
+>                    ArrayRef<Value *>(getTargetID(M, hpvm::GPU_TARGET)), "",
+>                    InitCall);
+>   switchToTimer(hpvm_TimerID_NONE, InitCall);
+> 
+>   // Insert print instruction at hpvm exit
+>   DEBUG(errs() << "Gen Code to print OpenCL Timer\n");
+>   Function *VC = M.getFunction("llvm.hpvm.cleanup");
+308c316
+<   assert(VC->getNumUses() == 1 && "__visc__clear should only be used once");
+---
+>   assert(VC->getNumUses() == 1 && "__hpvm__clear should only be used once");
+312,313d319
+< 
+< 
+321c327,328
+< void CGT_NVPTX::insertRuntimeCalls(DFInternalNode* N, Kernel* K, const Twine& FileName) {
+---
+> void CGT_OpenCL::insertRuntimeCalls(DFInternalNode *N, Kernel *K,
+>                                     const Twine &FileName) {
+324c331
+< //  assert(N->getGenFunc() == NULL && "Code already generated for this node");
+---
+>   //  assert(N->getGenFunc() == NULL && "Code already generated for this node");
+326c333
+<   assert(N->getGenFuncForTarget(visc::GPU_TARGET) == NULL &&
+---
+>   assert(N->getGenFuncForTarget(hpvm::GPU_TARGET) == NULL &&
+330,331c337,338
+<   Value* True = ConstantInt::get(Type::getInt1Ty(M.getContext()), 1);
+<   Value* False = ConstantInt::get(Type::getInt1Ty(M.getContext()), 0);
+---
+>   Value *True = ConstantInt::get(Type::getInt1Ty(M.getContext()), 1);
+>   Value *False = ConstantInt::get(Type::getInt1Ty(M.getContext()), 0);
+338,339c345
+<   Function* F = N->getFuncPointer();
+< 
+---
+>   Function *F = N->getFuncPointer();
+343c349
+<   Function* F_X86;
+---
+>   Function *F_CPU;
+350c356,357
+<   F_X86 = Function::Create(F->getFunctionType(), F->getLinkage(), F->getName(), &M);
+---
+>   F_CPU =
+>       Function::Create(F->getFunctionType(), F->getLinkage(), F->getName(), &M);
+353c360
+<   Function::arg_iterator dest_iterator = F_X86->arg_begin();
+---
+>   Function::arg_iterator dest_iterator = F_CPU->arg_begin();
+362,364c369,371
+<   BasicBlock *BB = BasicBlock::Create(M.getContext(), "entry", F_X86);
+<   ReturnInst* RI = ReturnInst::Create(M.getContext(),
+<                                       UndefValue::get(F_X86->getReturnType()), BB);
+---
+>   BasicBlock *BB = BasicBlock::Create(M.getContext(), "entry", F_CPU);
+>   ReturnInst *RI = ReturnInst::Create(
+>       M.getContext(), UndefValue::get(F_CPU->getReturnType()), BB);
+367c374
+<   // for consistency purpose (DFG2LLVM_X86 does assume that all leaf nodes do
+---
+>   // for consistency purpose (DFG2LLVM_CPU does assume that all leaf nodes do
+371,372c378,379
+<   if(!N->isRoot() && !N->getParent()->isChildGraphStreaming())
+<     F_X86 = addIdxDimArgs(F_X86);
+---
+>   if (!N->isRoot() && !N->getParent()->isChildGraphStreaming())
+>     F_CPU = addIdxDimArgs(F_CPU);
+374c381
+<   BB = &*F_X86->begin();
+---
+>   BB = &*F_CPU->begin();
+377,382c384,388
+<   //Add the generated function info to DFNode
+< //  N->setGenFunc(F_X86, visc::CPU_TARGET);
+<   N->addGenFunc(F_X86, visc::GPU_TARGET, true);
+<   errs() << "Added GPUGenFunc: " << F_X86->getName() << " for node "
+<          << N->getFuncPointer()->getName() << "\n";
+< 
+---
+>   // Add the generated function info to DFNode
+>   //  N->setGenFunc(F_CPU, hpvm::CPU_TARGET);
+>   N->addGenFunc(F_CPU, hpvm::GPU_TARGET, true);
+>   DEBUG(errs() << "Added GPUGenFunc: " << F_CPU->getName() << " for node "
+>                << N->getFuncPointer()->getName() << "\n");
+385c391
+<   dest_iterator = F_X86->arg_begin();
+---
+>   dest_iterator = F_CPU->arg_begin();
+415c421,422
+<   assert(C->isDummyNode() == false && "Internal Node only contains dummy nodes!");
+---
+>   assert(C->isDummyNode() == false && "Internal Node only contains dummy
+>   nodes!");
+419c426
+<   Function* KF = K->KernelLeafNode->getFuncPointer();
+---
+>   Function *KF = K->KernelLeafNode->getFuncPointer();
+421,422c428,429
+<   //DEBUG(errs() << "Initializing context" << "\n");
+<   //CallInst::Create(llvm_visc_ocl_initContext, None, "", RI);
+---
+>   // DEBUG(errs() << "Initializing context" << "\n");
+>   // CallInst::Create(llvm_hpvm_ocl_initContext, None, "", RI);
+424c431,432
+<   DEBUG(errs() << "Initializing commandQ" << "\n");
+---
+>   DEBUG(errs() << "Initializing commandQ"
+>                << "\n");
+426,427c434,435
+<   switchToTimer(visc_TimerID_SETUP, InitCall);
+<   Value* fileStr = getStringPointer(FileName, InitCall, "Filename");
+---
+>   switchToTimer(hpvm_TimerID_SETUP, InitCall);
+>   Value *fileStr = getStringPointer(FileName, InitCall, "Filename");
+429,445c437,453
+<   DEBUG(errs() << "Generating code for kernel - " << K->KernelFunction->getName()<< "\n");
+<   Value* kernelStr = getStringPointer(K->KernelFunction->getName(), InitCall,"KernelName");
+< 
+<   Value* LaunchInstArgs[] = {fileStr, kernelStr};
+< 
+<   DEBUG(errs() << "Inserting launch call" << "\n");
+<   CallInst* NVPTX_Ctx = CallInst::Create(llvm_visc_ocl_launch,
+<                                          ArrayRef<Value*>(LaunchInstArgs, 2),
+<                                          "graph"+KF->getName(),
+<                                          InitCall);
+<   DEBUG(errs() << *NVPTX_Ctx << "\n");
+<   GraphIDAddr = new GlobalVariable(M,
+<                                    NVPTX_Ctx->getType(),
+<                                    false,
+<                                    GlobalValue::CommonLinkage,
+<                                    Constant::getNullValue(NVPTX_Ctx->getType()),
+<                                    "graph"+KF->getName()+".addr");
+---
+>   DEBUG(errs() << "Generating code for kernel - "
+>                << K->KernelFunction->getName() << "\n");
+>   Value *kernelStr =
+>       getStringPointer(K->KernelFunction->getName(), InitCall, "KernelName");
+> 
+>   Value *LaunchInstArgs[] = {fileStr, kernelStr};
+> 
+>   DEBUG(errs() << "Inserting launch call"
+>                << "\n");
+>   CallInst *OpenCL_Ctx = CallInst::Create(llvm_hpvm_ocl_launch,
+>                                           ArrayRef<Value *>(LaunchInstArgs, 2),
+>                                           "graph" + KF->getName(), InitCall);
+>   DEBUG(errs() << *OpenCL_Ctx << "\n");
+>   GraphIDAddr = new GlobalVariable(
+>       M, OpenCL_Ctx->getType(), false, GlobalValue::CommonLinkage,
+>       Constant::getNullValue(OpenCL_Ctx->getType()),
+>       "graph" + KF->getName() + ".addr");
+447c455
+<   StoreInst* SI = new StoreInst(NVPTX_Ctx, GraphIDAddr, InitCall);
+---
+>   StoreInst *SI = new StoreInst(OpenCL_Ctx, GraphIDAddr, InitCall);
+449,451c457,459
+<   switchToTimer(visc_TimerID_NONE, InitCall);
+<   switchToTimer(visc_TimerID_SETUP, RI);
+<   Value* GraphID = new LoadInst(GraphIDAddr, "graph."+KF->getName(), RI);
+---
+>   switchToTimer(hpvm_TimerID_NONE, InitCall);
+>   switchToTimer(hpvm_TimerID_SETUP, RI);
+>   Value *GraphID = new LoadInst(GraphIDAddr, "graph." + KF->getName(), RI);
+453c461
+<   // Iterate over the required input edges of the node and use the visc-rt API
+---
+>   // Iterate over the required input edges of the node and use the hpvm-rt API
+455c463
+<   DEBUG(errs() << "Iterate over input edges of node and insert visc api\n");
+---
+>   DEBUG(errs() << "Iterate over input edges of node and insert hpvm api\n");
+457,459c465,467
+<   // Vector to hold the device memory object that need to be cleared before we release
+<   // context
+<   std::vector<Value*> DevicePointers;
+---
+>   // Vector to hold the device memory object that need to be cleared before we
+>   // release context
+>   std::vector<Value *> DevicePointers;
+461c469
+<   std::map<unsigned, unsigned> kernelInArgMap = K->getInArgMap();
+---
+>   std::map<unsigned, unsigned> &kernelInArgMap = K->getInArgMap();
+466,467c474,475
+<       // node function (F_X86) to kernel (kernel->KF)
+<       Value* inputVal = getArgumentAt(F_X86, K->getInArgMap()[i]);
+---
+>       // node function (F_CPU) to kernel (kernel->KF)
+>       Value* inputVal = getArgumentAt(F_CPU, K->getInArgMap()[i]);
+471,475c479,482
+<   for(std::map<unsigned, unsigned>::iterator ib = kernelInArgMap.begin(),
+<       ie = kernelInArgMap.end(); ib != ie; ++ib) {
+<     unsigned i = ib->first;
+<     Value* inputVal = getArgumentAt(F_X86, ib->second);
+<     DEBUG(errs() << "\tArgument "<< i<< " = "  << *inputVal << "\n");
+---
+>   for (auto &InArgMapPair : kernelInArgMap) {
+>     unsigned i = InArgMapPair.first;
+>     Value *inputVal = getArgumentAt(F_CPU, InArgMapPair.second);
+>     DEBUG(errs() << "\tArgument " << i << " = " << *inputVal << "\n");
+482c489
+<     if(inputVal->getType()->isPointerTy()) {
+---
+>     if (inputVal->getType()->isPointerTy()) {
+484c491
+<       switchToTimer(visc_TimerID_COPY_PTR, RI);
+---
+>       switchToTimer(hpvm_TimerID_COPY_PTR, RI);
+487,489c494,498
+<       Value* isOutput = (hasAttribute(KF, i, Attribute::Out))? True : False;
+<       Value* isInput = ((hasAttribute(KF, i, Attribute::Out))
+<                         && !(hasAttribute(KF, i, Attribute::In)))? False : True;
+---
+>       Value *isOutput = (hasAttribute(KF, i, Attribute::Out)) ? True : False;
+>       Value *isInput = ((hasAttribute(KF, i, Attribute::Out)) &&
+>                         !(hasAttribute(KF, i, Attribute::In)))
+>                            ? False
+>                            : True;
+491,492c500,501
+<       Argument* A = getArgumentAt(KF, i);
+<       if(isOutput == True) {
+---
+>       Argument *A = getArgumentAt(KF, i);
+>       if (isOutput == True) {
+495c504
+<       if(isInput == True) {
+---
+>       if (isInput == True) {
+499,503c508,510
+< 
+<       Value* inputValI8Ptr = CastInst::CreatePointerCast(inputVal,
+<                              Type::getInt8PtrTy(M.getContext()),
+<                              inputVal->getName()+".i8ptr",
+<                              RI);
+---
+>       Value *inputValI8Ptr = CastInst::CreatePointerCast(
+>           inputVal, Type::getInt8PtrTy(M.getContext()),
+>           inputVal->getName() + ".i8ptr", RI);
+506c513
+<       assert(kernelInArgMap.find(i+1) != kernelInArgMap.end());
+---
+>       assert(kernelInArgMap.find(i + 1) != kernelInArgMap.end());
+508,519c515,528
+<       Value* inputSize = getArgumentAt(F_X86, kernelInArgMap[i+1]);
+<       assert(inputSize->getType() == Type::getInt64Ty(M.getContext())
+<              && "Pointer type input must always be followed by size (integer type)");
+<       Value* setInputArgs[] = {GraphID,
+<                                inputValI8Ptr,
+<                                ConstantInt::get(Type::getInt32Ty(M.getContext()),i),
+<                                inputSize,
+<                                isInput,
+<                                isOutput
+<                               };
+<       Value* d_ptr = CallInst::Create(llvm_visc_ocl_argument_ptr,
+<                                       ArrayRef<Value*>(setInputArgs, 6), "", RI);
+---
+>       Value *inputSize = getArgumentAt(F_CPU, kernelInArgMap[i + 1]);
+>       assert(
+>           inputSize->getType() == Type::getInt64Ty(M.getContext()) &&
+>           "Pointer type input must always be followed by size (integer type)");
+>       Value *setInputArgs[] = {
+>           GraphID,
+>           inputValI8Ptr,
+>           ConstantInt::get(Type::getInt32Ty(M.getContext()), i),
+>           inputSize,
+>           isInput,
+>           isOutput};
+>       Value *d_ptr =
+>           CallInst::Create(llvm_hpvm_ocl_argument_ptr,
+>                            ArrayRef<Value *>(setInputArgs, 6), "", RI);
+523,526c532,535
+<       if(isOutput == True) OutputPointers.push_back(OutputPtr(inputValI8Ptr, d_ptr, inputSize));
+<     }
+<     else {
+<       switchToTimer(visc_TimerID_COPY_SCALAR, RI);
+---
+>       if (isOutput == True)
+>         OutputPointers.push_back(OutputPtr(inputValI8Ptr, d_ptr, inputSize));
+>     } else {
+>       switchToTimer(hpvm_TimerID_COPY_SCALAR, RI);
+530,531c539,541
+<       AllocaInst* inputValPtr = new AllocaInst(inputVal->getType(), inputVal->getName()+".ptr", RI);
+<       StoreInst* SI = new StoreInst(inputVal, inputValPtr, RI);
+---
+>       AllocaInst *inputValPtr = new AllocaInst(
+>           inputVal->getType(), 0, inputVal->getName() + ".ptr", RI);
+>       StoreInst *SI = new StoreInst(inputVal, inputValPtr, RI);
+533,536c543,545
+<       Value* inputValI8Ptr = CastInst::CreatePointerCast(inputValPtr,
+<                              Type::getInt8PtrTy(M.getContext()),
+<                              inputVal->getName()+".i8ptr",
+<                              RI);
+---
+>       Value *inputValI8Ptr = CastInst::CreatePointerCast(
+>           inputValPtr, Type::getInt8PtrTy(M.getContext()),
+>           inputVal->getName() + ".i8ptr", RI);
+538,544c547,552
+<       Value* setInputArgs[] = {GraphID,
+<                                inputValI8Ptr,
+<                                ConstantInt::get(Type::getInt32Ty(M.getContext()),i),
+<                                ConstantExpr::getSizeOf(inputVal->getType())
+<                               };
+<       CallInst::Create(llvm_visc_ocl_argument_scalar,
+<                        ArrayRef<Value*>(setInputArgs, 4), "", RI);
+---
+>       Value *setInputArgs[] = {
+>           GraphID, inputValI8Ptr,
+>           ConstantInt::get(Type::getInt32Ty(M.getContext()), i),
+>           ConstantExpr::getSizeOf(inputVal->getType())};
+>       CallInst::Create(llvm_hpvm_ocl_argument_scalar,
+>                        ArrayRef<Value *>(setInputArgs, 4), "", RI);
+548c556,557
+<   DEBUG(errs() << "Setup shared memory arguments of node and insert visc api\n");
+---
+>   DEBUG(
+>       errs() << "Setup shared memory arguments of node and insert hpvm api\n");
+553c562
+<   for (auto& e: K->getSharedInArgMap()) {
+---
+>   for (auto &e : K->getSharedInArgMap()) {
+559c568
+<     for (auto& e: K->getSharedInArgMap()) {
+---
+>     for (auto &e : K->getSharedInArgMap()) {
+561c570
+<       Value* allocSize = e.second.first;
+---
+>       Value *allocSize = e.second.first;
+563c572,573
+<       DEBUG(errs() << "\tLocal Memory at "<< argNum << ", size = "  << *allocSize << "\n");
+---
+>       DEBUG(errs() << "\tLocal Memory at " << argNum
+>                    << ", size = " << *allocSize << "\n");
+567c577
+<         switchToTimer(visc_TimerID_COPY_SCALAR, RI);
+---
+>         switchToTimer(hpvm_TimerID_COPY_SCALAR, RI);
+569c579,580
+<         assert(isa<Constant>(allocSize) && "Constant shared memory size is expected");
+---
+>         assert(isa<Constant>(allocSize) &&
+>                "Constant shared memory size is expected");
+571,578c582,587
+<         Value* setInputArgs[] = {GraphID,
+<                                  ConstantInt::get(Type::getInt32Ty(M.getContext()),argNum),
+<                                  allocSize
+<                                 };
+<         CallInst::Create(llvm_visc_ocl_argument_shared,
+<                          ArrayRef<Value*>(setInputArgs, 3), "", RI);
+<       }
+<       else {
+---
+>         Value *setInputArgs[] = {
+>             GraphID, ConstantInt::get(Type::getInt32Ty(M.getContext()), argNum),
+>             allocSize};
+>         CallInst::Create(llvm_hpvm_ocl_argument_shared,
+>                          ArrayRef<Value *>(setInputArgs, 3), "", RI);
+>       } else {
+580c589
+<         switchToTimer(visc_TimerID_COPY_SCALAR, RI);
+---
+>         switchToTimer(hpvm_TimerID_COPY_SCALAR, RI);
+583,598c592,606
+<         AllocaInst* allocSizePtr = new AllocaInst(allocSize->getType(),
+<             allocSize->getName()+".sharedMem.ptr", RI);
+<         StoreInst* SI = new StoreInst(allocSize, allocSizePtr, RI);
+< 
+<         Value* allocSizeI8Ptr = CastInst::CreatePointerCast(allocSizePtr,
+<                                 Type::getInt8PtrTy(M.getContext()),
+<                                 allocSize->getName()+".sharedMem.i8ptr",
+<                                 RI);
+< 
+<         Value* setInputArgs[] = {GraphID,
+<                                  allocSizeI8Ptr,
+<                                  ConstantInt::get(Type::getInt32Ty(M.getContext()),argNum),
+<                                  ConstantExpr::getSizeOf(allocSize->getType())
+<                                 };
+<         CallInst::Create(llvm_visc_ocl_argument_scalar,
+<                          ArrayRef<Value*>(setInputArgs, 4), "", RI);
+---
+>         AllocaInst *allocSizePtr =
+>             new AllocaInst(allocSize->getType(), 0,
+>                            allocSize->getName() + ".sharedMem.ptr", RI);
+>         StoreInst *SI = new StoreInst(allocSize, allocSizePtr, RI);
+> 
+>         Value *allocSizeI8Ptr = CastInst::CreatePointerCast(
+>             allocSizePtr, Type::getInt8PtrTy(M.getContext()),
+>             allocSize->getName() + ".sharedMem.i8ptr", RI);
+> 
+>         Value *setInputArgs[] = {
+>             GraphID, allocSizeI8Ptr,
+>             ConstantInt::get(Type::getInt32Ty(M.getContext()), argNum),
+>             ConstantExpr::getSizeOf(allocSize->getType())};
+>         CallInst::Create(llvm_hpvm_ocl_argument_scalar,
+>                          ArrayRef<Value *>(setInputArgs, 4), "", RI);
+609c617
+<       AllocInputArgs.push_back(getArgumentAt(F_X86, K->allocInArgMap.at(i)));
+---
+>       AllocInputArgs.push_back(getArgumentAt(F_CPU, K->allocInArgMap.at(i)));
+619c627
+<     for (auto& e: K->getSharedInArgMap()) {
+---
+>     for (auto &e : K->getSharedInArgMap()) {
+621c629
+<       Value* allocSize = ExtractValueInstVec[e.second.second/2];
+---
+>       Value *allocSize = ExtractValueInstVec[e.second.second / 2];
+623c631,632
+<       DEBUG(errs() << "\tLocal Memory at "<< argNum << ", size = "  << *allocSize << "\n");
+---
+>       DEBUG(errs() << "\tLocal Memory at " << argNum
+>                    << ", size = " << *allocSize << "\n");
+627c636
+<         switchToTimer(visc_TimerID_COPY_SCALAR, RI);
+---
+>         switchToTimer(hpvm_TimerID_COPY_SCALAR, RI);
+629,636c638,643
+<         Value* setInputArgs[] = {GraphID,
+<                                  ConstantInt::get(Type::getInt32Ty(M.getContext()),argNum),
+<                                  allocSize
+<                                 };
+<         CallInst::Create(llvm_visc_ocl_argument_shared,
+<                          ArrayRef<Value*>(setInputArgs, 3), "", RI);
+<       }
+<       else {
+---
+>         Value *setInputArgs[] = {
+>             GraphID, ConstantInt::get(Type::getInt32Ty(M.getContext()), argNum),
+>             allocSize};
+>         CallInst::Create(llvm_hpvm_ocl_argument_shared,
+>                          ArrayRef<Value *>(setInputArgs, 3), "", RI);
+>       } else {
+638c645
+<         switchToTimer(visc_TimerID_COPY_SCALAR, RI);
+---
+>         switchToTimer(hpvm_TimerID_COPY_SCALAR, RI);
+641,656c648,662
+<         AllocaInst* allocSizePtr = new AllocaInst(allocSize->getType(),
+<             allocSize->getName()+".sharedMem.ptr", RI);
+<         StoreInst* SI = new StoreInst(allocSize, allocSizePtr, RI);
+< 
+<         Value* allocSizeI8Ptr = CastInst::CreatePointerCast(allocSizePtr,
+<                                 Type::getInt8PtrTy(M.getContext()),
+<                                 allocSize->getName()+".sharedMem.i8ptr",
+<                                 RI);
+< 
+<         Value* setInputArgs[] = {GraphID,
+<                                  allocSizeI8Ptr,
+<                                  ConstantInt::get(Type::getInt32Ty(M.getContext()),argNum),
+<                                  ConstantExpr::getSizeOf(allocSize->getType())
+<                                 };
+<         CallInst::Create(llvm_visc_ocl_argument_scalar,
+<                          ArrayRef<Value*>(setInputArgs, 4), "", RI);
+---
+>         AllocaInst *allocSizePtr =
+>             new AllocaInst(allocSize->getType(), 0,
+>                            allocSize->getName() + ".sharedMem.ptr", RI);
+>         StoreInst *SI = new StoreInst(allocSize, allocSizePtr, RI);
+> 
+>         Value *allocSizeI8Ptr = CastInst::CreatePointerCast(
+>             allocSizePtr, Type::getInt8PtrTy(M.getContext()),
+>             allocSize->getName() + ".sharedMem.i8ptr", RI);
+> 
+>         Value *setInputArgs[] = {
+>             GraphID, allocSizeI8Ptr,
+>             ConstantInt::get(Type::getInt32Ty(M.getContext()), argNum),
+>             ConstantExpr::getSizeOf(allocSize->getType())};
+>         CallInst::Create(llvm_hpvm_ocl_argument_scalar,
+>                          ArrayRef<Value *>(setInputArgs, 4), "", RI);
+661,662c667
+< 
+<   DEBUG(errs() << "Setup output edges of node and insert visc api\n");
+---
+>   DEBUG(errs() << "Setup output edges of node and insert hpvm api\n");
+664,667c669,672
+<   StructType* OutputTy = K->KernelLeafNode->getOutputType();
+<   std::vector<Value*> d_Outputs;
+<   if(!OutputTy->isEmptyTy()) {
+<     switchToTimer(visc_TimerID_COPY_PTR, RI);
+---
+>   StructType *OutputTy = K->KernelLeafNode->getOutputType();
+>   std::vector<Value *> d_Outputs;
+>   if (!OutputTy->isEmptyTy()) {
+>     switchToTimer(hpvm_TimerID_COPY_PTR, RI);
+670,680c675,684
+<     for(unsigned i=0; i < OutputTy->getNumElements(); i++) {
+<       unsigned outputIndex = KF->getFunctionType()->getNumParams()+i;
+<       Value* setOutputArgs[] = {GraphID,
+<                                 ConstantInt::get(Type::getInt32Ty(M.getContext()),outputIndex),
+<                                 ConstantExpr::getSizeOf(OutputTy->getElementType(i))
+<                                };
+< 
+<       CallInst* d_Output = CallInst::Create(llvm_visc_ocl_output_ptr,
+<                                             ArrayRef<Value*>(setOutputArgs, 3),
+<                                             "d_output."+KF->getName(),
+<                                             RI);
+---
+>     for (unsigned i = 0; i < OutputTy->getNumElements(); i++) {
+>       unsigned outputIndex = KF->getFunctionType()->getNumParams() + i;
+>       Value *setOutputArgs[] = {
+>           GraphID,
+>           ConstantInt::get(Type::getInt32Ty(M.getContext()), outputIndex),
+>           ConstantExpr::getSizeOf(OutputTy->getElementType(i))};
+> 
+>       CallInst *d_Output = CallInst::Create(llvm_hpvm_ocl_output_ptr,
+>                                             ArrayRef<Value *>(setOutputArgs, 3),
+>                                             "d_output." + KF->getName(), RI);
+690c694
+<   switchToTimer(visc_TimerID_MISC, RI);
+---
+>   switchToTimer(hpvm_TimerID_MISC, RI);
+693,702c697,701
+<   switchToTimer(visc_TimerID_KERNEL, RI);
+<   Value* ExecNodeArgs[] = {GraphID,
+<                            workDim,
+<                            LocalWGPtr,
+<                            GlobalWGPtr
+<                           };
+<   CallInst* Event = CallInst::Create(llvm_visc_ocl_executeNode,
+<                                      ArrayRef<Value*>(ExecNodeArgs, 4),
+<                                      "event."+KF->getName(),
+<                                      RI);
+---
+>   switchToTimer(hpvm_TimerID_KERNEL, RI);
+>   Value *ExecNodeArgs[] = {GraphID, workDim, LocalWGPtr, GlobalWGPtr};
+>   CallInst *Event = CallInst::Create(llvm_hpvm_ocl_executeNode,
+>                                      ArrayRef<Value *>(ExecNodeArgs, 4),
+>                                      "event." + KF->getName(), RI);
+706,709c705
+<   CallInst::Create(llvm_visc_ocl_wait,
+<                    ArrayRef<Value*>(GraphID),
+<                    "",
+<                    RI);
+---
+>   CallInst::Create(llvm_hpvm_ocl_wait, ArrayRef<Value *>(GraphID), "", RI);
+711c707
+<   switchToTimer(visc_TimerID_READ_OUTPUT, RI);
+---
+>   switchToTimer(hpvm_TimerID_READ_OUTPUT, RI);
+713,725c709,718
+<   if(!OutputTy->isEmptyTy()) {
+<     std::vector<Value*>h_Outputs;
+<     Value* KernelOutput = UndefValue::get(OutputTy);
+<     for(unsigned i=0; i < OutputTy->getNumElements(); i++) {
+<       Value* GetOutputArgs[] = {GraphID,
+<                                 Constant::getNullValue(Type::getInt8PtrTy(M.getContext())),
+<                                 d_Outputs[i],
+<                                 ConstantExpr::getSizeOf(OutputTy->getElementType(i))
+<                                };
+<       CallInst* h_Output = CallInst::Create(llvm_visc_ocl_getOutput,
+<                                             ArrayRef<Value*>(GetOutputArgs, 4),
+<                                             "h_output."+KF->getName()+".addr",
+<                                             RI);
+---
+>   if (!OutputTy->isEmptyTy()) {
+>     std::vector<Value *> h_Outputs;
+>     Value *KernelOutput = UndefValue::get(OutputTy);
+>     for (unsigned i = 0; i < OutputTy->getNumElements(); i++) {
+>       Value *GetOutputArgs[] = {
+>           GraphID, Constant::getNullValue(Type::getInt8PtrTy(M.getContext())),
+>           d_Outputs[i], ConstantExpr::getSizeOf(OutputTy->getElementType(i))};
+>       CallInst *h_Output = CallInst::Create(
+>           llvm_hpvm_ocl_getOutput, ArrayRef<Value *>(GetOutputArgs, 4),
+>           "h_output." + KF->getName() + ".addr", RI);
+728,733c721,728
+<       CastInst* BI = BitCastInst::CreatePointerCast(h_Output,
+<                      OutputTy->getElementType(i)->getPointerTo(), "output.ptr", RI);
+< 
+<       Value* OutputElement = new LoadInst(BI, "output."+KF->getName(), RI);
+<       KernelOutput = InsertValueInst::Create(KernelOutput, OutputElement, ArrayRef<unsigned>(i),
+<                                              KF->getName()+"output", RI);
+---
+>       CastInst *BI = BitCastInst::CreatePointerCast(
+>           h_Output, OutputTy->getElementType(i)->getPointerTo(), "output.ptr",
+>           RI);
+> 
+>       Value *OutputElement = new LoadInst(BI, "output." + KF->getName(), RI);
+>       KernelOutput = InsertValueInst::Create(KernelOutput, OutputElement,
+>                                              ArrayRef<unsigned>(i),
+>                                              KF->getName() + "output", RI);
+748,749c743,744
+<     Value* GetOutputArgs[] = {GraphID, output.h_ptr, output.d_ptr, output.bytes};
+<     CallInst* CI = CallInst::Create(llvm_visc_ocl_getOutput,
+---
+>     Value* GetOutputArgs[] = {GraphID, output.h_ptr, output.d_ptr,
+>   output.bytes}; CallInst* CI = CallInst::Create(llvm_hpvm_ocl_getOutput,
+753c748
+<   switchToTimer(visc_TimerID_MEM_FREE, RI);
+---
+>   switchToTimer(hpvm_TimerID_MEM_FREE, RI);
+755c750,751
+<   DEBUG(errs() << "Clearing context" << "\n");
+---
+>   DEBUG(errs() << "Clearing context"
+>                << "\n");
+757,758c753,754
+<   for(auto d_ptr: DevicePointers) {
+<     CallInst::Create(llvm_visc_ocl_free, ArrayRef<Value*>(d_ptr), "", RI);
+---
+>   for (auto d_ptr : DevicePointers) {
+>     CallInst::Create(llvm_hpvm_ocl_free, ArrayRef<Value *>(d_ptr), "", RI);
+760c756
+<   switchToTimer(visc_TimerID_CLEAR_CTX, CleanupCall);
+---
+>   switchToTimer(hpvm_TimerID_CLEAR_CTX, CleanupCall);
+762,764c758,761
+<   LoadInst* LI = new LoadInst(GraphIDAddr, "", CleanupCall);
+<   CallInst::Create(llvm_visc_ocl_clearContext, ArrayRef<Value*>(LI), "", CleanupCall);
+<   switchToTimer(visc_TimerID_NONE, CleanupCall);
+---
+>   LoadInst *LI = new LoadInst(GraphIDAddr, "", CleanupCall);
+>   CallInst::Create(llvm_hpvm_ocl_clearContext, ArrayRef<Value *>(LI), "",
+>                    CleanupCall);
+>   switchToTimer(hpvm_TimerID_NONE, CleanupCall);
+766c763
+<   switchToTimer(visc_TimerID_MISC, RI);
+---
+>   switchToTimer(hpvm_TimerID_MISC, RI);
+770c767
+<   DFNode* C = N->getChildGraph()->getExit();
+---
+>   DFNode *C = N->getChildGraph()->getExit();
+772,773c769,770
+<   StructType* OutTy = N->getOutputType();
+<   Value *retVal = UndefValue::get(F_X86->getReturnType());
+---
+>   StructType *OutTy = N->getOutputType();
+>   Value *retVal = UndefValue::get(F_CPU->getReturnType());
+777c774
+<   for (unsigned i=0; i < OutTy->getNumElements(); i++) {
+---
+>   for (unsigned i = 0; i < OutTy->getNumElements(); i++) {
+780c777
+<     DFEdge* E = C->getInDFEdgeAt(i);
+---
+>     DFEdge *E = C->getInDFEdgeAt(i);
+784c781
+<     DFNode* SrcDF = E->getSourceDF();
+---
+>     DFNode *SrcDF = E->getSourceDF();
+786c783,784
+<     DEBUG(errs() << "Edge source -- " <<  SrcDF->getFuncPointer()->getName() << "\n");
+---
+>     DEBUG(errs() << "Edge source -- " << SrcDF->getFuncPointer()->getName()
+>                  << "\n");
+790,795c788,792
+<     Value* inputVal;
+<     if(SrcDF->isEntryNode()) {
+<       inputVal = getArgumentAt(F_X86, i);
+<       DEBUG(errs() << "Argument "<< i<< " = "  << *inputVal << "\n");
+<     }
+<     else {
+---
+>     Value *inputVal;
+>     if (SrcDF->isEntryNode()) {
+>       inputVal = getArgumentAt(F_CPU, i);
+>       DEBUG(errs() << "Argument " << i << " = " << *inputVal << "\n");
+>     } else {
+802,803c799,800
+<       assert(OutputMap.count(SrcDF)
+<              && "Source node call not found. Dependency violation!");
+---
+>       assert(OutputMap.count(SrcDF) &&
+>              "Source node call not found. Dependency violation!");
+806c803
+<       Value* CI = OutputMap[SrcDF];
+---
+>       Value *CI = OutputMap[SrcDF];
+812c809
+< //      IndexList.push_back(E->getSourcePosition());
+---
+>       //      IndexList.push_back(E->getSourcePosition());
+814,816c811,812
+<       DEBUG(errs() << "Going to generate ExtarctVal inst from "<< *CI <<"\n");
+<       ExtractValueInst* EI = ExtractValueInst::Create(CI, IndexList,
+<                              "",RI);
+---
+>       DEBUG(errs() << "Going to generate ExtarctVal inst from " << *CI << "\n");
+>       ExtractValueInst *EI = ExtractValueInst::Create(CI, IndexList, "", RI);
+825c821
+<   switchToTimer(visc_TimerID_NONE, RI);
+---
+>   switchToTimer(hpvm_TimerID_NONE, RI);
+827c823
+<   ReturnInst* newRI = ReturnInst::Create(F_X86->getContext(), retVal);
+---
+>   ReturnInst *newRI = ReturnInst::Create(F_CPU->getContext(), retVal);
+831d826
+< 
+834,837c829,833
+< void CGT_NVPTX::codeGen(DFInternalNode* N) {
+<   errs () << "Inside internal node: " << N->getFuncPointer()->getName() << "\n";
+<   if(KernelLaunchNode == NULL)
+<     errs () << "No kernel launch node\n";
+---
+> void CGT_OpenCL::codeGen(DFInternalNode *N) {
+>   DEBUG(errs() << "Inside internal node: " << N->getFuncPointer()->getName()
+>                << "\n");
+>   if (KernelLaunchNode == NULL)
+>     DEBUG(errs() << "No kernel launch node\n");
+839c835,836
+<     errs() << "KernelLaunchNode: " << KernelLaunchNode->getFuncPointer()->getName() << "\n";
+---
+>     DEBUG(errs() << "KernelLaunchNode: "
+>                  << KernelLaunchNode->getFuncPointer()->getName() << "\n");
+843c840,841
+<     DEBUG(errs() << "No code generated (host code for kernel launch complete).\n");
+---
+>     DEBUG(errs()
+>           << "No code generated (host code for kernel launch complete).\n");
+849c847
+<     //TODO
+---
+>     // TODO
+864c862,863
+<     for (std::map<unsigned, unsigned>::iterator ib = inmap2.begin(), ie = inmap2.end();
+---
+>     for (std::map<unsigned, unsigned>::iterator ib = inmap2.begin(),
+>                                                 ie = inmap2.end();
+881,882c880,882
+<     // For now, it reasonable to assume that all the kernel arguments are returned,
+<     // maybe plys some others from other nodes, thus outmap2.size() <= outmap1.size()
+---
+>     // For now, it reasonable to assume that all the kernel arguments are
+>     // returned, maybe plys some others from other nodes, thus outmap2.size() <=
+>     // outmap1.size()
+890,892c890,892
+<     // function. Since Internal node would no longer exist, we need to insert the
+<     // localWGSize with values from the parent of N.
+<     std::vector<Value*> localWGSizeMapped;
+---
+>     // function. Since Internal node would no longer exist, we need to insert
+>     // the localWGSize with values from the parent of N.
+>     std::vector<Value *> localWGSizeMapped;
+897,898c897
+<       }
+<       else if (Argument* Arg = dyn_cast<Argument>(kernel->localWGSize[i])) {
+---
+>       } else if (Argument *Arg = dyn_cast<Argument>(kernel->localWGSize[i])) {
+908c907,908
+<         Argument* A = getArgumentAt(N->getParent()->getFuncPointer(), parentArgNum);
+---
+>         Argument *A =
+>             getArgumentAt(N->getParent()->getFuncPointer(), parentArgNum);
+910,912c910,913
+<       }
+<       else {
+<         assert(false && "LocalWGsize using value which is neither argument nor constant!");
+---
+>       } else {
+>         assert(
+>             false &&
+>             "LocalWGsize using value which is neither argument nor constant!");
+918d918
+< 
+921,922c921,923
+< void CGT_NVPTX::codeGen(DFLeafNode* N) {
+<   errs () << "Inside leaf node: " << N->getFuncPointer()->getName() << "\n";
+---
+> void CGT_OpenCL::codeGen(DFLeafNode *N) {
+>   DEBUG(errs() << "Inside leaf node: " << N->getFuncPointer()->getName()
+>                << "\n");
+925c926
+<   if(N->isDummyNode()) {
+---
+>   if (N->isDummyNode()) {
+931c932
+<   if(N->isAllocationNode()) {
+---
+>   if (N->isAllocationNode()) {
+937,942c938,944
+< //  if(!checkPreferredTarget(N, visc::GPU_TARGET)) {
+< //    errs() << "Skipping node: "<< N->getFuncPointer()->getName() << "\n";
+< //    return;
+< //  }
+<   if(!preferredTargetIncludes(N, visc::GPU_TARGET)) {
+<     errs() << "Skipping node: "<< N->getFuncPointer()->getName() << "\n";
+---
+>   //  if(!checkPreferredTarget(N, hpvm::GPU_TARGET)) {
+>   //    errs() << "Skipping node: "<< N->getFuncPointer()->getName() << "\n";
+>   //    return;
+>   //  }
+>   if (!preferredTargetIncludes(N, hpvm::GPU_TARGET)) {
+>     DEBUG(errs() << "Skipping node: " << N->getFuncPointer()->getName()
+>                  << "\n");
+947c949
+<   DFNode* PNode = N->getParent();
+---
+>   DFNode *PNode = N->getParent();
+955,958c957,966
+<   errs() << "pLevel = " << pLevel << "\n";
+<   errs() << "pReplFactor = " << pReplFactor << "\n";
+<   if (!pLevel || !pReplFactor) {
+<     errs() << "*************** Kernel Gen: 1-Level Hierarchy **************\n";
+---
+>   DEBUG(errs() << "pLevel = " << pLevel << "\n");
+>   DEBUG(errs() << "pReplFactor = " << pReplFactor << "\n");
+>   assert((pLevel > 0) && "Root not allowed to be chosen as Kernel Node.");
+> 
+>   // Only these options are supported
+>   enum XLevelHierarchy { ONE_LEVEL, TWO_LEVEL } SelectedHierarchy;
+>   if (pLevel == 1 || !pReplFactor) {
+>     DEBUG(errs()
+>           << "*************** Kernel Gen: 1-Level Hierarchy **************\n");
+>     SelectedHierarchy = ONE_LEVEL;
+960,968c968,970
+<     kernel = new Kernel(NULL,
+<                         N,
+<                         N->getInArgMap(),
+<                         N->getSharedInArgMap(),
+<                         N->getOutArgMap(),
+<                         N->getNumOfDim(),
+<                         N->getDimLimits());
+<   }
+<   else {
+---
+>     kernel = new Kernel(NULL, N, N->getInArgMap(), N->getSharedInArgMap(),
+>                         N->getOutArgMap(), N->getNumOfDim(), N->getDimLimits());
+>   } else {
+970c972,976
+<     errs() << "*************** Kernel Gen: 2-Level Hierarchy **************\n";
+---
+>     DEBUG(errs()
+>           << "*************** Kernel Gen: 2-Level Hierarchy **************\n");
+>     assert((pLevel >= 2) &&
+>            "Selected node not nested deep enough to be Kernel Node.");
+>     SelectedHierarchy = TWO_LEVEL;
+972c978,979
+<     assert((PNode->getNumOfDim() == N->getNumOfDim()) && "Dimension number must match");
+---
+>     assert((PNode->getNumOfDim() == N->getNumOfDim()) &&
+>            "Dimension number must match");
+974,976c981,983
+<     kernel = new Kernel(NULL,                 // kernel function
+<                         N,                    // kernel leaf node
+<                         N->getInArgMap(),     // kenel argument mapping
+---
+>     kernel = new Kernel(NULL,             // kernel function
+>                         N,                // kernel leaf node
+>                         N->getInArgMap(), // kenel argument mapping
+978,983c985,990
+<                         N->getOutArgMap(),    // kernel output mapping from the leaf to the interemediate node
+<                         PNode->getNumOfDim(), // gridDim
+<                         PNode->getDimLimits(),// grid size
+<                         N->getNumOfDim(),     // blockDim
+<                         N->getDimLimits());   // block size
+< 
+---
+>                         N->getOutArgMap(),     // kernel output mapping from the
+>                                                // leaf to the interemediate node
+>                         PNode->getNumOfDim(),  // gridDim
+>                         PNode->getDimLimits(), // grid size
+>                         N->getNumOfDim(),      // blockDim
+>                         N->getDimLimits());    // block size
+986c993
+<   std::vector<IntrinsicInst *> IItoRemove;
+---
+>   std::vector<Instruction *> IItoRemove;
+995,996c1002,1003
+< //  Function *F_nvptx = N->getGenFunc();
+<   Function *F_nvptx = N->getGenFuncForTarget(visc::GPU_TARGET);
+---
+>   //  Function *F_opencl = N->getGenFunc();
+>   Function *F_opencl = N->getGenFuncForTarget(hpvm::GPU_TARGET);
+998c1005,1006
+<   assert(F_nvptx == NULL && "Error: Visiting a node for which code already generated");
+---
+>   assert(F_opencl == NULL &&
+>          "Error: Visiting a node for which code already generated");
+1001a1010,1011
+>   // F_opencl->setName(FName+"_opencl");
+> 
+1003,1006c1013,1016
+<   F_nvptx = CloneFunction(F, VMap);
+<   F_nvptx->setName(FName+"_nvptx");
+< //  errs() << "Old Function Name: " << F->getName() << "\n";
+< //  errs() << "New Function Name: " << F_nvptx->getName() << "\n";
+---
+>   StringRef fStr = FName.getSingleStringRef();
+>   Twine newFName = Twine(fStr, "_opencl");
+>   F_opencl = CloneFunction(F, VMap);
+>   F_opencl->setName(newFName);
+1008c1018,1019
+<   F_nvptx->removeFromParent();
+---
+>   //  errs() << "Old Function Name: " << F->getName() << "\n";
+>   //  errs() << "New Function Name: " << F_opencl->getName() << "\n";
+1009a1021
+>   F_opencl->removeFromParent();
+1012,1013c1024
+<   KernelM->getFunctionList().push_back(F_nvptx);
+< 
+---
+>   KernelM->getFunctionList().push_back(F_opencl);
+1015,1018c1026,1029
+<   //TODO: Iterate over all the instructions of F_nvptx and identify the
+<   //callees and clone them into this module.
+<   DEBUG(errs() << *F_nvptx->getType());
+<   DEBUG(errs() << *F_nvptx);
+---
+>   // TODO: Iterate over all the instructions of F_opencl and identify the
+>   // callees and clone them into this module.
+>   DEBUG(errs() << *F_opencl->getType());
+>   DEBUG(errs() << *F_opencl);
+1022,1030c1033
+<   F_nvptx = transformFunctionToVoid(F_nvptx);
+<   
+<   //Add generated function info to DFNode
+< //  N->setGenFunc(F_nvptx, visc::GPU_TARGET);
+<   N->addGenFunc(F_nvptx, visc::GPU_TARGET, false);
+< 
+<   DEBUG(errs() << "Removing all attributes from Kernel Function and adding nounwind\n");
+<   F_nvptx->removeAttributes(AttributeSet::FunctionIndex, F_nvptx->getAttributes().getFnAttributes());
+<   F_nvptx->addAttribute(AttributeSet::FunctionIndex, Attribute::NoUnwind);
+---
+>   F_opencl = transformFunctionToVoid(F_opencl);
+1032c1035,1046
+<   //FIXME: For now, assume only one allocation node
+---
+>   // Add generated function info to DFNode
+>   //  N->setGenFunc(F_opencl, hpvm::GPU_TARGET);
+>   N->addGenFunc(F_opencl, hpvm::GPU_TARGET, false);
+> 
+>   DEBUG(
+>       errs()
+>       << "Removing all attributes from Kernel Function and adding nounwind\n");
+>   F_opencl->removeAttributes(AttributeList::FunctionIndex,
+>                              F_opencl->getAttributes().getFnAttributes());
+>   F_opencl->addAttribute(AttributeList::FunctionIndex, Attribute::NoUnwind);
+> 
+>   // FIXME: For now, assume only one allocation node
+1035c1049,1050
+<   for (DFNode::const_indfedge_iterator ieb = N->indfedge_begin(), iee = N->indfedge_end();
+---
+>   for (DFNode::const_indfedge_iterator ieb = N->indfedge_begin(),
+>                                        iee = N->indfedge_end();
+1038c1053,1054
+<     DEBUG(errs() << "Found edge from node: " << " " << SrcDFNode->getFuncPointer()->getName() << "\n");
+---
+>     DEBUG(errs() << "Found edge from node: "
+>                  << " " << SrcDFNode->getFuncPointer()->getName() << "\n");
+1040c1056,1057
+<     DEBUG(errs() << "isAllocationNode = "<< SrcDFNode->isAllocationNode() << "\n");
+---
+>     DEBUG(errs() << "isAllocationNode = " << SrcDFNode->isAllocationNode()
+>                  << "\n");
+1054d1070
+< 
+1056,1057c1072,1074
+<     Function *F_alloc = CloneFunction(kernel->AllocationNode->getFuncPointer(), VMap);
+<     //F_alloc->removeFromParent();
+---
+>     Function *F_alloc =
+>         CloneFunction(kernel->AllocationNode->getFuncPointer(), VMap);
+>     // F_alloc->removeFromParent();
+1059c1076
+<     //M.getFunctionList().push_back(F_alloc);
+---
+>     // M.getFunctionList().push_back(F_alloc);
+1061,1062c1078,1079
+<     std::vector<IntrinsicInst *> ViscMallocInstVec;
+<     findIntrinsicInst(F_alloc, Intrinsic::visc_malloc, ViscMallocInstVec);
+---
+>     std::vector<IntrinsicInst *> HPVMMallocInstVec;
+>     findIntrinsicInst(F_alloc, Intrinsic::hpvm_malloc, HPVMMallocInstVec);
+1064,1067c1081,1085
+<     for (unsigned i = 0; i < ViscMallocInstVec.size(); i++) {
+<       IntrinsicInst *II = ViscMallocInstVec[i];
+<       assert(II->hasOneUse() && "visc_malloc result is used more than once");
+<       II->replaceAllUsesWith(ConstantPointerNull::get(Type::getInt8PtrTy(M.getContext())));
+---
+>     for (unsigned i = 0; i < HPVMMallocInstVec.size(); i++) {
+>       IntrinsicInst *II = HPVMMallocInstVec[i];
+>       assert(II->hasOneUse() && "hpvm_malloc result is used more than once");
+>       II->replaceAllUsesWith(
+>           ConstantPointerNull::get(Type::getInt8PtrTy(M.getContext())));
+1082,1085c1100,1105
+<     std::map<unsigned, std::pair<Value*, unsigned> > sharedInMap = kernel->getSharedInArgMap();
+<     AllocationNodeProperty* APN =
+<       (AllocationNodeProperty*) kernel->AllocationNode->getProperty(DFNode::Allocation);
+<     for (auto& AllocPair: APN->getAllocationList()) {
+---
+>     std::map<unsigned, std::pair<Value *, unsigned>> sharedInMap =
+>         kernel->getSharedInArgMap();
+>     AllocationNodeProperty *APN =
+>         (AllocationNodeProperty *)kernel->AllocationNode->getProperty(
+>             DFNode::Allocation);
+>     for (auto &AllocPair : APN->getAllocationList()) {
+1089,1090c1109,1112
+<       sharedInMap[destPos] = std::pair<Value *, unsigned>(AllocPair.second, srcPos+1);
+<       sharedInMap[destPos+1] = std::pair<Value *, unsigned>(AllocPair.second, srcPos+1);
+---
+>       sharedInMap[destPos] =
+>           std::pair<Value *, unsigned>(AllocPair.second, srcPos + 1);
+>       sharedInMap[destPos + 1] =
+>           std::pair<Value *, unsigned>(AllocPair.second, srcPos + 1);
+1100,1104c1122,1129
+<   for(auto& Arg: F_nvptx->getArgumentList()) {
+<     if (Arg.getType()->isPointerTy()) {
+<       // If the arguement is already chosen for shared memory arguemnt list, skip.
+<       // Else put it in Global memory arguement list
+<       if(std::count(SharedMemArgs.begin(), SharedMemArgs.end(), argIndex) == 0) {
+---
+>   for (Function::arg_iterator ai = F_opencl->arg_begin(),
+>                               ae = F_opencl->arg_end();
+>        ai != ae; ++ai) {
+>     if (ai->getType()->isPointerTy()) {
+>       // If the arguement is already chosen for shared memory arguemnt list,
+>       // skip. Else put it in Global memory arguement list
+>       if (std::count(SharedMemArgs.begin(), SharedMemArgs.end(), argIndex) ==
+>           0) {
+1118,1122c1143,1144
+<   std::vector<unsigned> ConstantMemArgs = globalToConstantMemoryOpt(&GlobalMemArgs, F_nvptx);
+< 
+<   F_nvptx = changeArgAddrspace(F_nvptx, ConstantMemArgs, CONSTANT_ADDRSPACE);
+<   F_nvptx = changeArgAddrspace(F_nvptx, SharedMemArgs, SHARED_ADDRSPACE);
+<   F_nvptx = changeArgAddrspace(F_nvptx, GlobalMemArgs, GLOBAL_ADDRSPACE);
+---
+>   std::vector<unsigned> ConstantMemArgs =
+>       globalToConstantMemoryOpt(&GlobalMemArgs, F_opencl);
+1123a1146,1176
+>   F_opencl = changeArgAddrspace(F_opencl, ConstantMemArgs, GLOBAL_ADDRSPACE);
+>   F_opencl = changeArgAddrspace(F_opencl, SharedMemArgs, SHARED_ADDRSPACE);
+>   F_opencl = changeArgAddrspace(F_opencl, GlobalMemArgs, GLOBAL_ADDRSPACE);
+> 
+>   // Function to replace call instructions to functions in the kernel
+>   std::map<Function *, Function *> OrgToClonedFuncMap;
+>   std::vector<Function *> FuncToBeRemoved;
+>   auto CloneAndReplaceCall = [&](CallInst *CI, Function *OrgFunc) {
+>     Function *NewFunc;
+>     // Check if the called function has already been cloned before.
+>     auto It = OrgToClonedFuncMap.find(OrgFunc);
+>     if (It == OrgToClonedFuncMap.end()) {
+>       ValueToValueMapTy VMap;
+>       NewFunc = CloneFunction(OrgFunc, VMap);
+>       OrgToClonedFuncMap[OrgFunc] = NewFunc;
+>       FuncToBeRemoved.push_back(NewFunc);
+>     } else {
+>       NewFunc = (*It).second;
+>     }
+>     // Replace the calls to this function
+>     std::vector<Value *> args;
+>     for (unsigned i = 0; i < CI->getNumArgOperands(); i++) {
+>       args.push_back(CI->getArgOperand(i));
+>     }
+>     CallInst *Inst = CallInst::Create(
+>         NewFunc, args,
+>         OrgFunc->getReturnType()->isVoidTy() ? "" : CI->getName(), CI);
+>     CI->replaceAllUsesWith(Inst);
+>     IItoRemove.push_back(CI);
+>     return NewFunc;
+>   };
+1126c1179,1180
+<   for (inst_iterator i = inst_begin(F_nvptx), e = inst_end(F_nvptx); i != e; ++i) {
+---
+>   for (inst_iterator i = inst_begin(F_opencl), e = inst_end(F_opencl); i != e;
+>        ++i) {
+1128,1135c1182,1191
+<     // Leaf nodes should not contain VISC graph intrinsics or launch
+<     assert(!BuildDFG::isViscLaunchIntrinsic(I) && "Launch intrinsic within a dataflow graph!");
+<     assert(!BuildDFG::isViscGraphIntrinsic(I) && "VISC graph intrinsic within a leaf dataflow node!");
+< 
+<     if (BuildDFG::isViscIntrinsic(I)) {
+<       IntrinsicInst* II = dyn_cast<IntrinsicInst>(I);
+<       IntrinsicInst* ArgII;
+<       DFNode* ArgDFNode;
+---
+>     // Leaf nodes should not contain HPVM graph intrinsics or launch
+>     assert(!BuildDFG::isHPVMLaunchIntrinsic(I) &&
+>            "Launch intrinsic within a dataflow graph!");
+>     assert(!BuildDFG::isHPVMGraphIntrinsic(I) &&
+>            "HPVM graph intrinsic within a leaf dataflow node!");
+> 
+>     if (BuildDFG::isHPVMIntrinsic(I)) {
+>       IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
+>       IntrinsicInst *ArgII;
+>       DFNode *ArgDFNode;
+1137c1193,1194
+<       /************************ Handle VISC Query intrinsics ************************/
+---
+>       /************************ Handle HPVM Query intrinsics
+>        * ************************/
+1140,1142c1197,1200
+<       /**************************** llvm.visc.getNode() *****************************/
+<       case Intrinsic::visc_getNode: {
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling getNode\n");
+---
+>       /**************************** llvm.hpvm.getNode()
+>        * *****************************/
+>       case Intrinsic::hpvm_getNode: {
+>         DEBUG(errs() << F_opencl->getName() << "\t: Handling getNode\n");
+1146,1150c1204,1208
+<       }
+<       break;
+<       /************************* llvm.visc.getParentNode() **************************/
+<       case Intrinsic::visc_getParentNode: {
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling getParentNode\n");
+---
+>       } break;
+>       /************************* llvm.hpvm.getParentNode()
+>        * **************************/
+>       case Intrinsic::hpvm_getParentNode: {
+>         DEBUG(errs() << F_opencl->getName() << "\t: Handling getParentNode\n");
+1162,1166c1220,1224
+<       }
+<       break;
+<       /*************************** llvm.visc.getNumDims() ***************************/
+<       case Intrinsic::visc_getNumDims: {
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling getNumDims\n");
+---
+>       } break;
+>       /*************************** llvm.hpvm.getNumDims()
+>        * ***************************/
+>       case Intrinsic::hpvm_getNumDims: {
+>         DEBUG(errs() << F_opencl->getName() << "\t: Handling getNumDims\n");
+1173,1174c1231,1233
+<         IntegerType* IntTy = Type::getInt32Ty(KernelM->getContext());
+<         ConstantInt* numOfDimConstant = ConstantInt::getSigned(IntTy, (int64_t) numOfDim);
+---
+>         IntegerType *IntTy = Type::getInt32Ty(KernelM->getContext());
+>         ConstantInt *numOfDimConstant =
+>             ConstantInt::getSigned(IntTy, (int64_t)numOfDim);
+1180,1186c1239,1247
+<       }
+<       break;
+<       /*********************** llvm.visc.getNodeInstanceID() ************************/
+<       case Intrinsic::visc_getNodeInstanceID_x:
+<       case Intrinsic::visc_getNodeInstanceID_y:
+<       case Intrinsic::visc_getNodeInstanceID_z: {
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling getNodeInstanceID\n" << "\t: " << *II << "\n");
+---
+>       } break;
+>       /*********************** llvm.hpvm.getNodeInstanceID()
+>        * ************************/
+>       case Intrinsic::hpvm_getNodeInstanceID_x:
+>       case Intrinsic::hpvm_getNodeInstanceID_y:
+>       case Intrinsic::hpvm_getNodeInstanceID_z: {
+>         DEBUG(errs() << F_opencl->getName()
+>                      << "\t: Handling getNodeInstanceID\n"
+>                      << "\t: " << *II << "\n");
+1191c1252
+<         DFNode* ParentDFNode = ArgDFNode->getParent();
+---
+>         DFNode *ParentDFNode = ArgDFNode->getParent();
+1197,1199c1258,1260
+<         uint64_t dim = II->getIntrinsicID() -
+<                        Intrinsic::visc_getNodeInstanceID_x;
+<         assert((dim >= 0) && (dim < 3) && "Invalid dimension argument");
+---
+>         uint64_t dim =
+>             II->getIntrinsicID() - Intrinsic::hpvm_getNodeInstanceID_x;
+>         assert((dim < 3) && "Invalid dimension argument");
+1203,1205c1264,1266
+<         ConstantInt * DimConstant =
+<           ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), dim);
+<         //ArrayRef<Value *> Args(DimConstant);
+---
+>         ConstantInt *DimConstant =
+>             ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), dim);
+>         // ArrayRef<Value *> Args(DimConstant);
+1208,1218c1269,1274
+<         Function * OpenCLFunction;
+<         int parentLevel = N->getParent()->getLevel();
+<         int parentReplFactor = N->getParent()->getNumOfDim();
+<         DEBUG(errs() << "Parent Level = " << parentLevel << "\n");
+<         DEBUG(errs() << "Parent Repl factor = " << parentReplFactor << "\n");
+< 
+<         FunctionType* FT =
+<           FunctionType::get(Type::getInt64Ty(KernelM->getContext()),
+<                             Type::getInt32Ty(KernelM->getContext()),
+<                             false);
+<         if ((!parentLevel || !parentReplFactor) && ArgDFNode == N) {
+---
+>         Function *OpenCLFunction;
+> 
+>         FunctionType *FT =
+>             FunctionType::get(Type::getInt64Ty(KernelM->getContext()),
+>                               Type::getInt32Ty(KernelM->getContext()), false);
+>         if (SelectedHierarchy == ONE_LEVEL && ArgDFNode == N) {
+1226,1227c1282,1284
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_global_id"), FT));
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_global_id"), FT))
+>                   .getCallee());
+1229c1286
+<           //DEBUG(errs() << "Here inside cond 2\n");
+---
+>           // DEBUG(errs() << "Here inside cond 2\n");
+1232,1234c1289,1292
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_local_id"), FT));
+<           //DEBUG(errs() << "exiting condition 2\n");
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_local_id"), FT))
+>                   .getCallee());
+>           // DEBUG(errs() << "exiting condition 2\n");
+1238,1239c1296,1298
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_group_id"), FT));
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_group_id"), FT))
+>                   .getCallee());
+1241,1243c1300,1302
+<           errs() << N->getFuncPointer()->getName() << "\n";
+<           errs() << N->getParent()->getFuncPointer()->getName() << "\n";
+<           errs() << *II << "\n";
+---
+>           DEBUG(errs() << N->getFuncPointer()->getName() << "\n");
+>           DEBUG(errs() << N->getParent()->getFuncPointer()->getName() << "\n");
+>           DEBUG(errs() << *II << "\n");
+1248,1252c1307,1311
+<         //DEBUG(errs() << "Create call instruction, insert it before the instrinsic\n");
+<         //DEBUG(errs() << "Function: " << *OpenCLFunction << "\n");
+<         //DEBUG(errs() << "Arguments size: " << Args.size() << "\n");
+<         //DEBUG(errs() << "Argument: " << Args[0] << "\n");
+<         //DEBUG(errs() << "Arguments: " << *DimConstant << "\n");
+---
+>         // DEBUG(errs() << "Create call instruction, insert it before the
+>         // instrinsic\n"); DEBUG(errs() << "Function: " << *OpenCLFunction <<
+>         // "\n"); DEBUG(errs() << "Arguments size: " << Args.size() << "\n");
+>         // DEBUG(errs() << "Argument: " << Args[0] << "\n");
+>         // DEBUG(errs() << "Arguments: " << *DimConstant << "\n");
+1255,1256c1314,1315
+<         CallInst* CI = CallInst::Create(OpenCLFunction, DimConstant, "", II);
+<         //DEBUG(errs() << "Replace uses\n");
+---
+>         CallInst *CI = CallInst::Create(OpenCLFunction, DimConstant, "", II);
+>         // DEBUG(errs() << "Replace uses\n");
+1260,1265c1319,1324
+<       }
+<       break;
+<       /********************** llvm.visc.getNumNodeInstances() ***********************/
+<       case Intrinsic::visc_getNumNodeInstances_x:
+<       case Intrinsic::visc_getNumNodeInstances_y:
+<       case Intrinsic::visc_getNumNodeInstances_z: {
+---
+>       } break;
+>       /********************** llvm.hpvm.getNumNodeInstances()
+>        * ***********************/
+>       case Intrinsic::hpvm_getNumNodeInstances_x:
+>       case Intrinsic::hpvm_getNumNodeInstances_y:
+>       case Intrinsic::hpvm_getNumNodeInstances_z: {
+1271c1330,1331
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling getNumNodeInstances\n");
+---
+>         DEBUG(errs() << F_opencl->getName()
+>                      << "\t: Handling getNumNodeInstances\n");
+1275c1335
+<         DFNode* ParentDFNode = ArgDFNode->getParent();
+---
+>         DFNode *ParentDFNode = ArgDFNode->getParent();
+1281,1283c1341,1343
+<         uint64_t dim = II->getIntrinsicID() -
+<                        Intrinsic::visc_getNumNodeInstances_x;
+<         assert((dim >= 0) && (dim < 3) && "Invalid dimension argument");
+---
+>         uint64_t dim =
+>             II->getIntrinsicID() - Intrinsic::hpvm_getNumNodeInstances_x;
+>         assert((dim < 3) && "Invalid dimension argument");
+1287,1289c1347,1349
+<         ConstantInt * DimConstant =
+<           ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), dim);
+<         //ArrayRef<Value *> Args(DimConstant);
+---
+>         ConstantInt *DimConstant =
+>             ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), dim);
+>         // ArrayRef<Value *> Args(DimConstant);
+1292,1295c1352,1353
+<         Function * OpenCLFunction;
+<         int parentLevel = ParentDFNode->getLevel();
+<         int parentReplFactor = ParentDFNode->getNumOfDim();
+<         FunctionType* FT =
+---
+>         Function *OpenCLFunction;
+>         FunctionType *FT =
+1297,1298c1355
+<                               Type::getInt32Ty(KernelM->getContext()),
+<                               false);
+---
+>                               Type::getInt32Ty(KernelM->getContext()), false);
+1300c1357
+<         if ((N == ArgDFNode) && (!parentLevel || !parentReplFactor)) {
+---
+>         if (N == ArgDFNode && SelectedHierarchy == ONE_LEVEL) {
+1304,1305c1361,1363
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_global_size"), FT));
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_global_size"), FT))
+>                   .getCallee());
+1309,1310c1367,1369
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_local_size"), FT));
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_local_size"), FT))
+>                   .getCallee());
+1314,1315c1373,1375
+<           OpenCLFunction = cast<Function>
+<                            (KernelM->getOrInsertFunction(StringRef("get_num_groups"), FT));
+---
+>           OpenCLFunction = cast<Function>(
+>               (KernelM->getOrInsertFunction(StringRef("get_num_groups"), FT))
+>                   .getCallee());
+1322c1382
+<         CallInst* CI = CallInst::Create(OpenCLFunction, DimConstant, "", II);
+---
+>         CallInst *CI = CallInst::Create(OpenCLFunction, DimConstant, "", II);
+1326,1330c1386,1388
+<       }
+<       break;
+<       case Intrinsic::visc_barrier:
+<       {
+<         DEBUG(errs() << F_nvptx->getName() << "\t: Handling barrier\n");
+---
+>       } break;
+>       case Intrinsic::hpvm_barrier: {
+>         DEBUG(errs() << F_opencl->getName() << "\t: Handling barrier\n");
+1333,1340c1391,1402
+<         FunctionType* FT = FunctionType::get(Type::getVoidTy(KernelM->getContext()),
+<                                              std::vector<Type*>(1, Type::getInt32Ty(KernelM->getContext())),
+<                                              false);
+<         Function* OpenCLFunction = cast<Function>
+<                                    (KernelM->getOrInsertFunction(StringRef("barrier"), FT));
+<         CallInst* CI = CallInst::Create(OpenCLFunction,
+<                                         ArrayRef<Value*>(ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), 1)),
+<                                         "", II);
+---
+>         FunctionType *FT = FunctionType::get(
+>             Type::getVoidTy(KernelM->getContext()),
+>             std::vector<Type *>(1, Type::getInt32Ty(KernelM->getContext())),
+>             false);
+>         Function *OpenCLFunction = cast<Function>(
+>             (KernelM->getOrInsertFunction(StringRef("barrier"), FT))
+>                 .getCallee());
+>         CallInst *CI =
+>             CallInst::Create(OpenCLFunction,
+>                              ArrayRef<Value *>(ConstantInt::get(
+>                                  Type::getInt32Ty(KernelM->getContext()), 1)),
+>                              "", II);
+1343,1359c1405,1413
+<       }
+<       break;
+<       case Intrinsic::visc_atomic_cmpxchg:
+<         break;
+<       case Intrinsic::visc_atomic_add:
+<       case Intrinsic::visc_atomic_sub:
+<       case Intrinsic::visc_atomic_xchg:
+<       case Intrinsic::visc_atomic_min:
+<       case Intrinsic::visc_atomic_umin:
+<       case Intrinsic::visc_atomic_max:
+<       case Intrinsic::visc_atomic_umax:
+<       case Intrinsic::visc_atomic_and:
+<       case Intrinsic::visc_atomic_or:
+<       case Intrinsic::visc_atomic_xor:
+<         //case Intrinsic::visc_atomic_inc:
+<         //case Intrinsic::visc_atomic_dec:
+<       {
+---
+>       } break;
+>       case Intrinsic::hpvm_atomic_add:
+>       case Intrinsic::hpvm_atomic_sub:
+>       case Intrinsic::hpvm_atomic_xchg:
+>       case Intrinsic::hpvm_atomic_min:
+>       case Intrinsic::hpvm_atomic_max:
+>       case Intrinsic::hpvm_atomic_and:
+>       case Intrinsic::hpvm_atomic_or:
+>       case Intrinsic::hpvm_atomic_xor: {
+1362,1363c1416,1417
+<         assert(II->getType() == Type::getInt32Ty(II->getContext())
+<                && "Only support i32 atomic intrinsics for now");
+---
+>         assert(II->getType() == Type::getInt32Ty(II->getContext()) &&
+>                "Only support i32 atomic intrinsics for now");
+1365,1372c1419,1431
+<         assert(II->getNumArgOperands() == 2 && "Expecting 2 operands for these atomics");
+<         Value* Ptr = II->getArgOperand(0);
+<         Value* Val = II->getArgOperand(1);
+<         assert(Ptr->getType()->isPointerTy()
+<                && "First argument of supported atomics is expected to be a pointer");
+<         PointerType* PtrTy = cast<PointerType>(Ptr->getType());
+<         if(PtrTy != Type::getInt32PtrTy(II->getContext(), PtrTy->getAddressSpace())) {
+<           Ptr = CastInst::CreatePointerCast(Ptr, Type::getInt32PtrTy(II->getContext(), PtrTy->getAddressSpace()), "", II);
+---
+>         assert(II->getNumArgOperands() == 2 &&
+>                "Expecting 2 operands for these atomics");
+>         Value *Ptr = II->getArgOperand(0);
+>         Value *Val = II->getArgOperand(1);
+>         assert(
+>             Ptr->getType()->isPointerTy() &&
+>             "First argument of supported atomics is expected to be a pointer");
+>         PointerType *PtrTy = cast<PointerType>(Ptr->getType());
+>         PointerType *TargetTy =
+>             Type::getInt32PtrTy(II->getContext(), PtrTy->getAddressSpace());
+>         if (PtrTy != TargetTy) {
+>           Ptr = CastInst::CreatePointerCast(Ptr, TargetTy, "", II);
+>           PtrTy = TargetTy;
+1374,1378c1433,1460
+<         AtomicRMWInst* AtomicInst = new AtomicRMWInst(getAtomicOp(II->getIntrinsicID()),
+<             Ptr, Val, AtomicOrdering::SequentiallyConsistent, llvm::CrossThread, II);
+<         AtomicInst->setVolatile(true);
+<         DEBUG(errs() << "Substitute with: " << *AtomicInst << "\n");
+<         II->replaceAllUsesWith(AtomicInst);
+---
+> 
+>         std::string name;
+>         if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_add)
+>           name = "atomic_add";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_sub)
+>           name = "atomic_sub";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_xchg)
+>           name = "atomic_xchg";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_min)
+>           name = "atomic_min";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_max)
+>           name = "atomic_max";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_and)
+>           name = "atomic_and";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_or)
+>           name = "atomic_or";
+>         else if (II->getIntrinsicID() == Intrinsic::hpvm_atomic_xor)
+>           name = "atomic_xor";
+>         Type *paramTypes[] = {PtrTy, Val->getType()};
+>         FunctionType *AtomFuncT = FunctionType::get(
+>             II->getType(), ArrayRef<Type *>(paramTypes, 2), false);
+>         FunctionCallee AtomFunc = KernelM->getOrInsertFunction(name, AtomFuncT);
+> 
+>         Value *Params[] = {Ptr, Val};
+>         CallInst *AtomCI = CallInst::Create(
+>             AtomFunc, ArrayRef<Value *>(Params, 2), II->getName(), II);
+>         DEBUG(errs() << "Substitute with: " << *AtomCI << "\n");
+>         II->replaceAllUsesWith(AtomCI);
+1380,1381c1462
+<       }
+<       break;
+---
+>       } break;
+1383c1464
+<         llvm_unreachable("Unknown VISC Intrinsic!");
+---
+>         llvm_unreachable("Unknown HPVM Intrinsic!");
+1387,1444c1468,1540
+<     }
+<     else if(CallInst* CI = dyn_cast<CallInst>(I)) {
+<       DEBUG(errs() << "Found a call: " << *CI << "\n");
+<       Function* calleeF = cast<Function>(CI->getCalledValue()->stripPointerCasts());
+<       if(calleeF->isDeclaration()) {
+<         // Add the declaration to kernel module
+<         DEBUG(errs() << "Adding declaration to Kernel module: " << *calleeF << "\n");
+<         KernelM->getOrInsertFunction(calleeF->getName(), calleeF->getFunctionType());
+<         if(IntrinsicInst* II = dyn_cast<IntrinsicInst>(CI)) {
+<           // Now handle a few specific intrinsics
+<           // For now, sin and cos are translated to their libclc equivalent
+<           switch(II->getIntrinsicID()) {
+<           case Intrinsic::sin:
+<           case Intrinsic::cos:
+<           {
+<             DEBUG(errs() << "Found sincos: " << *II << "\n");
+<             // Get the libclc function
+<             // libclc uses mangled name for sin cos
+<             assert(II->getType()->isFloatTy()
+<                    && "Only handling sin(float) and cos(float)!");
+<             std::string name;
+<             if(II->getIntrinsicID() == Intrinsic::sin)
+<               name = "_Z3sinf";
+<             else
+<               name = "_Z3cosf";
+< 
+<             FunctionType* SinCosFT = FunctionType::get(II->getType(),
+<                                      Type::getFloatTy(KernelM->getContext()),
+<                                      false);
+<             Function* LibclcFunction = cast<Function>
+<                                        (KernelM->getOrInsertFunction(name, SinCosFT));
+<             CallInst* CI = CallInst::Create(LibclcFunction, II->getArgOperand(0), II->getName(), II);
+< 
+<             II->replaceAllUsesWith(CI);
+<             IItoRemove.push_back(II);
+<             break;
+<           }
+<           case Intrinsic::floor:
+<           {
+<             DEBUG(errs() << "Found floor intrinsic\n");
+<             F = Intrinsic::getDeclaration(KernelM.get(), Intrinsic::nvvm_floor_f);
+<             FunctionType* FTy = F->getFunctionType();
+<             DEBUG(errs() << *F << "\n");
+< 
+<             // Create argument list
+<             std::vector<Value*> args;
+<             assert(CI->getNumArgOperands() == FTy->getNumParams()
+<                    && "Number of arguments of call do not match with Intrinsic");
+<             for(unsigned i=0; i < CI->getNumArgOperands(); i++) {
+<               Value* V = CI->getArgOperand(i);
+<               // Either the type should match or both should be of pointer type
+<               assert(V->getType() == FTy->getParamType(i) ||
+<                      (V->getType()->isPointerTy() && FTy->getParamType(i)->isPointerTy())
+<                      && "Dummy function call argument does not match with Intrinsic argument!");
+<               // If the types do not match, then both must be pointer type and pointer
+<               // cast needs to be performed
+<               if(V->getType() != FTy->getParamType(i)) {
+<                 V = CastInst::CreatePointerCast(V, FTy->getParamType(i), "", CI);
+---
+>     } else if (MemCpyInst *MemCpyI = dyn_cast<MemCpyInst>(I)) {
+>       IRBuilder<> Builder(I);
+>       Value *Source = MemCpyI->getSource();
+>       Value *Destination = MemCpyI->getArgOperand(0)->stripPointerCasts();
+>       Value *Length = MemCpyI->getOperand(2);
+>       DEBUG(errs() << "Found memcpy instruction: " << *I << "\n");
+>       DEBUG(errs() << "Source: " << *Source << "\n");
+>       DEBUG(errs() << "Destination: " << *Destination << "\n");
+>       DEBUG(errs() << "Length: " << *Length << "\n");
+> 
+>       size_t memcpy_length;
+>       unsigned int memcpy_count;
+>       if (ConstantInt *CI = dyn_cast<ConstantInt>(Length)) {
+>         if (CI->getBitWidth() <= 64) {
+>           memcpy_length = CI->getSExtValue();
+>           DEBUG(errs() << "Memcpy lenght = " << memcpy_length << "\n");
+>           Type *Source_Type = Source->getType()->getPointerElementType();
+>           DEBUG(errs() << "Source Type : " << *Source_Type << "\n");
+>           memcpy_count =
+>               memcpy_length / (Source_Type->getPrimitiveSizeInBits() / 8);
+>           DEBUG(errs() << "Memcpy count = " << memcpy_count << "\n");
+>           if (GetElementPtrInst *sourceGEPI =
+>                   dyn_cast<GetElementPtrInst>(Source)) {
+>             if (GetElementPtrInst *destGEPI =
+>                     dyn_cast<GetElementPtrInst>(Destination)) {
+>               Value *SourcePtrOperand = sourceGEPI->getPointerOperand();
+>               Value *DestPtrOperand = destGEPI->getPointerOperand();
+>               for (int i = 0; i < memcpy_count; ++i) {
+>                 Constant *increment;
+>                 LoadInst *newLoadI;
+>                 StoreInst *newStoreI;
+>                 // First, need to increment the correct index for both source
+>                 // and dest This invluves checking to see how many indeces the
+>                 // GEP has Assume for now only 1 or 2 are the viable options.
+> 
+>                 std::vector<Value *> GEPlIndex;
+>                 if (sourceGEPI->getNumIndices() == 1) {
+>                   Value *Index = sourceGEPI->getOperand(1);
+>                   increment = ConstantInt::get(Index->getType(), i, false);
+>                   Value *incAdd = Builder.CreateAdd(Index, increment);
+>                   DEBUG(errs() << "Add: " << *incAdd << "\n");
+>                   GEPlIndex.push_back(incAdd);
+>                   Value *newGEPIl = Builder.CreateGEP(
+>                       SourcePtrOperand, ArrayRef<Value *>(GEPlIndex));
+>                   DEBUG(errs() << "Load GEP: " << *newGEPIl << "\n");
+>                   newLoadI = Builder.CreateLoad(newGEPIl);
+>                   DEBUG(errs() << "Load: " << *newLoadI << "\n");
+>                 } else {
+>                   llvm_unreachable("Unhandled case where source GEPI has more "
+>                                    "than 1 indices!\n");
+>                 }
+> 
+>                 std::vector<Value *> GEPsIndex;
+>                 if (destGEPI->getNumIndices() == 1) {
+> 
+>                 } else if (destGEPI->getNumIndices() == 2) {
+>                   Value *Index0 = destGEPI->getOperand(1);
+>                   GEPsIndex.push_back(Index0);
+>                   Value *Index1 = destGEPI->getOperand(2);
+>                   increment = ConstantInt::get(Index1->getType(), i, false);
+>                   Value *incAdd = Builder.CreateAdd(Index1, increment);
+>                   DEBUG(errs() << "Add: " << *incAdd << "\n");
+>                   GEPsIndex.push_back(incAdd);
+>                   Value *newGEPIs = Builder.CreateGEP(
+>                       DestPtrOperand, ArrayRef<Value *>(GEPsIndex));
+>                   DEBUG(errs() << "Store GEP: " << *newGEPIs << "\n");
+>                   newStoreI = Builder.CreateStore(newLoadI, newGEPIs,
+>                                                   MemCpyI->isVolatile());
+>                   DEBUG(errs() << "Store: " << *newStoreI << "\n");
+>                 } else {
+>                   llvm_unreachable("Unhandled case where dest GEPI has more "
+>                                    "than 2 indices!\n");
+>                 }
+1446c1542,1550
+<               args.push_back(V);
+---
+>               IItoRemove.push_back(sourceGEPI);
+>               IItoRemove.push_back(destGEPI);
+>               Instruction *destBitcastI =
+>                   dyn_cast<Instruction>(MemCpyI->getArgOperand(0));
+>               Instruction *sourceBitcastI =
+>                   dyn_cast<Instruction>(MemCpyI->getArgOperand(1));
+>               IItoRemove.push_back(destBitcastI);
+>               IItoRemove.push_back(sourceBitcastI);
+>               IItoRemove.push_back(MemCpyI);
+1448,1454d1551
+<             // Insert call instruction
+<             CallInst* Inst = CallInst::Create(F, args,
+<                   F->getReturnType()->isVoidTy()? "" : CI->getName(), CI);
+<             DEBUG(errs() << "\tSubstitute with: " << *Inst << "\n");
+<             CI->replaceAllUsesWith(Inst);
+<             IItoRemove.push_back(II);
+<             break;
+1456,1457c1553,1589
+<           default:
+<             errs() << "[WARNING] Found Intrinsic: " << *II << "\n" ;
+---
+>         }
+>       } else {
+>         llvm_unreachable("MEMCPY length is not a constant, not handled!\n");
+>       }
+>       //      llvm_unreachable("HERE!");
+>     }
+> 
+>     else if (CallInst *CI = dyn_cast<CallInst>(I)) {
+>       DEBUG(errs() << "Found a call: " << *CI << "\n");
+>       Function *calleeF =
+>           cast<Function>(CI->getCalledValue()->stripPointerCasts());
+>       if (calleeF->isDeclaration()) {
+>         // Add the declaration to kernel module
+>         if (calleeF->getName() == "sqrtf") {
+>           calleeF->setName(Twine("sqrt"));
+>           DEBUG(errs() << "CaleeF: " << *calleeF << "\n");
+>           DEBUG(errs() << "CI: " << *CI << "\n");
+>         } else if (calleeF->getName() == "rsqrtf") {
+>           calleeF->setName(Twine("rsqrt"));
+>           DEBUG(errs() << "CaleeF: " << *calleeF << "\n");
+>           DEBUG(errs() << "CI: " << *CI << "\n");
+>         }
+>         DEBUG(errs() << "Adding declaration to Kernel module: " << *calleeF
+>                      << "\n");
+>         KernelM->getOrInsertFunction(calleeF->getName(),
+>                                      calleeF->getFunctionType());
+>       } else {
+>         // Check if the called function has already been cloned before.
+>         Function *NewFunc = CloneAndReplaceCall(CI, calleeF);
+>         // Iterate over the new function to see if it calls any other functions
+>         // in the module.
+>         for (inst_iterator i = inst_begin(NewFunc), e = inst_end(NewFunc);
+>              i != e; ++i) {
+>           if (auto *Call = dyn_cast<CallInst>(&*i)) {
+>             Function *CalledFunc =
+>                 cast<Function>(Call->getCalledValue()->stripPointerCasts());
+>             CloneAndReplaceCall(Call, CalledFunc);
+1459a1592,1605
+>       }
+>       // TODO: how to handle address space qualifiers in load/store
+>     }
+>   }
+>   // search for pattern where float is being casted to int and loaded/stored and
+>   // change it.
+>   DEBUG(errs() << "finding pattern for replacement!\n");
+>   for (inst_iterator i = inst_begin(F_opencl), e = inst_end(F_opencl); i != e;
+>        ++i) {
+>     bool cont = false;
+>     bool keepGEPI = false;
+>     bool keepGEPI2 = false;
+>     Instruction *I = &(*i);
+>     GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(I);
+1460a1607,1659
+>     if (!GEPI) {
+>       // did nod find pattern start, continue
+>       continue;
+>     }
+>     // may have found pattern, check
+>     DEBUG(errs() << "GEPI " << *GEPI << "\n");
+>     // print whatever we want for debug
+>     Value *PtrOp = GEPI->getPointerOperand();
+>     Type *SrcTy = GEPI->getSourceElementType();
+>     unsigned GEPIaddrspace = GEPI->getAddressSpace();
+> 
+>     if (SrcTy->isArrayTy())
+>       DEBUG(errs() << *SrcTy << " is an array type! "
+>                    << *(SrcTy->getArrayElementType()) << "\n");
+>     else
+>       DEBUG(errs() << *SrcTy << " is not an array type!\n");
+>     // check that source element type is float
+>     if (SrcTy->isArrayTy()) {
+>       if (!(SrcTy->getArrayElementType()->isFloatTy())) {
+>         DEBUG(errs() << "GEPI type is array but not float!\n");
+>         continue;
+>       }
+>     } else if (!(SrcTy->isFPOrFPVectorTy() /*isFloatTy()*/)) {
+>       DEBUG(errs() << "GEPI type is " << *SrcTy << "\n");
+>       // does not fit this pattern - no float GEP instruction
+>       continue;
+>     }
+>     // check that addressspace is 1
+>     //    if (GEPIaddrspace != 1) {
+>     //      // does not fit this pattern - addrspace of pointer
+>     // argument is not global       continue;
+>     //    }
+>     if (!(GEPI->hasOneUse())) {
+>       // does not fit this pattern - more than one uses
+>       // continue;
+>       // Keep GEPI around if it has other uses
+>       keepGEPI = true;
+>     }
+>     DEBUG(errs() << "Found GEPI " << *GEPI << "\n");
+> 
+>     // 1st GEPI it has one use
+>     //    assert(GEPI->hasOneUse() && "GEPI has a single use");
+> 
+>     // See if it is a bitcast
+>     BitCastInst *BitCastI;
+>     for (User *U : GEPI->users()) {
+>       if (Instruction *ui = dyn_cast<Instruction>(U)) {
+>         DEBUG(errs() << "--" << *ui << "\n");
+>         if (isa<BitCastInst>(ui)) {
+>           BitCastI = dyn_cast<BitCastInst>(ui);
+>           DEBUG(errs() << "---Found bitcast as only use of GEP\n");
+>           break;
+>         }
+1462,1467c1661,1713
+<       else {
+<         // Clone the function
+<         ValueToValueMapTy VMap;
+<         Function* newCalleeF = CloneFunction(calleeF, VMap);
+<         newCalleeF->removeFromParent(); //TODO: MARIA check
+<         KernelM->getFunctionList().push_back(newCalleeF);
+---
+>       DEBUG(errs() << "GEPI does not have a bitcast user, continue\n");
+>       cont = true;
+>     }
+>     //    for (Value::user_iterator ui = GEPI->user_begin(),
+>     //        ue = GEPI->user_end(); ui!=ue; ++ui) {
+>     //        DEBUG(errs() << "--" << *ui << "\n");
+>     //      if (isa<BitCastInst>(*ui)) {
+>     //        BitCastI = dyn_cast<BitCastInst>(*ui);
+>     //        DEBUG(errs() << "Found bitcast as only use of GEP\n");
+>     //      }
+>     //    }
+> 
+>     if (cont /*!BitCastI*/) {
+>       continue; // not in pattern
+>     }
+> 
+>     //    DEBUG(errs() << *BitCastI << "\n");
+>     // Otherwise, check that first operand is GEP and 2nd is i32*. 1st Operand
+>     // has to be the GEP, since this is a use of the GEP.
+>     Value *Op2 = BitCastI->getOperand(0);
+>     DEBUG(errs() << "----" << *Op2 << "\n");
+>     //    assert(cast<Type>(Op2) && "Invalid Operand for Bitcast\n");
+>     //    Type *OpTy = cast<Type>(Op2);
+>     Type *OpTy = BitCastI->getDestTy();
+>     DEBUG(errs() << "---- Bitcast destination type: " << *OpTy << "\n");
+>     //    DEBUG(errs() << "---- " << *(Type::getInt32PtrTy(M.getContext(),1)) <<
+>     //    "\n");
+>     if (!(OpTy == Type::getInt32PtrTy(M.getContext(), GEPIaddrspace))) {
+>       // maybe right syntax is (Type::getInt32Ty)->getPointerTo()
+>       continue; // not in pattern
+>     }
+> 
+>     DEBUG(errs() << "----Here!\n");
+>     // We are in GEP, bitcast.
+> 
+>     // user_iterator, to find the load.
+> 
+>     if (!(BitCastI->hasOneUse())) {
+>       // does not fit this pattern - more than one uses
+>       continue;
+>     }
+>     DEBUG(errs() << "----Bitcast has one use!\n");
+>     // it has one use
+>     assert(BitCastI->hasOneUse() && "BitCastI has a single use");
+>     LoadInst *LoadI;
+>     for (User *U : BitCastI->users()) {
+>       if (Instruction *ui = dyn_cast<Instruction>(U)) {
+>         DEBUG(errs() << "-----" << *ui << "\n");
+>         if (isa<LoadInst>(ui)) {
+>           LoadI = dyn_cast<LoadInst>(ui);
+>           DEBUG(errs() << "-----Found load as only use of bitcast\n");
+>           break;
+>         }
+1469c1715,1813
+<       //TODO: how to handle address space qualifiers in load/store
+---
+>       DEBUG(errs() << "Bitcast does not have a load user, continue!\n");
+>       cont = true;
+>     }
+>     //    for (Value::user_iterator ui = BitCastI->user_begin(),
+>     //        ue = BitCastI->user_end(); ui!=ue; ++ui) {
+>     //      if (isa<LoadInst>(*ui)) {
+>     //        LoadI = dyn_cast<LoadInst>(*ui);
+>     //        errs() << "Found load as only use of bitcast\n";
+>     //      }
+>     //    }
+> 
+>     if (cont) {
+>       continue; // not in pattern
+>     }
+> 
+>     DEBUG("HERE!\n");
+>     // check that we load from pointer we got from bitcast - assert - the unique
+>     // argument must be the use we found it from
+>     assert(LoadI->getPointerOperand() == BitCastI &&
+>            "Unexpected Load Instruction Operand\n");
+> 
+>     // Copy user_iterator, to find the store.
+> 
+>     if (!(LoadI->hasOneUse())) {
+>       // does not fit this pattern - more than one uses
+>       continue;
+>       // TODO: generalize: one load can have more than one store users
+>     }
+> 
+>     // it has one use
+>     assert(LoadI->hasOneUse() && "LoadI has a single use");
+>     Value::user_iterator ui = LoadI->user_begin();
+>     // skipped loop, because is has a single use
+>     StoreInst *StoreI = dyn_cast<StoreInst>(*ui);
+>     if (!StoreI) {
+>       continue; // not in pattern
+>     }
+> 
+>     // Also check that the store uses the loaded value as the value operand
+>     if (StoreI->getValueOperand() != LoadI) {
+>       continue;
+>     }
+> 
+>     DEBUG(errs() << "-------Found store instruction\n");
+> 
+>     // Look for its bitcast, which is its pointer operand
+>     Value *StPtrOp = StoreI->getPointerOperand();
+>     DEBUG(errs() << "-------" << *StPtrOp << "\n");
+>     BitCastInst *BitCastI2 = dyn_cast<BitCastInst>(StPtrOp);
+>     DEBUG(errs() << "-------" << *BitCastI2 << "\n");
+>     if (!BitCastI2) {
+>       continue; // not in pattern
+>     }
+> 
+>     DEBUG(errs() << "-------- Found Bit Cast of store!\n");
+>     // found bitcast. Look for the second GEP, its from operand.
+>     Value *BCFromOp = BitCastI2->getOperand(0);
+>     GetElementPtrInst *GEPI2 = dyn_cast<GetElementPtrInst>(BCFromOp);
+>     DEBUG(errs() << "---------- " << *GEPI2 << "\n");
+>     if (!GEPI2) {
+>       continue; // not in pattern
+>     }
+> 
+>     if (!(GEPI2->hasOneUse())) {
+>       // does not fit this pattern - more than one uses
+>       // continue;
+>       // Keep GEPI around if it has other uses
+>       keepGEPI2 = true;
+>     }
+>     DEBUG(errs() << "---------- Found GEPI of Bitcast!\n");
+> 
+>     Value *PtrOp2 = GEPI2->getPointerOperand();
+> 
+>     // Found GEPI2. TODO: kind of confused as o what checks I need to add here,
+>     // let's add them together- all the code for int-float type checks is
+>     // already above.
+> 
+>     // Assume we found pattern
+>     if (!keepGEPI) {
+>       IItoRemove.push_back(GEPI);
+>       DEBUG(errs() << "Pushing " << *GEPI << " for removal\n");
+>     } else {
+>       DEBUG(errs() << "Keeping " << *GEPI << " since it has multiple uses!\n");
+>     }
+>     IItoRemove.push_back(BitCastI);
+>     DEBUG(errs() << "Pushing " << *BitCastI << " for removal\n");
+>     IItoRemove.push_back(LoadI);
+>     DEBUG(errs() << "Pushing " << *LoadI << " for removal\n");
+>     IItoRemove.push_back(GEPI2);
+>     DEBUG(errs() << "Pushing " << *GEPI2 << " for removal\n");
+>     IItoRemove.push_back(BitCastI2);
+>     DEBUG(errs() << "Pushing " << *BitCastI2 << " for removal\n");
+>     if (!keepGEPI2) {
+>       IItoRemove.push_back(StoreI);
+>       DEBUG(errs() << "Pushing " << *StoreI << " for removal\n");
+>     } else {
+> 
+>       DEBUG(errs() << "Keeping " << *StoreI
+>                    << " since it has multiple uses!\n");
+1471a1816,1861
+>     std::vector<Value *> GEPlIndex;
+>     if (GEPI->hasIndices()) {
+>       for (auto ii = GEPI->idx_begin(); ii != GEPI->idx_end(); ++ii) {
+>         Value *Index = dyn_cast<Value>(&*ii);
+>         DEBUG(errs() << "GEP-1 Index: " << *Index << "\n");
+>         GEPlIndex.push_back(Index);
+>       }
+>     }
+>     //    ArrayRef<Value*> GEPlArrayRef(GEPlIndex);
+> 
+>     std::vector<Value *> GEPsIndex;
+>     if (GEPI2->hasIndices()) {
+>       for (auto ii = GEPI2->idx_begin(); ii != GEPI2->idx_end(); ++ii) {
+>         Value *Index = dyn_cast<Value>(&*ii);
+>         DEBUG(errs() << "GEP-2 Index: " << *Index << "\n");
+>         GEPsIndex.push_back(Index);
+>       }
+>     }
+>     //    ArrayRef<Value*> GEPsArrayRef(GEPlIndex);
+> 
+>     //    ArrayRef<Value*>(GEPI->idx_begin(), GEPI->idx_end());
+>     GetElementPtrInst *newlGEP = GetElementPtrInst::Create(
+>         GEPI->getSourceElementType(), // Type::getFloatTy(M.getContext()),
+>         PtrOp,                        // operand from 1st GEP
+>         ArrayRef<Value *>(GEPlIndex), Twine(), StoreI);
+>     DEBUG(errs() << "Adding: " << *newlGEP << "\n");
+>     // insert load before GEPI
+>     LoadInst *newLoadI =
+>         new LoadInst(Type::getFloatTy(M.getContext()),
+>                      newlGEP, // new GEP
+>                      Twine(), LoadI->isVolatile(), LoadI->getAlignment(),
+>                      LoadI->getOrdering(), LoadI->getSyncScopeID(), StoreI);
+>     DEBUG(errs() << "Adding: " << *newLoadI << "\n");
+>     // same for GEP for store, for store operand
+>     GetElementPtrInst *newsGEP = GetElementPtrInst::Create(
+>         GEPI2->getSourceElementType(), // Type::getFloatTy(M.getContext()),
+>         PtrOp2,                        // operand from 2nd GEP
+>         ArrayRef<Value *>(GEPsIndex), Twine(), StoreI);
+>     DEBUG(errs() << "Adding: " << *newsGEP << "\n");
+>     // insert store before GEPI
+>     StoreInst *newStoreI =
+>         new StoreInst(newLoadI,
+>                       newsGEP, // new GEP
+>                       StoreI->isVolatile(), StoreI->getAlignment(),
+>                       StoreI->getOrdering(), StoreI->getSyncScopeID(), StoreI);
+>     DEBUG(errs() << "Adding: " << *newStoreI << "\n");
+1478,1481c1868,1870
+<   for (std::vector<IntrinsicInst *>::reverse_iterator ri = IItoRemove.rbegin(),
+<        re = IItoRemove.rend(); ri != re; ++ri) {
+<     DEBUG(errs() << "Erasing: " << **ri << "\n");
+<     (*ri)->eraseFromParent();
+---
+>   for (auto *I : reverse(IItoRemove)) {
+>     DEBUG(errs() << "Erasing: " << *I << "\n");
+>     I->eraseFromParent();
+1484,1486c1873,1882
+<   addCLMetadata(F_nvptx);
+<   kernel->KernelFunction = F_nvptx;
+<   errs() << "Identified kernel - " << kernel->KernelFunction->getName() << "\n";
+---
+>   // Removed the cloned functions from the parent module into the new module
+>   for (auto *F : FuncToBeRemoved) {
+>     F->removeFromParent(); // TODO: MARIA check
+>     KernelM->getFunctionList().push_back(F);
+>   }
+> 
+>   addCLMetadata(F_opencl);
+>   kernel->KernelFunction = F_opencl;
+>   DEBUG(errs() << "Identified kernel - " << kernel->KernelFunction->getName()
+>                << "\n");
+1492,1493c1888,1889
+< bool DFG2LLVM_NVPTX::runOnModule(Module &M) {
+<   errs() << "\nDFG2LLVM_NVPTX PASS\n";
+---
+> bool DFG2LLVM_OpenCL::runOnModule(Module &M) {
+>   DEBUG(errs() << "\nDFG2LLVM_OpenCL PASS\n");
+1501,1503c1897,1900
+<   std::vector<DFInternalNode*> Roots = DFG.getRoots();
+<   //    BuildDFG::HandleToDFNode &HandleToDFNodeMap = DFG.getHandleToDFNodeMap();
+<   //    BuildDFG::HandleToDFEdge &HandleToDFEdgeMap = DFG.getHandleToDFEdgeMap();
+---
+>   std::vector<DFInternalNode *> Roots = DFG.getRoots();
+>   //    BuildDFG::HandleToDFNode &HandleToDFNodeMap =
+>   //    DFG.getHandleToDFNodeMap(); BuildDFG::HandleToDFEdge &HandleToDFEdgeMap
+>   //    = DFG.getHandleToDFEdgeMap();
+1506c1903
+<   CGT_NVPTX *CGTVisitor = new CGT_NVPTX(M, DFG);
+---
+>   CGT_OpenCL *CGTVisitor = new CGT_OpenCL(M, DFG);
+1509c1906
+<   for (auto rootNode: Roots) {
+---
+>   for (auto rootNode : Roots) {
+1516c1913
+<   //TODO: Edit module epilogue to remove the VISC intrinsic declarations
+---
+>   // TODO: Edit module epilogue to remove the HPVM intrinsic declarations
+1522c1919
+< std::string CGT_NVPTX::getKernelsModuleName(Module &M) {
+---
+> std::string CGT_OpenCL::getKernelsModuleName(Module &M) {
+1524,1527c1921,1924
+<   llvm::sys::fs::current_path(currentDir);
+<   std::string fileName = getFilenameFromModule(M);
+<   Twine output = Twine(currentDir) + "/Output/" + fileName + "";
+<   return output.str().append(".kernels.ll");*/
+---
+>           llvm::sys::fs::current_path(currentDir);
+>           std::string fileName = getFilenameFromModule(M);
+>           Twine output = Twine(currentDir) + "/Output/" + fileName + "";
+>           return output.str().append(".kernels.ll");*/
+1532,1536c1929,1932
+< void CGT_NVPTX::fixValueAddrspace(Value* V, unsigned addrspace) {
+<   assert(isa<PointerType>(V->getType())
+<          && "Value should be of Pointer Type!");
+<   PointerType* OldTy = cast<PointerType>(V->getType());
+<   PointerType* NewTy = PointerType::get(OldTy->getElementType(), addrspace);
+---
+> void CGT_OpenCL::fixValueAddrspace(Value *V, unsigned addrspace) {
+>   assert(isa<PointerType>(V->getType()) && "Value should be of Pointer Type!");
+>   PointerType *OldTy = cast<PointerType>(V->getType());
+>   PointerType *NewTy = PointerType::get(OldTy->getElementType(), addrspace);
+1538c1934,1935
+<   for(Value::user_iterator ui = V->user_begin(), ue = V->user_end(); ui != ue; ui++) {
+---
+>   for (Value::user_iterator ui = V->user_begin(), ue = V->user_end(); ui != ue;
+>        ui++) {
+1541,1542c1938,1939
+<     if(PointerType* PTy = dyn_cast<PointerType>((*ui)->getType())) {
+<       if(PTy->getAddressSpace() == OldTy->getAddressSpace()) {
+---
+>     if (PointerType *PTy = dyn_cast<PointerType>((*ui)->getType())) {
+>       if (PTy->getAddressSpace() == OldTy->getAddressSpace()) {
+1549,1550c1946,1948
+< 
+< std::vector<unsigned> CGT_NVPTX::globalToConstantMemoryOpt(std::vector<unsigned>* GlobalMemArgs, Function* F) {
+---
+> std::vector<unsigned>
+> CGT_OpenCL::globalToConstantMemoryOpt(std::vector<unsigned> *GlobalMemArgs,
+>                                       Function *F) {
+1552,1554c1950,1954
+<   for(auto& arg: F->getArgumentList()) {
+<     std::vector<unsigned>::iterator pos = std::find(GlobalMemArgs->begin(),
+<         GlobalMemArgs->end(), arg.getArgNo());
+---
+>   for (Function::arg_iterator ai = F->arg_begin(), ae = F->arg_end(); ai != ae;
+>        ++ai) {
+>     Argument *arg = &*ai;
+>     std::vector<unsigned>::iterator pos = std::find(
+>         GlobalMemArgs->begin(), GlobalMemArgs->end(), arg->getArgNo());
+1556c1956
+<     if(pos == GlobalMemArgs->end())
+---
+>     if (pos == GlobalMemArgs->end())
+1560,1561c1960,1964
+<     if(canBePromoted(&arg, F)) {
+<       ConstantMemArgs.push_back(arg.getArgNo());
+---
+>     if (canBePromoted(arg, F)) {
+>       DEBUG(errs() << "Promoting << " << arg->getName()
+>                    << " to constant memory."
+>                    << "\n");
+>       ConstantMemArgs.push_back(arg->getArgNo());
+1568c1971,1973
+< Function* CGT_NVPTX::changeArgAddrspace(Function* F, std::vector<unsigned> &Args, unsigned addrspace) {
+---
+> Function *CGT_OpenCL::changeArgAddrspace(Function *F,
+>                                          std::vector<unsigned> &Args,
+>                                          unsigned addrspace) {
+1570,1573c1975,1980
+<   std::vector<Type*> ArgTypes;
+<   for(auto& arg: F->getArgumentList()) {
+<     DEBUG(errs() << arg << "\n");
+<     unsigned argno = arg.getArgNo();
+---
+>   std::vector<Type *> ArgTypes;
+>   for (Function::arg_iterator ai = F->arg_begin(), ae = F->arg_end(); ai != ae;
+>        ++ai) {
+>     Argument *arg = &*ai;
+>     DEBUG(errs() << *arg << "\n");
+>     unsigned argno = arg->getArgNo();
+1575c1982
+<       fixValueAddrspace(&arg, addrspace);
+---
+>       fixValueAddrspace(arg, addrspace);
+1578c1985
+<     ArgTypes.push_back(arg.getType());
+---
+>     ArgTypes.push_back(arg->getType());
+1580c1987
+<   FunctionType* newFT = FunctionType::get(F->getReturnType(), ArgTypes, false);
+---
+>   FunctionType *newFT = FunctionType::get(F->getReturnType(), ArgTypes, false);
+1582,1583c1989,1990
+<   //F->mutateType(PTy);
+<   Function* newF = cloneFunction(F, newFT, false);
+---
+>   // F->mutateType(PTy);
+>   Function *newF = cloneFunction(F, newFT, false);
+1586c1993
+<   DEBUG(errs() << *newF->getFunctionType() << "\n" <<*newF << "\n");
+---
+>   DEBUG(errs() << *newF->getFunctionType() << "\n" << *newF << "\n");
+1591c1998
+< void CGT_NVPTX::addCLMetadata(Function *F) {
+---
+> void CGT_OpenCL::addCLMetadata(Function *F) {
+1595c2002
+<   SmallVector<Metadata*,8> KernelMD;
+---
+>   SmallVector<Metadata *, 8> KernelMD;
+1603c2010,2011
+<   NamedMDNode *MDN_kernels = KernelM->getOrInsertNamedMetadata("opencl.kernels");
+---
+>   NamedMDNode *MDN_kernels =
+>       KernelM->getOrInsertNamedMetadata("opencl.kernels");
+1609c2017,2018
+<   KernelMD.push_back(ValueAsMetadata::get(ConstantInt::get(Type::getInt32Ty(KernelM->getContext()),1)));
+---
+>   KernelMD.push_back(ValueAsMetadata::get(
+>       ConstantInt::get(Type::getInt32Ty(KernelM->getContext()), 1)));
+1611c2020,2021
+<   NamedMDNode *MDN_annotations = KernelM->getOrInsertNamedMetadata("nvvm.annotations");
+---
+>   NamedMDNode *MDN_annotations =
+>       KernelM->getOrInsertNamedMetadata("nvvm.annotations");
+1613d2022
+< 
+1616c2025
+< void CGT_NVPTX::writeKernelsModule() {
+---
+> void CGT_OpenCL::writeKernelsModule() {
+1622,1623c2031,2032
+<   errs() << "Writing to File --- ";
+<   errs() << getKernelsModuleName(M).c_str() << "\n";
+---
+>   DEBUG(errs() << "Writing to File --- ");
+>   DEBUG(errs() << getKernelsModuleName(M).c_str() << "\n");
+1625c2034
+<   tool_output_file Out(getKernelsModuleName(M).c_str(), EC, sys::fs::F_None);
+---
+>   ToolOutputFile Out(getKernelsModuleName(M).c_str(), EC, sys::fs::F_None);
+1627c2036
+<     errs() << EC.message() << '\n';
+---
+>     DEBUG(errs() << EC.message() << '\n');
+1630,1631c2039
+<   Passes.add(
+<       createPrintModulePass(Out.os()));
+---
+>   Passes.add(createPrintModulePass(Out.os()));
+1639c2047
+< Function* CGT_NVPTX::transformFunctionToVoid(Function* F) {
+---
+> Function *CGT_OpenCL::transformFunctionToVoid(Function *F) {
+1643c2051
+<   StructType* FRetTy = dyn_cast<StructType>(F->getReturnType());
+---
+>   StructType *FRetTy = dyn_cast<StructType>(F->getReturnType());
+1650c2058,2060
+< 
+---
+>   std::vector<Type *> RetArgTypes;
+>   std::vector<Argument *> RetArgs;
+>   std::vector<Argument *> Args;
+1658,1661c2068,2070
+<     for (std::vector<ReturnInst *>::iterator i = RItoRemove.begin(),
+<          e = RItoRemove.end(); i != e; ++i) {
+<       ReturnInst::Create((F->getContext()), 0, (*i));
+<       (*i)->eraseFromParent();
+---
+>     for (auto *RI : RItoRemove) {
+>       ReturnInst::Create((F->getContext()), 0, RI);
+>       RI->eraseFromParent();
+1664,1665c2073
+<   }
+<   else {
+---
+>   } else {
+1670,1673c2078,2082
+<     std::vector<Argument*> Args;
+<     for (unsigned i=0; i<FRetTy->getNumElements(); i++) {
+<       Argument* RetArg = new Argument(FRetTy->getElementType(i)->getPointerTo(), "ret_arg", F);
+<       Args.push_back(RetArg);
+---
+>     for (unsigned i = 0; i < FRetTy->getNumElements(); i++) {
+>       Argument *RetArg =
+>           new Argument(FRetTy->getElementType(i)->getPointerTo(), "ret_arg", F);
+>       RetArgs.push_back(RetArg);
+>       RetArgTypes.push_back(RetArg->getType());
+1677,1678d2085
+<     Function::arg_iterator ai, ae;
+< 
+1681,1688c2088,2093
+<     for (std::vector<ReturnInst *>::iterator rii = RItoRemove.begin(),
+<          rie = RItoRemove.end(); rii != rie; ++rii) {
+<       ReturnInst* RI = (*rii);
+<       Value* RetVal = RI->getReturnValue();
+<       for(unsigned i = 0; i < Args.size(); i++) {
+<         ExtractValueInst* EI = ExtractValueInst::Create(RetVal, ArrayRef<unsigned>(i),
+<                                Args[i]->getName()+".val", RI);
+<         new StoreInst(EI, Args[i], RI);
+---
+>     for (auto *RI : RItoRemove) {
+>       Value *RetVal = RI->getReturnValue();
+>       for (unsigned i = 0; i < RetArgs.size(); i++) {
+>         ExtractValueInst *EI = ExtractValueInst::Create(
+>             RetVal, ArrayRef<unsigned>(i), RetArgs[i]->getName() + ".val", RI);
+>         new StoreInst(EI, RetArgs[i], RI);
+1696d2100
+< 
+1702,1704c2106,2108
+<   std::vector<Type*> ArgTypes;
+<   for(Function::const_arg_iterator ai = F->arg_begin(), ae = F->arg_end();
+<       ai != ae; ++ai) {
+---
+>   std::vector<Type *> ArgTypes;
+>   for (Function::const_arg_iterator ai = F->arg_begin(), ae = F->arg_end();
+>        ai != ae; ++ai) {
+1706a2111,2122
+>   for (auto *RATy : RetArgTypes) {
+>     ArgTypes.push_back(RATy);
+>   }
+> 
+>   // Creating Args vector to use in cloning!
+>   for (Function::arg_iterator ai = F->arg_begin(), ae = F->arg_end(); ai != ae;
+>        ++ai) {
+>     Args.push_back(&*ai);
+>   }
+>   for (auto *ai : RetArgs) {
+>     Args.push_back(ai);
+>   }
+1711,1712c2127,2128
+<   Type* VoidRetType = Type::getVoidTy(F->getContext());
+<   FunctionType* newFT = FunctionType::get(VoidRetType, ArgTypes, F->isVarArg());
+---
+>   Type *VoidRetType = Type::getVoidTy(F->getContext());
+>   FunctionType *newFT = FunctionType::get(VoidRetType, ArgTypes, F->isVarArg());
+1715,1716c2131,2132
+<   //F->mutateType(PTy);
+<   Function* newF = cloneFunction(F, newFT, false);
+---
+>   // F->mutateType(PTy);
+>   Function *newF = cloneFunction(F, newFT, false, NULL, &Args);
+1718c2134
+<   //F->eraseFromParent();
+---
+>   // F->eraseFromParent();
+1730,1731c2146,2149
+< static bool findLoadStoreUses(Value* V, std::vector<Value*>*UseList, std::vector<Value*>*VisitedList) {
+<   if(std::find(VisitedList->begin(), VisitedList->end(), V) != VisitedList->end()) {
+---
+> static bool findLoadStoreUses(Value *V, std::vector<Value *> *UseList,
+>                               std::vector<Value *> *VisitedList) {
+>   if (std::find(VisitedList->begin(), VisitedList->end(), V) !=
+>       VisitedList->end()) {
+1736,1739c2154,2157
+<   for(Value::user_iterator ui = V->user_begin(), ue = V->user_end();
+<       ui != ue; ++ui) {
+<     Instruction* I = dyn_cast<Instruction>(*ui);
+<     if(!I) {
+---
+>   for (Value::user_iterator ui = V->user_begin(), ue = V->user_end(); ui != ue;
+>        ++ui) {
+>     Instruction *I = dyn_cast<Instruction>(*ui);
+>     if (!I) {
+1744c2162
+<     if(isa<LoadInst>(I)) {
+---
+>     if (isa<LoadInst>(I)) {
+1748,1749c2166
+<     }
+<     else if(isa<StoreInst>(I) || isa<AtomicRMWInst>(I)) {
+---
+>     } else if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I)) {
+1753,1754c2170
+<     }
+<     else if(BuildDFG::isViscIntrinsic(I)) {
+---
+>     } else if (BuildDFG::isHPVMIntrinsic(I)) {
+1756,1758c2172,2175
+<       IntrinsicInst* II = dyn_cast<IntrinsicInst>(I);
+<       assert(II && II->getCalledValue()->getName().startswith("llvm.visc.atomic")
+<           && "Only visc atomic intrinsics can have an argument as input");
+---
+>       IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
+>       assert(II &&
+>              II->getCalledValue()->getName().startswith("llvm.hpvm.atomic") &&
+>              "Only hpvm atomic intrinsics can have an argument as input");
+1760,1761c2177
+<     }
+<     else {
+---
+>     } else {
+1763c2179
+<       if(findLoadStoreUses(I, UseList, VisitedList))
+---
+>       if (findLoadStoreUses(I, UseList, VisitedList))
+1767c2183
+<  return false;
+---
+>   return false;
+1770,1771c2186,2189
+< static bool isDependentOnNodeInstanceID(Value* V, std::vector<Value*>*DependenceList) {
+<   if(std::find(DependenceList->begin(), DependenceList->end(), V) != DependenceList->end()) {
+---
+> static bool isDependentOnNodeInstanceID(Value *V,
+>                                         std::vector<Value *> *DependenceList) {
+>   if (std::find(DependenceList->begin(), DependenceList->end(), V) !=
+>       DependenceList->end()) {
+1777c2195
+<   if(!isa<Instruction>(V) || isa<Constant>(V)) {
+---
+>   if (!isa<Instruction>(V) || isa<Constant>(V)) {
+1782,1793c2200,2214
+<   Instruction* I = cast<Instruction>(V);
+<   for(unsigned i = 0; i < I->getNumOperands(); i++) {
+<     Value* operand = I->getOperand(i);
+<     if(IntrinsicInst* II = dyn_cast<IntrinsicInst>(operand)) {
+<       if((II->getIntrinsicID() == Intrinsic::visc_getNodeInstanceID_x
+<           || II->getIntrinsicID() == Intrinsic::visc_getNodeInstanceID_y
+<             || II->getIntrinsicID() == Intrinsic::visc_getNodeInstanceID_z)) {
+<         Value* Node = II->getArgOperand(0);
+<         IntrinsicInst* GN = dyn_cast<IntrinsicInst>(Node);
+<         assert(GN && "NodeInstanceID operande should be node/parent node intrinsic\n");
+<         if(GN->getIntrinsicID() == Intrinsic::visc_getNode) {
+<           DEBUG(errs() << "\tDependency found on Node instance ID: " << *II << "\n");
+---
+>   Instruction *I = cast<Instruction>(V);
+>   for (unsigned i = 0; i < I->getNumOperands(); i++) {
+>     Value *operand = I->getOperand(i);
+>     if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(operand)) {
+>       if ((II->getIntrinsicID() == Intrinsic::hpvm_getNodeInstanceID_x ||
+>            II->getIntrinsicID() == Intrinsic::hpvm_getNodeInstanceID_y ||
+>            II->getIntrinsicID() == Intrinsic::hpvm_getNodeInstanceID_z)) {
+>         Value *Node = II->getArgOperand(0);
+>         IntrinsicInst *GN = dyn_cast<IntrinsicInst>(Node);
+>         assert(
+>             GN &&
+>             "NodeInstanceID operande should be node/parent node intrinsic\n");
+>         if (GN->getIntrinsicID() == Intrinsic::hpvm_getNode) {
+>           DEBUG(errs() << "\tDependency found on Node instance ID: " << *II
+>                        << "\n");
+1798,1799c2219,2221
+<     if(CmpInst* CI = dyn_cast<CmpInst>(operand)) {
+<       DEBUG(errs() << "Found compare instruction: "<< *CI<<"\nNot following its dependency list\n");
+---
+>     if (CmpInst *CI = dyn_cast<CmpInst>(operand)) {
+>       DEBUG(errs() << "Found compare instruction: " << *CI
+>                    << "\nNot following its dependency list\n");
+1802,1803c2224,2225
+<     DEBUG( errs() << "\tTraverse the operand chain of: " << *operand << "\n");
+<     if(isDependentOnNodeInstanceID(operand, DependenceList)) {
+---
+>     DEBUG(errs() << "\tTraverse the operand chain of: " << *operand << "\n");
+>     if (isDependentOnNodeInstanceID(operand, DependenceList)) {
+1811,1814c2233,2237
+< static bool canBePromoted(Argument* arg, Function* F) {
+<   DEBUG(errs() << "OPT: Check if Argument " << *arg << " can be changed to constant memory\n");
+<   std::vector<Value*> UseList;
+<   std::vector<Value*> VisitedList;
+---
+> static bool canBePromoted(Argument *arg, Function *F) {
+>   DEBUG(errs() << "OPT: Check if Argument " << *arg
+>                << " can be changed to constant memory\n");
+>   std::vector<Value *> UseList;
+>   std::vector<Value *> VisitedList;
+1820c2243
+<   if(foundStore == true)
+---
+>   if (foundStore == true)
+1824,1827c2247,2252
+<   DEBUG(errs() << foundStore << "\tNo Store Instruction found. Check dependence on node instance ID\n");
+<   std::vector<Value*>DependenceList;
+<   for(auto U: UseList) {
+<     if(isDependentOnNodeInstanceID(U, &DependenceList))
+---
+>   DEBUG(errs() << foundStore
+>                << "\tNo Store Instruction found. Check dependence on node "
+>                   "instance ID\n");
+>   std::vector<Value *> DependenceList;
+>   for (auto U : UseList) {
+>     if (isDependentOnNodeInstanceID(U, &DependenceList))
+1834d2258
+< 
+1837,1838c2261,2263
+< static void getExecuteNodeParams(Module &M, Value* &workDim, Value* &LocalWGPtr, Value*
+<                                  &GlobalWGPtr, Kernel* kernel, ValueToValueMapTy& VMap, Instruction* IB) {
+---
+> static void getExecuteNodeParams(Module &M, Value *&workDim, Value *&LocalWGPtr,
+>                                  Value *&GlobalWGPtr, Kernel *kernel,
+>                                  ValueToValueMapTy &VMap, Instruction *IB) {
+1844c2269
+<   if(!kernel->hasLocalWG()) {
+---
+>   if (!kernel->hasLocalWG()) {
+1846,1849c2271,2273
+<   }
+<   else {
+<     for(unsigned i = 0; i < kernel->localWGSize.size(); i++) {
+<       if(isa<Argument>(kernel->localWGSize[i]))
+---
+>   } else {
+>     for (unsigned i = 0; i < kernel->localWGSize.size(); i++) {
+>       if (isa<Argument>(kernel->localWGSize[i]))
+1852c2276,2277
+<     LocalWGPtr = genWorkGroupPtr(M, kernel->localWGSize, VMap, IB, "LocalWGSize");
+---
+>     LocalWGPtr =
+>         genWorkGroupPtr(M, kernel->localWGSize, VMap, IB, "LocalWGSize");
+1855,1856c2280,2281
+<   for(unsigned i = 0; i < kernel->globalWGSize.size(); i++) {
+<     if(isa<Argument>(kernel->globalWGSize[i]))
+---
+>   for (unsigned i = 0; i < kernel->globalWGSize.size(); i++) {
+>     if (isa<Argument>(kernel->globalWGSize[i]))
+1862,1863c2287,2288
+<   std::vector<Value*> globalWGSizeInsts;
+<   if(kernel->hasLocalWG()) {
+---
+>   std::vector<Value *> globalWGSizeInsts;
+>   if (kernel->hasLocalWG()) {
+1865c2290,2292
+<       BinaryOperator* MulInst = BinaryOperator::Create(Instruction::Mul, kernel->globalWGSize[i], kernel->localWGSize[i], "", IB);
+---
+>       BinaryOperator *MulInst =
+>           BinaryOperator::Create(Instruction::Mul, kernel->globalWGSize[i],
+>                                  kernel->localWGSize[i], "", IB);
+1868,1869c2295
+<   }
+<   else {
+---
+>   } else {
+1878,1879c2304,2307
+< static Value* genWorkGroupPtr(Module &M, std::vector<Value*> WGSize, ValueToValueMapTy& VMap, Instruction* IB, const Twine& WGName) {
+<   Value* WGPtr;
+---
+> static Value *genWorkGroupPtr(Module &M, std::vector<Value *> WGSize,
+>                               ValueToValueMapTy &VMap, Instruction *IB,
+>                               const Twine &WGName) {
+>   Value *WGPtr;
+1881c2309
+<   Type* Int64Ty = Type::getInt64Ty(M.getContext());
+---
+>   Type *Int64Ty = Type::getInt64Ty(M.getContext());
+1884c2312
+<   Type* WGTy = ArrayType::get(Int64Ty, WGSize.size());
+---
+>   Type *WGTy = ArrayType::get(Int64Ty, WGSize.size());
+1887,1889c2315,2318
+<   AllocaInst* WG = new AllocaInst(WGTy, WGName, IB);
+<   WGPtr = BitCastInst::CreatePointerCast(WG, Int64Ty->getPointerTo(), WG->getName()+".0", IB);
+<   Value* nextDim = WGPtr;
+---
+>   AllocaInst *WG = new AllocaInst(WGTy, 0, WGName, IB);
+>   WGPtr = BitCastInst::CreatePointerCast(WG, Int64Ty->getPointerTo(),
+>                                          WG->getName() + ".0", IB);
+>   Value *nextDim = WGPtr;
+1894c2323
+<   for(unsigned i=0; i < WGSize.size(); i++) {
+---
+>   for (unsigned i = 0; i < WGSize.size(); i++) {
+1896c2325,2326
+<     assert(WGSize[i]->getType()->isIntegerTy() && "Dimension not an integer type!");
+---
+>     assert(WGSize[i]->getType()->isIntegerTy() &&
+>            "Dimension not an integer type!");
+1898c2328
+<     if(WGSize[i]->getType() != Int64Ty) {
+---
+>     if (WGSize[i]->getType() != Int64Ty) {
+1905c2335,2336
+<       CastInst* CI = BitCastInst::CreateIntegerCast(WGSize[i], Int64Ty, true, "", IB);
+---
+>       CastInst *CI =
+>           BitCastInst::CreateIntegerCast(WGSize[i], Int64Ty, true, "", IB);
+1907c2338
+<       StoreInst* SI = new StoreInst(CI, nextDim, IB);
+---
+>       StoreInst *SI = new StoreInst(CI, nextDim, IB);
+1913c2344
+<       StoreInst* SI = new StoreInst(WGSize[i], nextDim, IB);
+---
+>       StoreInst *SI = new StoreInst(WGSize[i], nextDim, IB);
+1917c2348
+<     if(i+1 < WGSize.size()) {
+---
+>     if (i + 1 < WGSize.size()) {
+1919,1922c2350,2352
+<       GetElementPtrInst* GEP = GetElementPtrInst::Create(nullptr, nextDim,
+<                                ArrayRef<Value*>(ConstantInt::get(Int64Ty, 1)),
+<                                WG->getName()+"."+Twine(i+1),
+<                                IB);
+---
+>       GetElementPtrInst *GEP = GetElementPtrInst::Create(
+>           nullptr, nextDim, ArrayRef<Value *>(ConstantInt::get(Int64Ty, 1)),
+>           WG->getName() + "." + Twine(i + 1), IB);
+1928d2357
+< 
+1932c2361
+< static std::string getPTXFilename(const Module& M) {
+---
+> static std::string getPTXFilename(const Module &M) {
+1934c2363
+<   moduleID.append(".nvptx.s");
+---
+>   moduleID.append(".kernels.cl");
+1939c2368
+< static std::string getFilenameFromModule(const Module& M) {
+---
+> static std::string getFilenameFromModule(const Module &M) {
+1941c2370
+<   return moduleID.substr(moduleID.find_last_of("/")+1);
+---
+>   return moduleID.substr(moduleID.find_last_of("/") + 1);
+1944c2373
+< // Changes the data layout of the Module to be compiled with NVPTX backend
+---
+> // Changes the data layout of the Module to be compiled with OpenCL backend
+1947,1948c2376,2377
+<   std::string nvptx32_layoutStr = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
+<   std::string nvptx64_layoutStr = "e-i64:64-v16:16-v32:32-n16:32:64";
+---
+>   std::string opencl32_layoutStr = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
+>   std::string opencl64_layoutStr = "e-i64:64-v16:16-v32:32-n16:32:64";
+1951c2380
+<     M.setDataLayout(StringRef(nvptx32_layoutStr));
+---
+>     M.setDataLayout(StringRef(opencl32_layoutStr));
+1953,1954c2382,2384
+<     M.setDataLayout(StringRef(nvptx64_layoutStr));
+<   else assert(false && "Invalid PTX target");
+---
+>     M.setDataLayout(StringRef(opencl64_layoutStr));
+>   else
+>     assert(false && "Invalid PTX target");
+1960,1961c2390,2391
+<   std::string nvptx32_TargetTriple = "nvptx--nvidiacl";
+<   std::string nvptx64_TargetTriple = "nvptx64--nvidiacl";
+---
+>   std::string opencl32_TargetTriple = "opencl--nvidiacl";
+>   std::string opencl64_TargetTriple = "opencl64--nvidiacl";
+1964c2394
+<     M.setTargetTriple(StringRef(nvptx32_TargetTriple));
+---
+>     M.setTargetTriple(StringRef(opencl32_TargetTriple));
+1966,1967c2396,2398
+<     M.setTargetTriple(StringRef(nvptx64_TargetTriple));
+<   else assert(false && "Invalid PTX target");
+---
+>     M.setTargetTriple(StringRef(opencl64_TargetTriple));
+>   else
+>     assert(false && "Invalid PTX target");
+1973,1977c2404,2407
+< static void findReturnInst(Function* F, std::vector<ReturnInst *> & ReturnInstVec) {
+<   for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i) {
+<     Instruction *I = &(*i);
+<     ReturnInst* RI = dyn_cast<ReturnInst>(I);
+<     if (RI) {
+---
+> static void findReturnInst(Function *F,
+>                            std::vector<ReturnInst *> &ReturnInstVec) {
+>   for (auto &BB : *F) {
+>     if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
+1979d2408
+<     }
+1983,1984c2412,2415
+< // Helper function, populate a vector with all IntrinsicID intrinsics in a function
+< static void findIntrinsicInst(Function* F, Intrinsic::ID IntrinsicID, std::vector<IntrinsicInst *> & IntrinsicInstVec) {
+---
+> // Helper function, populate a vector with all IntrinsicID intrinsics in a
+> // function
+> static void findIntrinsicInst(Function *F, Intrinsic::ID IntrinsicID,
+>                               std::vector<IntrinsicInst *> &IntrinsicInstVec) {
+1987c2418
+<     IntrinsicInst* II = dyn_cast<IntrinsicInst>(I);
+---
+>     IntrinsicInst *II = dyn_cast<IntrinsicInst>(I);
+1994c2425,2426
+< // Helper funtion, returns the atomicrmw op, corresponding to intrinsic atomic op
+---
+> // Helper funtion, returns the atomicrmw op, corresponding to intrinsic atomic
+> // op
+1996,1997c2428,2429
+<   switch(ID) {
+<   case Intrinsic::visc_atomic_add:
+---
+>   switch (ID) {
+>   case Intrinsic::hpvm_atomic_add:
+1999c2431
+<   case Intrinsic::visc_atomic_sub:
+---
+>   case Intrinsic::hpvm_atomic_sub:
+2001c2433
+<   case Intrinsic::visc_atomic_min:
+---
+>   case Intrinsic::hpvm_atomic_min:
+2003,2005c2435
+<   case Intrinsic::visc_atomic_umin:
+<     return AtomicRMWInst::UMin;
+<   case Intrinsic::visc_atomic_max:
+---
+>   case Intrinsic::hpvm_atomic_max:
+2007,2011c2437
+<   case Intrinsic::visc_atomic_umax:
+<     return AtomicRMWInst::UMax;
+<   //case Intrinsic::visc_atomic_inc: return AtomicRMWInst::Inc;
+<   //case Intrinsic::visc_atomic_dec: return AtomicRMWInst::Dec;
+<   case Intrinsic::visc_atomic_xchg:
+---
+>   case Intrinsic::hpvm_atomic_xchg:
+2013c2439
+<   case Intrinsic::visc_atomic_and:
+---
+>   case Intrinsic::hpvm_atomic_and:
+2015c2441
+<   case Intrinsic::visc_atomic_or:
+---
+>   case Intrinsic::hpvm_atomic_or:
+2017c2443
+<   case Intrinsic::visc_atomic_xor:
+---
+>   case Intrinsic::hpvm_atomic_xor:
+2024d2449
+< 
+2027,2030c2452,2453
+<   switch(ID) {
+<   case Intrinsic::visc_atomic_cmpxchg:
+<     return "atom_cmpxchg";
+<   case Intrinsic::visc_atomic_add:
+---
+>   switch (ID) {
+>   case Intrinsic::hpvm_atomic_add:
+2032c2455
+<   case Intrinsic::visc_atomic_sub:
+---
+>   case Intrinsic::hpvm_atomic_sub:
+2034c2457
+<   case Intrinsic::visc_atomic_min:
+---
+>   case Intrinsic::hpvm_atomic_min:
+2036c2459
+<   case Intrinsic::visc_atomic_max:
+---
+>   case Intrinsic::hpvm_atomic_max:
+2038,2042c2461
+<   case Intrinsic::visc_atomic_inc:
+<     return "atom_inc";
+<   case Intrinsic::visc_atomic_dec:
+<     return "atom_dec";
+<   case Intrinsic::visc_atomic_xchg:
+---
+>   case Intrinsic::hpvm_atomic_xchg:
+2044c2463
+<   case Intrinsic::visc_atomic_and:
+---
+>   case Intrinsic::hpvm_atomic_and:
+2046c2465
+<   case Intrinsic::visc_atomic_or:
+---
+>   case Intrinsic::hpvm_atomic_or:
+2048c2467
+<   case Intrinsic::visc_atomic_xor:
+---
+>   case Intrinsic::hpvm_atomic_xor:
+2057,2062c2476,2481
+< char DFG2LLVM_NVPTX::ID = 0;
+< static RegisterPass<DFG2LLVM_NVPTX> X("dfg2llvm-nvptx",
+<                                       "Dataflow Graph to LLVM for NVPTX Pass",
+<                                       false /* does not modify the CFG */,
+<                                       true /* transformation,   *
+<                                             * not just analysis */);
+---
+> char DFG2LLVM_OpenCL::ID = 0;
+> static RegisterPass<DFG2LLVM_OpenCL> X("dfg2llvm-opencl",
+>     "Dataflow Graph to LLVM for OpenCL Pass",
+>     false /* does not modify the CFG */,
+>     true /* transformation,   *
+>           * not just analysis */);
+\ No newline at end of file

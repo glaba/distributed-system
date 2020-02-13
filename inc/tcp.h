@@ -19,6 +19,8 @@ public:
     // Writes the specified number of bytes to the given socket
     // Returns number of bytes written, 0 on socket disconnect, and -1 on failure
     virtual auto write_to_client(int client, std::string const& data) -> ssize_t = 0;
+    // Stops the server, cancelling all currently executing blocking calls
+    virtual void stop_server() = 0;
 };
 
 class tcp_client {

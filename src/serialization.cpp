@@ -17,6 +17,12 @@ namespace serialization {
         buf[3] = (n & (0xFF << 24)) >> 24;
     }
 
+    auto write_uint32_to_string(uint32_t n) -> string {
+        char buffer[4];
+        write_uint32_to_char_buf(n, buffer);
+        return string(buffer, 4);
+    }
+
     auto read_uint32_from_char_buf(char const* buf) -> uint32_t {
         uint32_t retval = 0;
         retval += (buf[0] & 0xFF);

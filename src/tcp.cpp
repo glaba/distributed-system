@@ -83,10 +83,6 @@ auto tcp_utils::write_all_to_socket(int socket, const char *buffer, size_t count
     return total;
 }
 
-tcp_server_impl::~tcp_server_impl() {
-    stop_server();
-}
-
 void tcp_server_impl::setup_server(int port) {
     // Set up the server_fd
     struct addrinfo info, *res;

@@ -24,6 +24,12 @@ public:
     uint64_t last_heartbeat;
 };
 
+struct member_hash {
+    inline std::size_t operator()(member const& m) const {
+        return m.id;
+    }
+};
+
 // A linked list of members sorted by ID
 class member_list {
 public:

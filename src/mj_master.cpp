@@ -82,6 +82,7 @@ void mj_master_impl::stop() {
 
     lg->info("Stopping MapleJuice master");
     running = false;
+    server->stop_server();
 }
 
 template <typename Msg>

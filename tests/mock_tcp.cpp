@@ -36,6 +36,7 @@ testing::register_test single_connection("mock_tcp.single_connection",
             server->write_to_client(fd, std::to_string(i));
         }
         server->close_connection(fd);
+        server->stop_server();
         server_complete = true;
     });
     server_thread.detach();
@@ -48,6 +49,7 @@ testing::register_test single_connection("mock_tcp.single_connection",
         assert(msg == std::to_string(i));
     }
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     assert(server_complete);
 });
 
@@ -83,11 +85,11 @@ testing::register_test different_ports("mock_tcp.different_ports",
                 servers[i]->write_to_client(fd, std::to_string(j));
             }
             servers[i]->close_connection(fd);
+            servers[i]->stop_server();
             servers_complete[i] = true;
         });
         server_thread.detach();
     }
-
 
     std::vector<bool> clients_complete;
     for (unsigned i = 0; i < NUM_SERVERS; i++) {
@@ -143,6 +145,7 @@ testing::register_test server_after_client("mock_tcp.server_after_client",
             server->write_to_client(fd, std::to_string(i));
         }
         server->close_connection(fd);
+        server->stop_server();
         server_complete = true;
     });
     server_thread.detach();
@@ -233,6 +236,8 @@ testing::register_test closing_connection("mock_tcp.closing_connection",
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
         assert(client_complete && server_complete);
     }
+
+    server->stop_server();
 });
 
 testing::register_test n_servers("mock_tcp.n_servers",
@@ -274,6 +279,7 @@ testing::register_test n_servers("mock_tcp.n_servers",
             }
 
             servers[i]->close_connection(fd);
+            servers[i]->stop_server();
             servers_complete[i] = true;
         });
         server_thread.detach();
@@ -306,7 +312,7 @@ testing::register_test n_servers("mock_tcp.n_servers",
     });
     client_thread.detach();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(6000));
 
     assert(client_complete);
     for (unsigned i = 0; i < servers_complete.size(); i++) {
@@ -373,6 +379,7 @@ testing::register_test n_clients("mock_tcp.n_clients",
     // Wait for all communication to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(7000));
 
+    server->stop_server();
     for (unsigned i = 0; i < clients_complete.size(); i++) {
         assert(clients_complete[i]);
     }
@@ -436,6 +443,7 @@ testing::register_test ephemeral_ports("mock_tcp.ephemeral_ports",
     // Wait for all communication to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
+    server->stop_server();
     for (unsigned i = 0; i < clients_complete.size(); i++) {
         assert(clients_complete[i]);
     }

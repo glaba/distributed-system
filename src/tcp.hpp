@@ -53,7 +53,6 @@ public:
 class tcp_server_impl : public tcp_server, public tcp_utils {
 public:
     tcp_server_impl(std::unique_ptr<logger> lg_): lg(std::move(lg_)) {}
-    ~tcp_server_impl();
     void setup_server(int port);
     void stop_server();
     auto accept_connection() -> int;

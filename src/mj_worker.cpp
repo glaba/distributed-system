@@ -73,6 +73,7 @@ void mj_worker_impl::stop() {
     sdfss->stop();
     sdfsm->stop();
     mm->stop();
+    server->stop_server();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     el->stop();

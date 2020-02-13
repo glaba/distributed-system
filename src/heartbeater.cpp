@@ -94,11 +94,11 @@ void heartbeater_impl::client_thread_function() {
             break;
         }
 
+        // Check neighbors list for failures
+        check_for_failed_neighbors();
+
         { // Atomic block
             unlocked<heartbeater_state> hb_state = hb_state_lock();
-
-            // Check neighbors list for failures
-            check_for_failed_neighbors();
 
             // For each of fails / leaves / joins, send a message out to our neighbors
             vector<uint32_t> const& failed_nodes = hb_state->failed_nodes_queue.pop();

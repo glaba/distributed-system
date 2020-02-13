@@ -36,11 +36,6 @@ auto mock_tcp_factory::get_mock_udp_factory() -> mock_udp_factory* {
     return fac;
 }
 
-mock_tcp_factory::mock_tcp_server::~mock_tcp_server() {
-    stop_server();
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-}
-
 void mock_tcp_factory::mock_tcp_server::setup_server(int port_) {
     port = port_;
     id = static_cast<int32_t>(std::hash<string>()(hostname + std::to_string(port))) & 0x7FFFFFFF;
@@ -115,6 +110,8 @@ void mock_tcp_factory::mock_tcp_server::stop_server() {
 
     running = false;
     server->stop_server();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
 auto mock_tcp_factory::mock_tcp_server::accept_connection() -> int {

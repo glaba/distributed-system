@@ -19,6 +19,7 @@
 // Helper functions for serialization
 namespace serialization {
     void write_uint32_to_char_buf(uint32_t n, char *buf);
+    auto write_uint32_to_string(uint32_t n) -> std::string;
     auto read_uint32_from_char_buf(char const* buf) -> uint32_t;
 }
 
@@ -56,6 +57,11 @@ public:
         std::vector<uint32_t> T::*, std::vector<std::string> T::*,
         SerializableMembers T::*...,
         std::vector<SerializableMembers> T::*...>;
+
+    static uint32_t get_serializable_id() {
+        static uint32_t id = static_cast<uint32_t>(typeid(T).hash_code());
+        return id;
+    }
 
 private:
 
@@ -162,7 +168,7 @@ private:
     }
 
 public:
-    auto serialize() const -> std::string {
+    auto serialize(bool include_id = false) const -> std::string {
         serializer ser;
         ser_ = &ser;
         for (auto const& field : field_registry()) {
